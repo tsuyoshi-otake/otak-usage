@@ -1,0 +1,121 @@
+import { TokenUsage } from './types';
+
+/**
+ * Prices in USD per million tokens.
+ * Claude models use input/output/cacheRead/cacheWrite5m/cacheWrite1h.
+ * OpenAI models use input/cachedInput/output.
+ * Omitted cache prices fall back to the standard multipliers of the input price:
+ * cacheWrite5m = 1.25x, cacheWrite1h = 2x, cacheRead = 0.1x, cachedInput = 0.1x.
+ */
+export interface ModelPricing {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    cacheWrite1h?: number;
+    cachedInput?: number;
+}
+
+/**
+ * Verified against the official pricing pages on 2026-06-10:
+ * - https://platform.claude.com/docs/en/about-claude/pricing
+ * - https://developers.openai.com/api/docs/pricing
+ * Models no longer on the official pages use their last published prices.
+ * Lookup is exact match first, then longest prefix match, so dated ids like
+ * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
+ * to their base entry.
+ */
+export const DEFAULT_PRICING: Record<string, ModelPricing> = {
+    // Anthropic (Claude Code)
+    'claude-fable-5': { input: 10, output: 50 },
+    'claude-mythos-5': { input: 10, output: 50 },
+    'claude-opus-4-8': { input: 5, output: 25 },
+    'claude-opus-4-7': { input: 5, output: 25 },
+    'claude-opus-4-6': { input: 5, output: 25 },
+    'claude-opus-4-5': { input: 5, output: 25 },
+    'claude-opus-4-1': { input: 15, output: 75 },
+    'claude-opus-4': { input: 15, output: 75 },
+    'claude-sonnet-4-6': { input: 3, output: 15 },
+    'claude-sonnet-4-5': { input: 3, output: 15 },
+    'claude-sonnet-4': { input: 3, output: 15 },
+    'claude-haiku-4-5': { input: 1, output: 5 },
+    'claude-3-5-haiku': { input: 0.8, output: 4 },
+    // OpenAI (Codex CLI)
+    'gpt-5.5-pro': { input: 30, output: 180 },
+    'gpt-5.5': { input: 5, cachedInput: 0.5, output: 30 },
+    'gpt-5.4-pro': { input: 15, output: 120 },
+    'gpt-5.4': { input: 2.5, cachedInput: 0.25, output: 15 },
+    'gpt-5.3-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
+    'gpt-5.2-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
+    'gpt-5.2': { input: 1.75, cachedInput: 0.175, output: 14 },
+    'gpt-5.1-codex-mini': { input: 0.25, cachedInput: 0.025, output: 2 },
+    'gpt-5.1-codex': { input: 1.25, cachedInput: 0.125, output: 10 },
+    'gpt-5.1': { input: 1.25, cachedInput: 0.125, output: 10 },
+    'gpt-5-codex': { input: 1.25, cachedInput: 0.125, output: 10 },
+    'gpt-5-mini': { input: 0.25, cachedInput: 0.025, output: 2 },
+    'gpt-5-nano': { input: 0.05, cachedInput: 0.005, output: 0.4 },
+    'gpt-5': { input: 1.25, cachedInput: 0.125, output: 10 },
+};
+
+export type PricingOverrides = Record<string, Partial<ModelPricing>>;
+
+/**
+ * Exact match first, then longest prefix match, per table. Override entries are
+ * merged on top of the default entry, so a partial override (e.g. only `input`)
+ * still inherits the remaining prices. Returns undefined for unknown models.
+ */
+export function resolvePricing(model: string, overrides?: PricingOverrides): ModelPricing | undefined {
+    const base = lookup(model, DEFAULT_PRICING);
+    const over = overrides ? lookup(model, overrides) : undefined;
+    if (!base && !over) {
+        return undefined;
+    }
+    return withDefaults({ ...base, ...over });
+}
+
+function lookup(model: string, table: Record<string, Partial<ModelPricing>>): Partial<ModelPricing> | undefined {
+    if (table[model]) {
+        return table[model];
+    }
+    let best: Partial<ModelPricing> | undefined;
+    let bestLen = -1;
+    for (const key of Object.keys(table)) {
+        if (model.startsWith(key) && key.length > bestLen) {
+            best = table[key];
+            bestLen = key.length;
+        }
+    }
+    return best;
+}
+
+function withDefaults(p: Partial<ModelPricing>): ModelPricing | undefined {
+    if (p.input === undefined || p.output === undefined) {
+        return undefined;
+    }
+    return {
+        input: p.input,
+        output: p.output,
+        cacheRead: p.cacheRead ?? p.input * 0.1,
+        cacheWrite: p.cacheWrite ?? p.input * 1.25,
+        cacheWrite1h: p.cacheWrite1h ?? p.input * 2,
+        cachedInput: p.cachedInput ?? p.input * 0.1,
+    };
+}
+
+const M = 1_000_000;
+
+/** Cost in USD. Returns undefined for unknown models. */
+export function calcCost(model: string, usage: TokenUsage, overrides?: PricingOverrides): number | undefined {
+    const p = resolvePricing(model, overrides);
+    if (!p) {
+        return undefined;
+    }
+    return (
+        (usage.input * p.input +
+            usage.cachedInput * (p.cachedInput ?? 0) +
+            usage.cacheRead * (p.cacheRead ?? 0) +
+            usage.cacheWrite5m * (p.cacheWrite ?? 0) +
+            usage.cacheWrite1h * (p.cacheWrite1h ?? 0) +
+            usage.output * p.output) / M
+    );
+}

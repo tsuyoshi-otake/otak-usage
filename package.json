@@ -1,0 +1,131 @@
+{
+  "name": "otak-usage",
+  "displayName": "otak-usage",
+  "description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
+  "version": "1.0.0",
+  "publisher": "odangoo",
+  "license": "MIT",
+  "icon": "./images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsuyoshi-otake/otak-usage"
+  },
+  "bugs": {
+    "url": "https://github.com/tsuyoshi-otake/otak-usage/issues"
+  },
+  "homepage": "https://github.com/tsuyoshi-otake/otak-usage#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "otak-usage.togglePeriod",
+        "title": "Toggle Period (Today / This Month)",
+        "category": "Otak Usage"
+      },
+      {
+        "command": "otak-usage.refresh",
+        "title": "Refresh Usage (Clear Cache and Rescan)",
+        "category": "Otak Usage"
+      }
+    ],
+    "configuration": {
+      "title": "otak-usage",
+      "properties": {
+        "otakUsage.period": {
+          "type": "string",
+          "enum": [
+            "today",
+            "month"
+          ],
+          "default": "today",
+          "description": "Aggregation period shown in the status bar."
+        },
+        "otakUsage.updateIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "description": "How often to rescan usage logs, in seconds."
+        },
+        "otakUsage.showClaude": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Claude Code usage in the status bar."
+        },
+        "otakUsage.showCodex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Codex CLI usage in the status bar."
+        },
+        "otakUsage.pricingOverrides": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Per-model pricing overrides in USD per million tokens. Example: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. For OpenAI models use `input`, `cachedInput`, and `output`.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              },
+              "cacheWrite": {
+                "type": "number"
+              },
+              "cacheRead": {
+                "type": "number"
+              },
+              "cachedInput": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "otakUsage.claudeConfigDir": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Claude Code config directory. Empty = $CLAUDE_CONFIG_DIR or ~/.claude."
+        },
+        "otakUsage.codexHome": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Codex home directory. Empty = $CODEX_HOME or ~/.codex."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.90.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "eslint": "^9.19.0",
+    "typescript": "^5.7.3",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.6.0"
+  }
+}
