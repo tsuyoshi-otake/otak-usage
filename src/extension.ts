@@ -5,7 +5,7 @@ import * as fsp from 'fs/promises';
 import { summarize } from './aggregator';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, clipboardText, statusBarText, tooltipMarkdown } from './formatter';
 import { Period, dayKey } from './period';
 import { PricingOverrides } from './pricing';
 
@@ -25,6 +25,7 @@ class UsageController implements vscode.Disposable {
     private initialScanDone = false;
     private focused = true;
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
+    private lastViews: { claude: ProviderView; codex: ProviderView } | undefined;
 
     constructor(private readonly context: vscode.ExtensionContext) { }
 
@@ -37,6 +38,7 @@ class UsageController implements vscode.Disposable {
         this.context.subscriptions.push(
             vscode.commands.registerCommand('otak-usage.togglePeriod', () => this.togglePeriod()),
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
+            vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
                     this.restartTimer();
@@ -136,11 +138,21 @@ class UsageController implements vscode.Disposable {
             available: this.lastTargets.codexAvailable,
             show: config.get<boolean>('showCodex', true),
         };
+        this.lastViews = { claude, codex };
         this.statusBarItem.text = statusBarText(claude, codex, period, false);
         const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, period, new Date()));
         tooltip.supportThemeIcons = true;
+        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
+    }
+
+    private async copyUsage(): Promise<void> {
+        if (!this.lastViews) {
+            return;
+        }
+        await vscode.env.clipboard.writeText(clipboardText(this.lastViews.claude, this.lastViews.codex, new Date()));
+        vscode.window.setStatusBarMessage('otak-usage: summary copied to clipboard', 3000);
     }
 
     private async togglePeriod(): Promise<void> {

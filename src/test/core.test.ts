@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
-import { formatCost, statusBarText } from '../formatter';
+import { clipboardText, formatCost, statusBarText, tooltipMarkdown } from '../formatter';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
 import { calcCost, resolvePricing } from '../pricing';
 import { DayBuckets, UsageEvent, emptyUsage } from '../types';
@@ -147,5 +147,37 @@ suite('formatter', () => {
             'month', false,
         );
         assert.strictEqual(monthText, '$(sparkle) $24.68');
+    });
+
+    test('tooltip contains the copy command link', () => {
+        const view = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const md = tooltipMarkdown(view, { ...view, show: false }, 'today', new Date(2026, 5, 10, 9, 5));
+        assert.ok(md.includes('(command:otak-usage.copyUsage'));
+        assert.ok(md.includes('Updated 09:05'));
+    });
+
+    test('clipboardText lists providers and models in plain text', () => {
+        const row = {
+            model: 'claude-fable-5',
+            todayUsage: emptyUsage(), monthUsage: emptyUsage(),
+            todayCost: 340.49, monthCost: 340.49,
+        };
+        const claude = {
+            summary: { provider: 'claude' as const, todayCost: 371.18, monthCost: 2455.8, hasUnknownModel: false, models: [row] },
+            available: true, show: true,
+        };
+        const codex = {
+            summary: { provider: 'codex' as const, todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] },
+            available: false, show: true,
+        };
+        const text = clipboardText(claude, codex, new Date(Date.UTC(2026, 5, 10, 12, 0)));
+        assert.ok(text.includes('Claude Code: today $371.18 / month $2,455.80'));
+        assert.ok(text.includes('  claude-fable-5: today $340.49 / month $340.49'));
+        assert.ok(text.includes('Codex CLI: logs not found'));
+        assert.ok(text.startsWith('otak-usage 2026-06-10 12:00'));
     });
 });

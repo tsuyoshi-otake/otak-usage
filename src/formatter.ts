@@ -47,8 +47,30 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, perio
     const hh = String(updatedAt.getHours()).padStart(2, '0');
     const mm = String(updatedAt.getMinutes()).padStart(2, '0');
     const periodLabel = period === 'today' ? 'Today' : 'This Month';
-    parts.push(`---\n\nPeriod: **${periodLabel}** · Updated ${hh}:${mm} · Click to toggle period`);
+    parts.push(`---\n\nPeriod: **${periodLabel}** · Updated ${hh}:${mm} · Click to toggle period\n`);
+    parts.push('[$(copy) Copy Summary](command:otak-usage.copyUsage "Copy the usage summary to the clipboard")');
     return parts.join('\n');
+}
+
+/** Plain-text summary written to the clipboard by the Copy Summary link. */
+export function clipboardText(claude: ProviderView, codex: ProviderView, now: Date): string {
+    const lines: string[] = [`otak-usage ${now.toISOString().slice(0, 16).replace('T', ' ')} (API-equivalent cost, USD)`];
+    for (const [title, view] of [['Claude Code', claude], ['Codex CLI', codex]] as const) {
+        if (!view.show) {
+            continue;
+        }
+        if (!view.available) {
+            lines.push(`${title}: logs not found`);
+            continue;
+        }
+        lines.push(`${title}: today ${formatCost(view.summary.todayCost)} / month ${formatCost(view.summary.monthCost)}`);
+        for (const row of view.summary.models) {
+            const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
+            const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
+            lines.push(`  ${row.model}: today ${today} / month ${month}`);
+        }
+    }
+    return lines.join('\n');
 }
 
 function providerSection(title: string, icon: string, view: ProviderView): string {

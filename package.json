@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -38,6 +38,11 @@
       {
         "command": "otak-usage.refresh",
         "title": "Refresh Usage (Clear Cache and Rescan)",
+        "category": "Otak Usage"
+      },
+      {
+        "command": "otak-usage.copyUsage",
+        "title": "Copy Usage Summary",
         "category": "Otak Usage"
       }
     ],

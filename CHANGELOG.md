@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.0.1] - 2026-06-10
+
+### Added
+- "Copy Summary" link in the tooltip and `Otak Usage: Copy Usage Summary` command - copies a plain-text per-model breakdown to the clipboard.
+- Pricing for legacy models: Claude 3.x family and pre-GPT-5 Codex CLI models (codex-mini, o3/o4-mini, gpt-4.1, gpt-4o).
+
 ## [1.0.0] - 2026-06-10
 
 ### Added

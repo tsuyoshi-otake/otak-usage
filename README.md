@@ -50,6 +50,7 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 |---------|-------------|
 | `Otak Usage: Toggle Period (Today / This Month)` | Switch the status bar between today's and this month's cost (also bound to clicking the status bar item) |
 | `Otak Usage: Refresh Usage (Clear Cache and Rescan)` | Drop the incremental scan cache and rebuild from the logs |
+| `Otak Usage: Copy Usage Summary` | Copy a plain-text per-model breakdown to the clipboard (also available as the "Copy Summary" link in the tooltip) |
 
 ## Configuration
 
