@@ -1,5 +1,6 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { FAST_SUFFIX } from '../pricing';
 import { TokenUsage, UsageEvent } from '../types';
 
 export interface ScannedFile {
@@ -93,8 +94,11 @@ export function parseClaudeLine(line: string): ClaudeParseResult | undefined {
     const dedupeKey = typeof msg.id === 'string' && typeof rec.requestId === 'string'
         ? `${msg.id}:${rec.requestId}`
         : undefined;
+    // Fast mode is billed at premium rates — keep it as a separate
+    // "<model>-fast" SKU for pricing and the per-model breakdown.
+    const model = usage.speed === 'fast' ? msg.model + FAST_SUFFIX : msg.model;
     return {
-        event: { provider: 'claude', model: msg.model, timestamp, usage: tokenUsage },
+        event: { provider: 'claude', model, timestamp, usage: tokenUsage },
         dedupeKey,
     };
 }

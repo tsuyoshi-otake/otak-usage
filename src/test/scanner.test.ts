@@ -8,7 +8,7 @@ import { parseClaudeLine } from '../scanner/claudeScanner';
 import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
 import { readNewLines } from '../scanner/jsonlReader';
 
-function claudeLine(opts: { id: string; requestId: string; model?: string; iso: string; output?: number }): string {
+function claudeLine(opts: { id: string; requestId: string; model?: string; iso: string; output?: number; speed?: string }): string {
     return JSON.stringify({
         type: 'assistant',
         requestId: opts.requestId,
@@ -22,6 +22,7 @@ function claudeLine(opts: { id: string; requestId: string; model?: string; iso: 
                 cache_read_input_tokens: 35369,
                 output_tokens: opts.output ?? 336,
                 cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 40 },
+                ...(opts.speed ? { speed: opts.speed } : {}),
             },
         },
     });
@@ -67,6 +68,13 @@ suite('parseClaudeLine', () => {
         assert.strictEqual(r?.event.usage.cacheWrite1h, 0);
     });
 
+    test('fast mode maps to a "<model>-fast" id', () => {
+        const r = parseClaudeLine(claudeLine({ id: 'm', requestId: 'r', iso: '2026-06-10T03:00:00.000Z', speed: 'fast' }));
+        assert.strictEqual(r?.event.model, 'claude-opus-4-8-fast');
+        const normal = parseClaudeLine(claudeLine({ id: 'm', requestId: 'r', iso: '2026-06-10T03:00:00.000Z', speed: 'standard' }));
+        assert.strictEqual(normal?.event.model, 'claude-opus-4-8');
+    });
+
     test('skips non-assistant, synthetic, and garbage lines', () => {
         assert.strictEqual(parseClaudeLine('{"type":"user"}'), undefined);
         assert.strictEqual(parseClaudeLine('not json'), undefined);
@@ -86,6 +94,14 @@ suite('parseCodexLine', () => {
         assert.strictEqual(event.usage.input, 175); // 93743 - 93568
         assert.strictEqual(event.usage.cachedInput, 93568);
         assert.strictEqual(event.usage.output, 49);
+    });
+
+    test('cached_input_tokens larger than input_tokens is capped', () => {
+        const state: CodexParseState = { lastModel: 'gpt-5.5' };
+        const event = parseCodexLine(codexTokenCount('2026-06-10T03:00:00.000Z', 100, 250, 10), state);
+        assert.ok(event);
+        assert.strictEqual(event.usage.input, 0);
+        assert.strictEqual(event.usage.cachedInput, 100);
     });
 
     test('token_count without info is skipped', () => {

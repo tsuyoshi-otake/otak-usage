@@ -97,9 +97,12 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
     if (Number.isNaN(timestamp)) {
         return undefined;
     }
-    const cachedInput = last.cached_input_tokens ?? 0;
+    const rawInput = last.input_tokens ?? 0;
+    // Cap defensively: a malformed record must not bill more cached tokens
+    // than were actually sent.
+    const cachedInput = Math.min(last.cached_input_tokens ?? 0, rawInput);
     const usage: TokenUsage = {
-        input: Math.max(0, (last.input_tokens ?? 0) - cachedInput),
+        input: rawInput - cachedInput,
         cachedInput,
         cacheRead: 0,
         cacheWrite5m: 0,

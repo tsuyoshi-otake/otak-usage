@@ -75,6 +75,32 @@ suite('pricing', () => {
         assert.ok(Math.abs((calcCost('claude-haiku-4-5', usage) ?? 0) - 2) < 1e-9);
     });
 
+    test('fast mode premium prices, cache multipliers stack on fast input', () => {
+        const p = resolvePricing('claude-opus-4-7-fast');
+        assert.strictEqual(p?.input, 30);
+        assert.strictEqual(p?.output, 150);
+        assert.strictEqual(p?.cacheWrite, 37.5);
+        assert.strictEqual(p?.cacheWrite1h, 60);
+        assert.strictEqual(p?.cacheRead, 3);
+        assert.strictEqual(resolvePricing('claude-opus-4-8-fast')?.input, 10);
+        // The plain model keeps standard prices.
+        assert.strictEqual(resolvePricing('claude-opus-4-7')?.input, 5);
+    });
+
+    test('dated fast ids resolve to the -fast entry, not the base prefix', () => {
+        assert.strictEqual(resolvePricing('claude-opus-4-7-20260120-fast')?.input, 30);
+        assert.strictEqual(resolvePricing('claude-opus-4-6-20260101-fast')?.output, 150);
+    });
+
+    test('gpt-5.4 family resolves per official prices', () => {
+        assert.strictEqual(resolvePricing('gpt-5.4-pro')?.input, 30);
+        assert.strictEqual(resolvePricing('gpt-5.4-pro')?.output, 180);
+        assert.strictEqual(resolvePricing('gpt-5.4-mini')?.input, 0.75);
+        assert.strictEqual(resolvePricing('gpt-5.4-mini')?.cachedInput, 0.075);
+        assert.strictEqual(resolvePricing('gpt-5.4-nano')?.output, 1.25);
+        assert.strictEqual(resolvePricing('gpt-5.4')?.input, 2.5);
+    });
+
     test('codex cost formula (cached input at cached price)', () => {
         const usage = { input: 1000, cachedInput: 9000, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 100 };
         // gpt-5.5: 1000*5 + 9000*0.5 + 100*30 = 12500 µ$

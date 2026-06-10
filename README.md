@@ -30,6 +30,7 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 - **Accurate cost model**:
   - Per-model pricing tables (Claude Fable 5 / Opus / Sonnet / Haiku, GPT-5.x / Codex families)
   - Claude cache writes (5m and 1h) and cache reads priced at their real multipliers
+  - Claude fast mode (`/fast`) responses detected and billed at the fast-mode premium
   - Codex cached input priced at the cached-input rate
   - Duplicate transcript records deduplicated, session-cumulative counters handled correctly
   - Unknown models count as $0 and are flagged in the tooltip - add prices via `otakUsage.pricingOverrides`
@@ -66,7 +67,7 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 
 ## How costs are computed
 
-- **Claude Code**: each assistant message records `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and a 5m/1h cache-write breakdown. Cost = input × base + cache reads × 0.1 × base + 5m writes × 1.25 × base + 1h writes × 2 × base + output × output price.
+- **Claude Code**: each assistant message records `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and a 5m/1h cache-write breakdown. Cost = input × base + cache reads × 0.1 × base + 5m writes × 1.25 × base + 1h writes × 2 × base + output × output price. Fast-mode responses (`usage.speed: "fast"`) are tracked as `<model>-fast` and billed at the fast-mode premium, with the cache multipliers stacking on the fast price.
 - **Codex CLI**: each turn records `last_token_usage`. Cost = (input − cached) × base + cached × cached-input price + output × output price. Reasoning tokens are already included in output tokens.
 - Prices were verified against the official Anthropic and OpenAI pricing pages. Dated model ids (`claude-opus-4-8-20250915`) and variants (`gpt-5.3-codex-spark`) resolve to their base model by longest-prefix match.
 

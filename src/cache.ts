@@ -1,6 +1,7 @@
 import { DayBuckets } from './types';
 
-export const CACHE_VERSION = 1;
+/** v2: fast-mode Claude usage moved to "<model>-fast" buckets — v1 caches must be re-ingested. */
+export const CACHE_VERSION = 2;
 
 export interface FileState {
     size: number;

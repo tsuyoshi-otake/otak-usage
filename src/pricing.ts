@@ -1,5 +1,8 @@
 import { TokenUsage } from './types';
 
+/** Appended to a Claude model id when the transcript marks the response as fast mode. */
+export const FAST_SUFFIX = '-fast';
+
 /**
  * Prices in USD per million tokens.
  * Claude models use input/output/cacheRead/cacheWrite5m/cacheWrite1h.
@@ -23,7 +26,8 @@ export interface ModelPricing {
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
- * to their base entry.
+ * to their base entry. Claude fast-mode lines are mapped by the scanner to
+ * "<model>-fast" ids and priced by the explicit -fast entries.
  */
 export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Anthropic (Claude Code)
@@ -35,6 +39,11 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-opus-4-5': { input: 5, output: 25 },
     'claude-opus-4-1': { input: 15, output: 75 },
     'claude-opus-4': { input: 15, output: 75 },
+    // Fast mode (usage.speed === "fast"): premium prices; the cache-write/read
+    // multipliers stack on top of the fast input price.
+    'claude-opus-4-8-fast': { input: 10, output: 50 },
+    'claude-opus-4-7-fast': { input: 30, output: 150 },
+    'claude-opus-4-6-fast': { input: 30, output: 150 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-sonnet-4-5': { input: 3, output: 15 },
     'claude-sonnet-4': { input: 3, output: 15 },
@@ -48,7 +57,9 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // OpenAI (Codex CLI)
     'gpt-5.5-pro': { input: 30, output: 180 },
     'gpt-5.5': { input: 5, cachedInput: 0.5, output: 30 },
-    'gpt-5.4-pro': { input: 15, output: 120 },
+    'gpt-5.4-pro': { input: 30, output: 180 },
+    'gpt-5.4-mini': { input: 0.75, cachedInput: 0.075, output: 4.5 },
+    'gpt-5.4-nano': { input: 0.2, cachedInput: 0.02, output: 1.25 },
     'gpt-5.4': { input: 2.5, cachedInput: 0.25, output: 15 },
     'gpt-5.3-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
     'gpt-5.2-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
@@ -96,12 +107,26 @@ function lookup(model: string, table: Record<string, Partial<ModelPricing>>): Pa
     let best: Partial<ModelPricing> | undefined;
     let bestLen = -1;
     for (const key of Object.keys(table)) {
-        if (model.startsWith(key) && key.length > bestLen) {
+        if (matches(model, key) && key.length > bestLen) {
             best = table[key];
             bestLen = key.length;
         }
     }
     return best;
+}
+
+/**
+ * Plain prefix match, plus: "-fast" keys also match "-fast" models whose extra
+ * id parts sit before the marker, so "claude-opus-4-7-20260120-fast" resolves
+ * to "claude-opus-4-7-fast" (longest match) rather than the cheaper
+ * "claude-opus-4-7".
+ */
+function matches(model: string, key: string): boolean {
+    if (model.startsWith(key)) {
+        return true;
+    }
+    return key.endsWith(FAST_SUFFIX) && model.endsWith(FAST_SUFFIX) &&
+        model.slice(0, -FAST_SUFFIX.length).startsWith(key.slice(0, -FAST_SUFFIX.length));
 }
 
 function withDefaults(p: Partial<ModelPricing>): ModelPricing | undefined {

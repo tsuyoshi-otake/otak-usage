@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",

@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.0.2] - 2026-06-10
+
+### Added
+- Claude fast mode (`usage.speed: "fast"`) is now billed at the fast-mode premium and shown as a separate `<model>-fast` row (Opus 4.6/4.7 $30/$150, Opus 4.8 $10/$50; cache multipliers stack on the fast price).
+- Pricing for `gpt-5.4-mini` and `gpt-5.4-nano`.
+
+### Fixed
+- `gpt-5.4-pro` price corrected to $30/$180 per the official pricing page.
+- Codex `cached_input_tokens` is capped at `input_tokens` so a malformed record cannot inflate the cost.
+- Scan cache version bumped (v2) to re-ingest the current month, so already-recorded fast-mode usage is repriced automatically.
+
 ## [1.0.1] - 2026-06-10
 
 ### Added
