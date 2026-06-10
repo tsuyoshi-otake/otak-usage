@@ -39,6 +39,14 @@ suite('pricing', () => {
         assert.strictEqual(p?.output, 25);
     });
 
+    test('legacy models resolve (dated ids included)', () => {
+        assert.strictEqual(resolvePricing('claude-3-5-sonnet-20241022')?.input, 3);
+        assert.strictEqual(resolvePricing('claude-3-haiku-20240307')?.input, 0.25);
+        assert.strictEqual(resolvePricing('o4-mini')?.cachedInput, 0.275);
+        assert.strictEqual(resolvePricing('codex-mini-latest')?.output, 6);
+        assert.strictEqual(resolvePricing('gpt-4.1-mini')?.input, 0.4);
+    });
+
     test('unknown model returns undefined', () => {
         assert.strictEqual(resolvePricing('llama-99'), undefined);
         assert.strictEqual(calcCost('llama-99', emptyUsage()), undefined);
