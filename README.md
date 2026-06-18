@@ -27,13 +27,22 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
   - OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`)
   - Either one alone works fine - a missing tool shows as `—`
 
+- **RTK token savings** (optional):
+  - If the [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) CLI is installed, the tooltip adds a `⚡` Token Savings table - Input / Output / Saved / Rate for Today, This Month, and All Time (data comes from `rtk gain --daily --format json`)
+  - The section appears only when `rtk` is found - without it, nothing changes
+
+- **Daily cost alert**:
+  - Shows a VS Code notification when today's combined Claude + Codex API-equivalent cost reaches the configured daily threshold
+  - Default threshold is `$10.00`; set `otakUsage.dailyAlertThresholdUsd` to `0` to disable alerts
+  - Runtime notifications and extension settings are localized for G20 major locales: English, Arabic, German, Spanish, French, Hindi, Indonesian, Italian, Japanese, Korean, Brazilian Portuguese, Russian, Turkish, Simplified Chinese, Traditional Chinese, plus Vietnamese
+
 - **Accurate cost model**:
   - Per-model pricing tables (Claude Fable 5 / Opus / Sonnet / Haiku, GPT-5.x / Codex families)
   - Claude cache writes (5m and 1h) and cache reads priced at their real multipliers
   - Claude fast mode (`/fast`) responses detected and billed at the fast-mode premium
   - Codex cached input priced at the cached-input rate
   - Duplicate transcript records deduplicated, session-cumulative counters handled correctly
-  - Unknown models count as $0 and are flagged in the tooltip - add prices via `otakUsage.pricingOverrides`
+  - Unknown models count as $0 (shown as `n/a` per model) - add prices via `otakUsage.pricingOverrides`
 
 - **Fast and incremental**:
   - Only files modified in the current month are considered; only new bytes are read
@@ -59,8 +68,11 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 |---------|---------|-------------|
 | `otakUsage.period` | `today` | Aggregation period shown in the status bar (`today` / `month`) |
 | `otakUsage.updateIntervalSeconds` | `60` | How often to rescan the logs (minimum 10) |
+| `otakUsage.dailyAlertThresholdUsd` | `10` | Daily combined Claude + Codex cost threshold in USD. A notification appears when today's total reaches this amount; set to `0` to disable |
 | `otakUsage.showClaude` | `true` | Show the Claude Code segment |
 | `otakUsage.showCodex` | `true` | Show the Codex CLI segment |
+| `otakUsage.showRtk` | `true` | Show the RTK token-savings table in the tooltip (auto-hidden when the `rtk` CLI is not installed) |
+| `otakUsage.rtkPath` | `""` | Path to the rtk executable (empty = `rtk` on PATH) |
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, e.g. `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}` |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config dir (empty = `$CLAUDE_CONFIG_DIR` or `~/.claude`) |
 | `otakUsage.codexHome` | `""` | Codex home dir (empty = `$CODEX_HOME` or `~/.codex`) |
@@ -73,7 +85,7 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 
 ## Privacy
 
-Everything stays on your machine. The extension reads token-count metadata from local log files; it never reads your prompts' content, never writes to the log directories, and never touches the network or credential files.
+Everything stays on your machine. The extension reads token-count metadata from local log files; it never reads your prompts' content, never writes to the log directories, and never touches the network or credential files. The optional RTK integration runs the local `rtk gain` command and reads only its aggregate numbers.
 
 ## Requirements
 

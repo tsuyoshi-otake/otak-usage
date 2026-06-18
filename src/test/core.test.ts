@@ -1,9 +1,14 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
-import { clipboardText, formatCost, statusBarText, tooltipMarkdown } from '../formatter';
+import { evaluateDailyAlert, normalizeDailyAlertThresholdUsd } from '../alert';
+import { RtkView, clipboardText, formatCost, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
+import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
 import { calcCost, resolvePricing } from '../pricing';
+import { emptyRtkPeriod, parseRtkGain, rtkSavingsPct } from '../rtk';
 import { DayBuckets, UsageEvent, emptyUsage } from '../types';
+
+const noRtk: RtkView = { stats: undefined, show: true };
 
 suite('period', () => {
     const noon = new Date(2026, 5, 10, 12, 34, 56).getTime(); // 2026-06-10 local
@@ -151,6 +156,82 @@ suite('aggregator', () => {
     });
 });
 
+suite('daily alert', () => {
+    test('normalizes threshold values', () => {
+        assert.strictEqual(normalizeDailyAlertThresholdUsd(undefined), 10);
+        assert.strictEqual(normalizeDailyAlertThresholdUsd(Number.NaN), 10);
+        assert.strictEqual(normalizeDailyAlertThresholdUsd(-5), 0);
+        assert.strictEqual(normalizeDailyAlertThresholdUsd(12.5), 12.5);
+    });
+
+    test('notifies when the daily total reaches the threshold', () => {
+        const decision = evaluateDailyAlert(10, 10, '2026-06-10', undefined);
+        assert.strictEqual(decision.shouldNotify, true);
+        assert.deepStrictEqual(decision.nextState, { day: '2026-06-10', thresholdUsd: 10, costUsd: 10 });
+    });
+
+    test('suppresses repeats for the same day and lower thresholds', () => {
+        const state = { day: '2026-06-10', thresholdUsd: 10, costUsd: 11 };
+        assert.strictEqual(evaluateDailyAlert(15, 10, '2026-06-10', state).shouldNotify, false);
+        assert.strictEqual(evaluateDailyAlert(15, 5, '2026-06-10', state).shouldNotify, false);
+    });
+
+    test('allows a higher threshold alert and resets on a new day', () => {
+        const state = { day: '2026-06-10', thresholdUsd: 10, costUsd: 11 };
+        const higher = evaluateDailyAlert(21, 20, '2026-06-10', state);
+        assert.strictEqual(higher.shouldNotify, true);
+        assert.deepStrictEqual(higher.nextState, { day: '2026-06-10', thresholdUsd: 20, costUsd: 21 });
+
+        const nextDay = evaluateDailyAlert(10, 10, '2026-06-11', state);
+        assert.strictEqual(nextDay.shouldNotify, true);
+        assert.deepStrictEqual(nextDay.nextState, { day: '2026-06-11', thresholdUsd: 10, costUsd: 10 });
+    });
+
+    test('threshold zero disables notifications', () => {
+        const decision = evaluateDailyAlert(100, 0, '2026-06-10', undefined);
+        assert.strictEqual(decision.shouldNotify, false);
+        assert.strictEqual(decision.nextState, undefined);
+    });
+});
+
+suite('i18n', () => {
+    test('resolves supported and regional locales', () => {
+        assert.strictEqual(resolveSupportedLocale('en-US'), 'en');
+        assert.strictEqual(resolveSupportedLocale('ja_JP'), 'ja');
+        assert.strictEqual(resolveSupportedLocale('zh-Hans-CN'), 'zh-cn');
+        assert.strictEqual(resolveSupportedLocale('zh-Hant-TW'), 'zh-tw');
+        assert.strictEqual(resolveSupportedLocale('ar-SA'), 'ar');
+        assert.strictEqual(resolveSupportedLocale('de-DE'), 'de');
+        assert.strictEqual(resolveSupportedLocale('es-MX'), 'es');
+        assert.strictEqual(resolveSupportedLocale('fr-CA'), 'fr');
+        assert.strictEqual(resolveSupportedLocale('hi-IN'), 'hi');
+        assert.strictEqual(resolveSupportedLocale('id-ID'), 'id');
+        assert.strictEqual(resolveSupportedLocale('it-IT'), 'it');
+        assert.strictEqual(resolveSupportedLocale('pt-PT'), 'pt-br');
+        assert.strictEqual(resolveSupportedLocale('ru-RU'), 'ru');
+        assert.strictEqual(resolveSupportedLocale('tr-TR'), 'tr');
+        assert.strictEqual(resolveSupportedLocale('fr-FR'), 'fr');
+        assert.strictEqual(resolveSupportedLocale('nl-NL'), 'en');
+    });
+
+    test('translates runtime messages with parameters', () => {
+        const i18n = new I18n('ja');
+        assert.strictEqual(i18n.getCurrentLocale(), 'ja');
+        assert.ok(i18n.t('action.openSettings').includes('設定'));
+        assert.ok(i18n.t('alert.dailyCostExceeded', { total: '$12.34', threshold: '$10.00' }).includes('$12.34'));
+    });
+
+    test('all supported locales have substituted alert messages', () => {
+        for (const locale of SUPPORTED_LOCALES) {
+            const message = new I18n(locale).t('alert.dailyCostExceeded', { total: '$12.34', threshold: '$10.00' });
+            assert.ok(message.includes('$12.34'), locale);
+            assert.ok(message.includes('$10.00'), locale);
+            assert.ok(!message.includes('{total}'), locale);
+            assert.ok(!message.includes('{threshold}'), locale);
+        }
+    });
+});
+
 suite('formatter', () => {
     test('formatCost groups thousands', () => {
         assert.strictEqual(formatCost(12.345), '$12.35');
@@ -181,9 +262,31 @@ suite('formatter', () => {
             available: true,
             show: true,
         };
-        const md = tooltipMarkdown(view, { ...view, show: false }, 'today', new Date(2026, 5, 10, 9, 5));
+        const md = tooltipMarkdown(view, { ...view, show: false }, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
         assert.ok(md.includes('(command:otak-usage.copyUsage'));
         assert.ok(md.includes('Updated 09:05'));
+        assert.ok(!md.includes('RTK'));
+    });
+
+    test('tooltip includes the RTK savings table when stats exist', () => {
+        const view = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const rtk: RtkView = {
+            show: true,
+            stats: {
+                today: emptyRtkPeriod(),
+                month: { commands: 50, inputTokens: 2_000_000, outputTokens: 300_000, savedTokens: 1_700_000 },
+                allTime: { commands: 99, inputTokens: 107_270_123, outputTokens: 17_583_120, savedTokens: 89_719_478 },
+            },
+        };
+        const md = tooltipMarkdown(view, { ...view, show: false }, rtk, 'today', new Date(2026, 5, 10, 9, 5));
+        assert.ok(md.includes('$(zap) **RTK — Token Savings**'));
+        assert.ok(md.includes('| All Time | 107.3M | 17.6M | 89.7M | 83.6% |'));
+        // a period with no commands shows n/a instead of a rate
+        assert.ok(md.includes('| Today | 0 | 0 | 0 | n/a |'));
     });
 
     test('clipboardText lists providers and models in plain text', () => {
@@ -200,10 +303,79 @@ suite('formatter', () => {
             summary: { provider: 'codex' as const, todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] },
             available: false, show: true,
         };
-        const text = clipboardText(claude, codex, new Date(Date.UTC(2026, 5, 10, 12, 0)));
+        const rtk: RtkView = {
+            show: true,
+            stats: {
+                today: { commands: 5, inputTokens: 1000, outputTokens: 100, savedTokens: 900 },
+                month: { commands: 50, inputTokens: 2_000_000, outputTokens: 300_000, savedTokens: 1_700_000 },
+                allTime: { commands: 99, inputTokens: 107_270_123, outputTokens: 17_583_120, savedTokens: 89_719_478 },
+            },
+        };
+        const text = clipboardText(claude, codex, rtk, new Date(Date.UTC(2026, 5, 10, 12, 0)));
         assert.ok(text.includes('Claude Code: today $371.18 / month $2,455.80'));
         assert.ok(text.includes('  claude-fable-5: today $340.49 / month $340.49'));
         assert.ok(text.includes('Codex CLI: logs not found'));
+        assert.ok(text.includes('RTK saved: today 900 (90.0%) / month 1.7M (85.0%) / all-time 89.7M (83.6%)'));
         assert.ok(text.startsWith('otak-usage 2026-06-10 12:00'));
+        // no rtk -> no RTK line
+        assert.ok(!clipboardText(claude, codex, noRtk, new Date(Date.UTC(2026, 5, 10, 12, 0))).includes('RTK'));
+    });
+
+    test('formatTokens uses rtk-style units', () => {
+        assert.strictEqual(formatTokens(0), '0');
+        assert.strictEqual(formatTokens(642), '642');
+        assert.strictEqual(formatTokens(394_400), '394.4K');
+        assert.strictEqual(formatTokens(89_719_478), '89.7M');
+        assert.strictEqual(formatTokens(1_230_000_000), '1.2B');
+    });
+});
+
+suite('rtk', () => {
+    const sample = JSON.stringify({
+        summary: {
+            total_commands: 16318,
+            total_input: 107_270_123,
+            total_output: 17_583_120,
+            total_saved: 89_719_478,
+            avg_savings_pct: 83.6,
+            total_time_ms: 294_153_933,
+            avg_time_ms: 18026,
+        },
+        daily: [
+            { date: '2026-05-02', commands: 6, input_tokens: 713, output_tokens: 71, saved_tokens: 642, savings_pct: 90.0 },
+            { date: '2026-06-01', commands: 10, input_tokens: 5000, output_tokens: 500, saved_tokens: 4500, savings_pct: 90.0 },
+            { date: '2026-06-12', commands: 4, input_tokens: 2000, output_tokens: 1000, saved_tokens: 1000, savings_pct: 50.0 },
+        ],
+    });
+
+    test('parseRtkGain splits today / month / all-time', () => {
+        const stats = parseRtkGain(sample, '2026-06-12');
+        assert.ok(stats);
+        assert.deepStrictEqual(stats.today, { commands: 4, inputTokens: 2000, outputTokens: 1000, savedTokens: 1000 });
+        // month = 06-01 + 06-12; the May entry is excluded
+        assert.deepStrictEqual(stats.month, { commands: 14, inputTokens: 7000, outputTokens: 1500, savedTokens: 5500 });
+        assert.strictEqual(stats.allTime.inputTokens, 107_270_123);
+        assert.strictEqual(stats.allTime.savedTokens, 89_719_478);
+    });
+
+    test('rtkSavingsPct is saved/input, undefined with no input', () => {
+        const stats = parseRtkGain(sample, '2026-06-12');
+        assert.ok(stats);
+        assert.strictEqual(rtkSavingsPct(stats.today), 50);
+        assert.ok(Math.abs((rtkSavingsPct(stats.allTime) ?? 0) - 83.6388) < 1e-3);
+        assert.strictEqual(rtkSavingsPct(emptyRtkPeriod()), undefined);
+    });
+
+    test('summary-only output (no daily array) still parses', () => {
+        const stats = parseRtkGain(JSON.stringify({ summary: { total_commands: 1, total_input: 10, total_output: 2, total_saved: 8 } }), '2026-06-12');
+        assert.ok(stats);
+        assert.strictEqual(stats.allTime.savedTokens, 8);
+        assert.deepStrictEqual(stats.today, emptyRtkPeriod());
+    });
+
+    test('malformed output returns undefined', () => {
+        assert.strictEqual(parseRtkGain('not json', '2026-06-12'), undefined);
+        assert.strictEqual(parseRtkGain('"json but not an object"', '2026-06-12'), undefined);
+        assert.strictEqual(parseRtkGain('{}', '2026-06-12'), undefined);
     });
 });

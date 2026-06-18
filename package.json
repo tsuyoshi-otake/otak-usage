@@ -1,8 +1,8 @@
 {
   "name": "otak-usage",
   "displayName": "otak-usage",
-  "description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
-  "version": "1.0.2",
+  "description": "%extension.description%",
+  "version": "1.2.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -32,17 +32,17 @@
     "commands": [
       {
         "command": "otak-usage.togglePeriod",
-        "title": "Toggle Period (Today / This Month)",
+        "title": "%command.togglePeriod%",
         "category": "Otak Usage"
       },
       {
         "command": "otak-usage.refresh",
-        "title": "Refresh Usage (Clear Cache and Rescan)",
+        "title": "%command.refresh%",
         "category": "Otak Usage"
       },
       {
         "command": "otak-usage.copyUsage",
-        "title": "Copy Usage Summary",
+        "title": "%command.copyUsage%",
         "category": "Otak Usage"
       }
     ],
@@ -56,28 +56,44 @@
             "month"
           ],
           "default": "today",
-          "description": "Aggregation period shown in the status bar."
+          "description": "%config.period%"
         },
         "otakUsage.updateIntervalSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 10,
-          "description": "How often to rescan usage logs, in seconds."
+          "description": "%config.updateIntervalSeconds%"
+        },
+        "otakUsage.dailyAlertThresholdUsd": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "%config.dailyAlertThresholdUsd%"
         },
         "otakUsage.showClaude": {
           "type": "boolean",
           "default": true,
-          "description": "Show Claude Code usage in the status bar."
+          "description": "%config.showClaude%"
         },
         "otakUsage.showCodex": {
           "type": "boolean",
           "default": true,
-          "description": "Show Codex CLI usage in the status bar."
+          "description": "%config.showCodex%"
+        },
+        "otakUsage.showRtk": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showRtk%"
+        },
+        "otakUsage.rtkPath": {
+          "type": "string",
+          "default": "",
+          "description": "%config.rtkPath%"
         },
         "otakUsage.pricingOverrides": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Per-model pricing overrides in USD per million tokens. Example: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. For OpenAI models use `input`, `cachedInput`, and `output`.",
+          "markdownDescription": "%config.pricingOverrides%",
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -102,12 +118,12 @@
         "otakUsage.claudeConfigDir": {
           "type": "string",
           "default": "",
-          "description": "Path to the Claude Code config directory. Empty = $CLAUDE_CONFIG_DIR or ~/.claude."
+          "description": "%config.claudeConfigDir%"
         },
         "otakUsage.codexHome": {
           "type": "string",
           "default": "",
-          "description": "Path to the Codex home directory. Empty = $CODEX_HOME or ~/.codex."
+          "description": "%config.codexHome%"
         }
       }
     }

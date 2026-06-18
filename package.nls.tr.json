@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage, Claude Code ve OpenAI Codex CLI oturumlarının API eşdeğeri maliyetlerini VS Code durum çubuğunda gösterir; bugün ve geçerli ay için model bazlı döküm sağlar.",
+  "command.togglePeriod": "Dönemi Değiştir (Bugün / Bu Ay)",
+  "command.refresh": "Kullanımı Yenile (önbelleği temizle ve yeniden tara)",
+  "command.copyUsage": "Kullanım Özetini Kopyala",
+  "config.period": "Durum çubuğunda gösterilen toplama dönemi.",
+  "config.updateIntervalSeconds": "Kullanım günlüklerinin kaç saniyede bir yeniden taranacağı.",
+  "config.dailyAlertThresholdUsd": "USD cinsinden günlük toplam maliyet uyarı eşiği. Bugünkü Claude + Codex API eşdeğeri maliyeti bu tutara ulaştığında bildirim gösterilir. Devre dışı bırakmak için 0 yapın.",
+  "config.showClaude": "Durum çubuğunda Claude Code kullanımını göster.",
+  "config.showCodex": "Durum çubuğunda Codex CLI kullanımını göster.",
+  "config.showRtk": "Araç ipucunda RTK (Rust Token Killer) token tasarruflarını göster. rtk CLI yüklü değilse bölüm otomatik olarak gizlenir.",
+  "config.rtkPath": "rtk çalıştırılabilir dosyasının yolu. Boş = PATH üzerindeki `rtk`.",
+  "config.pricingOverrides": "Milyon token başına USD cinsinden model bazlı fiyat geçersiz kılmaları. Örnek: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. OpenAI modelleri için `input`, `cachedInput` ve `output` kullanın.",
+  "config.claudeConfigDir": "Claude Code yapılandırma dizininin yolu. Boş = $CLAUDE_CONFIG_DIR veya ~/.claude.",
+  "config.codexHome": "Codex ana dizininin yolu. Boş = $CODEX_HOME veya ~/.codex."
+}

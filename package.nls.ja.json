@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage は Claude Code と OpenAI Codex CLI セッションの API 相当コストを VS Code のステータスバーに表示し、今日と今月のモデル別内訳も確認できます。",
+  "command.togglePeriod": "期間を切り替え（今日 / 今月）",
+  "command.refresh": "使用量を更新（キャッシュをクリアして再スキャン）",
+  "command.copyUsage": "使用量サマリーをコピー",
+  "config.period": "ステータスバーに表示する集計期間。",
+  "config.updateIntervalSeconds": "使用量ログを再スキャンする間隔（秒）。",
+  "config.dailyAlertThresholdUsd": "1日あたりの合計コストアラートしきい値（USD）。今日の Claude + Codex の API 相当コストがこの金額に達すると通知します。0 にすると無効化します。",
+  "config.showClaude": "ステータスバーに Claude Code の使用量を表示します。",
+  "config.showCodex": "ステータスバーに Codex CLI の使用量を表示します。",
+  "config.showRtk": "ツールチップに RTK (Rust Token Killer) のトークン節約量を表示します。rtk CLI が見つからない場合、このセクションは自動的に非表示になります。",
+  "config.rtkPath": "rtk 実行ファイルへのパス。空の場合は PATH 上の `rtk` を使用します。",
+  "config.pricingOverrides": "100万トークンあたり USD のモデル別価格上書き。例: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI モデルでは `input`、`cachedInput`、`output` を使用します。",
+  "config.claudeConfigDir": "Claude Code 設定ディレクトリへのパス。空の場合は $CLAUDE_CONFIG_DIR または ~/.claude を使用します。",
+  "config.codexHome": "Codex ホームディレクトリへのパス。空の場合は $CODEX_HOME または ~/.codex を使用します。"
+}

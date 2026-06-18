@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage exibe os custos equivalentes à API das sessões do Claude Code e do OpenAI Codex CLI na barra de status do VS Code, com detalhamento por modelo para hoje e para o mês atual.",
+  "command.togglePeriod": "Alternar período (Hoje / Este mês)",
+  "command.refresh": "Atualizar uso (limpar cache e verificar novamente)",
+  "command.copyUsage": "Copiar resumo de uso",
+  "config.period": "Período de agregação exibido na barra de status.",
+  "config.updateIntervalSeconds": "Frequência para verificar novamente os logs de uso, em segundos.",
+  "config.dailyAlertThresholdUsd": "Limite de alerta do custo total diário em USD. Uma notificação aparece quando o custo equivalente à API de Claude + Codex hoje atinge esse valor. Defina como 0 para desativar.",
+  "config.showClaude": "Mostrar uso do Claude Code na barra de status.",
+  "config.showCodex": "Mostrar uso do Codex CLI na barra de status.",
+  "config.showRtk": "Mostrar economia de tokens do RTK (Rust Token Killer) no tooltip. A seção é ocultada automaticamente quando a CLI rtk não está instalada.",
+  "config.rtkPath": "Caminho para o executável rtk. Vazio = `rtk` no PATH.",
+  "config.pricingOverrides": "Substituições de preço por modelo em USD por milhão de tokens. Exemplo: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Para modelos OpenAI use `input`, `cachedInput` e `output`.",
+  "config.claudeConfigDir": "Caminho para o diretório de configuração do Claude Code. Vazio = $CLAUDE_CONFIG_DIR ou ~/.claude.",
+  "config.codexHome": "Caminho para o diretório home do Codex. Vazio = $CODEX_HOME ou ~/.codex."
+}

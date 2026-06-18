@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage zeigt die API-äquivalenten Kosten von Claude Code- und OpenAI Codex CLI-Sitzungen in der VS Code-Statusleiste an, mit Aufschlüsselung pro Modell für heute und den aktuellen Monat.",
+  "command.togglePeriod": "Zeitraum umschalten (Heute / Dieser Monat)",
+  "command.refresh": "Nutzung aktualisieren (Cache leeren und neu scannen)",
+  "command.copyUsage": "Nutzungszusammenfassung kopieren",
+  "config.period": "Aggregationszeitraum, der in der Statusleiste angezeigt wird.",
+  "config.updateIntervalSeconds": "Intervall in Sekunden, in dem Nutzungsprotokolle erneut gescannt werden.",
+  "config.dailyAlertThresholdUsd": "Schwellenwert für den täglichen Gesamtkostenalarm in USD. Eine Benachrichtigung erscheint, wenn die heutigen API-äquivalenten Kosten von Claude + Codex diesen Betrag erreichen. Auf 0 setzen, um ihn zu deaktivieren.",
+  "config.showClaude": "Claude Code-Nutzung in der Statusleiste anzeigen.",
+  "config.showCodex": "Codex CLI-Nutzung in der Statusleiste anzeigen.",
+  "config.showRtk": "RTK (Rust Token Killer)-Tokeneinsparungen im Tooltip anzeigen. Der Abschnitt wird automatisch ausgeblendet, wenn die rtk CLI nicht installiert ist.",
+  "config.rtkPath": "Pfad zur rtk-Datei. Leer = `rtk` aus PATH verwenden.",
+  "config.pricingOverrides": "Preisüberschreibungen pro Modell in USD pro Million Token. Beispiel: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Für OpenAI-Modelle `input`, `cachedInput` und `output` verwenden.",
+  "config.claudeConfigDir": "Pfad zum Claude Code-Konfigurationsverzeichnis. Leer = $CLAUDE_CONFIG_DIR oder ~/.claude.",
+  "config.codexHome": "Pfad zum Codex-Home-Verzeichnis. Leer = $CODEX_HOME oder ~/.codex."
+}

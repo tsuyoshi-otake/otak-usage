@@ -3,13 +3,17 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { summarize } from './aggregator';
-import { ScanCacheData, emptyCache, isValidCache } from './cache';
+import { DailyAlertState, evaluateDailyAlert, isValidDailyAlertState, normalizeDailyAlertThresholdUsd, sameDailyAlertState } from './alert';
+import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, clipboardText, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, RtkView, clipboardText, formatCost, statusBarText, tooltipMarkdown } from './formatter';
+import { I18n } from './i18n';
 import { Period, dayKey } from './period';
 import { PricingOverrides } from './pricing';
+import { RtkStats, fetchRtkStats } from './rtk';
 
 const CACHE_KEY = 'otakUsage.scanCache';
+const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -20,12 +24,15 @@ class UsageController implements vscode.Disposable {
     private readonly statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     private timer: NodeJS.Timeout | undefined;
     private cache: ScanCacheData = emptyCache();
-    private dedupe = new Set<string>();
+    private dedupe = new Map<string, DedupeEntry>();
     private scanning = false;
     private initialScanDone = false;
     private focused = true;
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
-    private lastViews: { claude: ProviderView; codex: ProviderView } | undefined;
+    private lastRtkStats: RtkStats | undefined;
+    private lastViews: { claude: ProviderView; codex: ProviderView; rtk: RtkView } | undefined;
+    private dailyAlertState: DailyAlertState | undefined;
+    private readonly i18n = new I18n(vscode.env.language);
 
     constructor(private readonly context: vscode.ExtensionContext) { }
 
@@ -33,6 +40,7 @@ class UsageController implements vscode.Disposable {
         this.statusBarItem.command = 'otak-usage.togglePeriod';
         this.context.subscriptions.push(this.statusBarItem);
         this.loadCache();
+        this.loadDailyAlertState();
         this.statusBarItem.text = '$(loading~spin) usage';
         this.statusBarItem.show();
         this.context.subscriptions.push(
@@ -42,7 +50,7 @@ class UsageController implements vscode.Disposable {
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
                     this.restartTimer();
-                    this.render();
+                    void this.renderAndCheckAlert();
                 }
             }),
             vscode.window.onDidChangeWindowState((state) => {
@@ -105,14 +113,23 @@ class UsageController implements vscode.Disposable {
         }
         this.scanning = true;
         try {
+            const config = this.config();
+            const now = Date.now();
+            const rtkPromise = config.get<boolean>('showRtk', true)
+                ? fetchRtkStats(config.get<string>('rtkPath'), dayKey(now))
+                : Promise.resolve(undefined);
             const targets = await this.resolveTargets();
             this.lastTargets = targets;
-            const changed = await scanAll(this.cache, this.dedupe, targets, Date.now());
+            const [changed, rtkStats] = await Promise.all([
+                scanAll(this.cache, this.dedupe, targets, now),
+                rtkPromise,
+            ]);
+            this.lastRtkStats = rtkStats;
             this.initialScanDone = true;
             if (changed) {
                 await this.saveCache();
             }
-            this.render();
+            await this.renderAndCheckAlert();
         } catch (err) {
             console.error('otak-usage: scan failed', err);
         } finally {
@@ -120,14 +137,16 @@ class UsageController implements vscode.Disposable {
         }
     }
 
-    private render(): void {
+    private render(): { day: string; todayTotalCost: number } | undefined {
         if (!this.initialScanDone) {
-            return;
+            return undefined;
         }
         const config = this.config();
         const overrides = config.get<PricingOverrides>('pricingOverrides', {});
         const period = this.period();
-        const summaries = summarize(this.cache.days, dayKey(Date.now()), overrides);
+        const now = Date.now();
+        const today = dayKey(now);
+        const summaries = summarize(this.cache.days, today, overrides);
         const claude: ProviderView = {
             summary: summaries.claude,
             available: this.lastTargets.claudeAvailable,
@@ -138,27 +157,67 @@ class UsageController implements vscode.Disposable {
             available: this.lastTargets.codexAvailable,
             show: config.get<boolean>('showCodex', true),
         };
-        this.lastViews = { claude, codex };
+        const rtk: RtkView = {
+            stats: this.lastRtkStats,
+            show: config.get<boolean>('showRtk', true),
+        };
+        this.lastViews = { claude, codex, rtk };
         this.statusBarItem.text = statusBarText(claude, codex, period, false);
-        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, period, new Date()));
+        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now)));
         tooltip.supportThemeIcons = true;
         tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
+        return { day: today, todayTotalCost: summaries.claude.todayCost + summaries.codex.todayCost };
+    }
+
+    private async renderAndCheckAlert(): Promise<void> {
+        const snapshot = this.render();
+        if (snapshot) {
+            await this.checkDailyAlert(snapshot.day, snapshot.todayTotalCost);
+        }
+    }
+
+    private async checkDailyAlert(day: string, todayTotalCost: number): Promise<void> {
+        const threshold = normalizeDailyAlertThresholdUsd(this.config().get<unknown>('dailyAlertThresholdUsd'));
+        const decision = evaluateDailyAlert(todayTotalCost, threshold, day, this.dailyAlertState);
+        if (!sameDailyAlertState(this.dailyAlertState, decision.nextState)) {
+            this.dailyAlertState = decision.nextState;
+            await this.context.globalState.update(DAILY_ALERT_STATE_KEY, decision.nextState);
+        }
+        if (!decision.shouldNotify) {
+            return;
+        }
+
+        const openSettings = this.i18n.t('action.openSettings');
+        const message = this.i18n.t('alert.dailyCostExceeded', {
+            total: formatCost(todayTotalCost),
+            threshold: formatCost(threshold),
+        });
+        void this.showDailyAlertNotification(message, openSettings).catch((err) => {
+            console.error('otak-usage: daily alert notification failed', err);
+        });
+    }
+
+    private async showDailyAlertNotification(message: string, openSettings: string): Promise<void> {
+        const selected = await vscode.window.showWarningMessage(message, openSettings);
+        if (selected === openSettings) {
+            await vscode.commands.executeCommand('workbench.action.openSettings', 'otakUsage.dailyAlertThresholdUsd');
+        }
     }
 
     private async copyUsage(): Promise<void> {
         if (!this.lastViews) {
             return;
         }
-        await vscode.env.clipboard.writeText(clipboardText(this.lastViews.claude, this.lastViews.codex, new Date()));
-        vscode.window.setStatusBarMessage('otak-usage: summary copied to clipboard', 3000);
+        await vscode.env.clipboard.writeText(clipboardText(this.lastViews.claude, this.lastViews.codex, this.lastViews.rtk, new Date()));
+        vscode.window.setStatusBarMessage(this.i18n.t('message.summaryCopied'), 3000);
     }
 
     private async togglePeriod(): Promise<void> {
         const next: Period = this.period() === 'today' ? 'month' : 'today';
         await this.config().update('period', next, vscode.ConfigurationTarget.Global);
-        this.render();
+        void this.renderAndCheckAlert();
     }
 
     private async refresh(): Promise<void> {
@@ -174,12 +233,17 @@ class UsageController implements vscode.Disposable {
         const raw = this.context.globalState.get<unknown>(CACHE_KEY);
         if (isValidCache(raw)) {
             this.cache = raw;
-            this.dedupe = new Set(raw.dedupe);
+            this.dedupe = new Map(raw.dedupe.map((r) => [r.k, { day: r.day, bucket: r.bucket, usage: r.usage }]));
         }
     }
 
+    private loadDailyAlertState(): void {
+        const raw = this.context.globalState.get<unknown>(DAILY_ALERT_STATE_KEY);
+        this.dailyAlertState = isValidDailyAlertState(raw) ? raw : undefined;
+    }
+
     private async saveCache(): Promise<void> {
-        this.cache.dedupe = [...this.dedupe];
+        this.cache.dedupe = [...this.dedupe].map(([k, e]) => ({ k, day: e.day, bucket: e.bucket, usage: e.usage }));
         await this.context.globalState.update(CACHE_KEY, this.cache);
     }
 }

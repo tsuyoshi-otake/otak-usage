@@ -1,17 +1,40 @@
 import { ProviderSummary } from './aggregator';
 import { Period } from './period';
+import { RtkPeriodStats, RtkStats, rtkSavingsPct } from './rtk';
 
 export const CLAUDE_ICON = '$(sparkle)';
 export const CODEX_ICON = '⬡';
+export const RTK_ICON = '$(zap)';
 
 export function formatCost(v: number): string {
     return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Human-readable token count in rtk's style: 642, 394.4K, 89.7M, 1.2B. */
+export function formatTokens(n: number): string {
+    const abs = Math.abs(n);
+    for (const [suffix, div] of [['B', 1e9], ['M', 1e6], ['K', 1e3]] as const) {
+        if (abs >= div) {
+            return (n / div).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + suffix;
+        }
+    }
+    return String(n);
+}
+
+function formatPct(pct: number | undefined): string {
+    return pct === undefined ? 'n/a' : pct.toFixed(1) + '%';
 }
 
 export interface ProviderView {
     summary: ProviderSummary;
     /** false when the provider's log directory was not found */
     available: boolean;
+    show: boolean;
+}
+
+export interface RtkView {
+    /** undefined when the rtk CLI is missing or failed — the segment is hidden */
+    stats: RtkStats | undefined;
     show: boolean;
 }
 
@@ -36,13 +59,16 @@ function segmentText(view: ProviderView, period: Period): string {
     return formatCost(period === 'today' ? view.summary.todayCost : view.summary.monthCost);
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, period: Period, updatedAt: Date): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date): string {
     const parts: string[] = ['**otak-usage — API-equivalent cost**\n'];
     if (claude.show) {
         parts.push(providerSection('Claude Code', CLAUDE_ICON, claude));
     }
     if (codex.show) {
         parts.push(providerSection('Codex CLI', CODEX_ICON, codex));
+    }
+    if (rtk.show && rtk.stats) {
+        parts.push(rtkSection(rtk.stats));
     }
     const hh = String(updatedAt.getHours()).padStart(2, '0');
     const mm = String(updatedAt.getMinutes()).padStart(2, '0');
@@ -53,7 +79,7 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, perio
 }
 
 /** Plain-text summary written to the clipboard by the Copy Summary link. */
-export function clipboardText(claude: ProviderView, codex: ProviderView, now: Date): string {
+export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: RtkView, now: Date): string {
     const lines: string[] = [`otak-usage ${now.toISOString().slice(0, 16).replace('T', ' ')} (API-equivalent cost, USD)`];
     for (const [title, view] of [['Claude Code', claude], ['Codex CLI', codex]] as const) {
         if (!view.show) {
@@ -69,6 +95,10 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, now: Da
             const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
             lines.push(`  ${row.model}: today ${today} / month ${month}`);
         }
+    }
+    if (rtk.show && rtk.stats) {
+        const part = (s: RtkPeriodStats) => `${formatTokens(s.savedTokens)} (${formatPct(rtkSavingsPct(s))})`;
+        lines.push(`RTK saved: today ${part(rtk.stats.today)} / month ${part(rtk.stats.month)} / all-time ${part(rtk.stats.allTime)}`);
     }
     return lines.join('\n');
 }
@@ -93,8 +123,16 @@ function providerSection(title: string, icon: string, view: ProviderView): strin
     }
     lines.push(`| **Total** | **${formatCost(view.summary.todayCost)}** | **${formatCost(view.summary.monthCost)}** |`);
     lines.push('');
-    if (view.summary.hasUnknownModel) {
-        lines.push('$(warning) Some models have no known pricing and are counted as $0. Add them to `otakUsage.pricingOverrides`.\n');
+    return lines.join('\n');
+}
+
+function rtkSection(stats: RtkStats): string {
+    const lines: string[] = [`${RTK_ICON} **RTK — Token Savings**\n`];
+    lines.push('| Period | Input | Output | Saved | Rate |');
+    lines.push('| :--- | ---: | ---: | ---: | ---: |');
+    for (const [label, s] of [['Today', stats.today], ['This Month', stats.month], ['All Time', stats.allTime]] as const) {
+        lines.push(`| ${label} | ${formatTokens(s.inputTokens)} | ${formatTokens(s.outputTokens)} | ${formatTokens(s.savedTokens)} | ${formatPct(rtkSavingsPct(s))} |`);
     }
+    lines.push('');
     return lines.join('\n');
 }

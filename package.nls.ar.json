@@ -1,0 +1,16 @@
+{
+  "extension.description": "يعرض Otak Usage التكلفة المكافئة لاستخدام API لجلسات Claude Code وOpenAI Codex CLI في شريط حالة VS Code، مع تفصيل حسب النموذج لليوم الحالي والشهر الحالي.",
+  "command.togglePeriod": "تبديل الفترة (اليوم / هذا الشهر)",
+  "command.refresh": "تحديث الاستخدام (مسح الذاكرة المؤقتة وإعادة الفحص)",
+  "command.copyUsage": "نسخ ملخص الاستخدام",
+  "config.period": "فترة التجميع المعروضة في شريط الحالة.",
+  "config.updateIntervalSeconds": "عدد الثواني بين كل إعادة فحص لسجلات الاستخدام.",
+  "config.dailyAlertThresholdUsd": "حد تنبيه إجمالي التكلفة اليومية بالدولار الأمريكي. يظهر إشعار عندما تصل تكلفة Claude + Codex المكافئة لاستخدام API اليوم إلى هذا المبلغ. عيّنه إلى 0 للتعطيل.",
+  "config.showClaude": "إظهار استخدام Claude Code في شريط الحالة.",
+  "config.showCodex": "إظهار استخدام Codex CLI في شريط الحالة.",
+  "config.showRtk": "إظهار توفير رموز RTK (Rust Token Killer) في التلميح. يتم إخفاء هذا القسم تلقائيًا عندما لا يكون rtk CLI مثبتًا.",
+  "config.rtkPath": "مسار ملف rtk التنفيذي. فارغ = استخدام `rtk` من PATH.",
+  "config.pricingOverrides": "تجاوزات الأسعار حسب النموذج بالدولار الأمريكي لكل مليون رمز. مثال: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. لنماذج OpenAI استخدم `input` و`cachedInput` و`output`.",
+  "config.claudeConfigDir": "مسار مجلد إعدادات Claude Code. فارغ = $CLAUDE_CONFIG_DIR أو ~/.claude.",
+  "config.codexHome": "مسار مجلد Codex الرئيسي. فارغ = $CODEX_HOME أو ~/.codex."
+}

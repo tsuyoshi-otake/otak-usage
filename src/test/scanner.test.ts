@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { emptyCache } from '../cache';
+import { DedupeEntry, emptyCache } from '../cache';
 import { scanAll } from '../engine';
 import { parseClaudeLine } from '../scanner/claudeScanner';
 import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
@@ -151,13 +151,15 @@ suite('engine.scanAll', () => {
         const now = new Date(nowMs);
         const pad = (n: number) => String(n).padStart(2, '0');
 
-        // Claude fixture: same message written twice (two content blocks) -> dedupe to one
+        // Claude fixture: one request streamed as a partial snapshot (output 1)
+        // then a final record (output 1000) -> last-wins keeps 1000, not 1, and
+        // input is not doubled.
         const claudeDir = path.join(root, 'claude');
         const projectDir = path.join(claudeDir, 'projects', 'p1');
         fs.mkdirSync(projectDir, { recursive: true });
         const claudeFile = path.join(projectDir, 's1.jsonl');
         fs.writeFileSync(claudeFile,
-            claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1000 }) + '\n' +
+            claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1 }) + '\n' +
             claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1000 }) + '\n');
 
         // Codex fixture under sessions/YYYY/MM/DD
@@ -165,18 +167,21 @@ suite('engine.scanAll', () => {
         const dayDir = path.join(codexHome, 'sessions', String(now.getFullYear()), pad(now.getMonth() + 1), pad(now.getDate()));
         fs.mkdirSync(dayDir, { recursive: true });
         const codexFile = path.join(dayDir, 'rollout-x.jsonl');
+        // Same token_count written twice (identical timestamp+tokens) -> dedupe to one
         fs.writeFileSync(codexFile,
             JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }) + '\n' +
+            codexTokenCount(iso, 1000, 600, 50) + '\n' +
             codexTokenCount(iso, 1000, 600, 50) + '\n');
 
         const cache = emptyCache();
-        const dedupe = new Set<string>();
+        const dedupe = new Map<string, DedupeEntry>();
         const changed = await scanAll(cache, dedupe, { claudeDir, codexHome }, nowMs);
         assert.strictEqual(changed, true);
 
         const day = Object.keys(cache.days)[0];
         const claudeUsage = cache.days[day]['claude/claude-opus-4-8'];
-        assert.strictEqual(claudeUsage.output, 1000); // deduped, not 2000
+        assert.strictEqual(claudeUsage.output, 1000); // last-wins final, not the partial 1
+        assert.strictEqual(claudeUsage.input, 100); // replaced, not doubled to 200
         const codexUsage = cache.days[day]['codex/gpt-5.5'];
         assert.strictEqual(codexUsage.input, 400);
         assert.strictEqual(codexUsage.cachedInput, 600);

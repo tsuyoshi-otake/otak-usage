@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage menampilkan biaya setara API untuk sesi Claude Code dan OpenAI Codex CLI di status bar VS Code, dengan rincian per model untuk hari ini dan bulan berjalan.",
+  "command.togglePeriod": "Ganti Periode (Hari Ini / Bulan Ini)",
+  "command.refresh": "Segarkan Penggunaan (hapus cache dan pindai ulang)",
+  "command.copyUsage": "Salin Ringkasan Penggunaan",
+  "config.period": "Periode agregasi yang ditampilkan di status bar.",
+  "config.updateIntervalSeconds": "Seberapa sering log penggunaan dipindai ulang, dalam detik.",
+  "config.dailyAlertThresholdUsd": "Ambang peringatan total biaya harian dalam USD. Notifikasi muncul saat biaya setara API Claude + Codex hari ini mencapai jumlah ini. Atur ke 0 untuk menonaktifkan.",
+  "config.showClaude": "Tampilkan penggunaan Claude Code di status bar.",
+  "config.showCodex": "Tampilkan penggunaan Codex CLI di status bar.",
+  "config.showRtk": "Tampilkan penghematan token RTK (Rust Token Killer) di tooltip. Bagian ini otomatis disembunyikan saat CLI rtk tidak terpasang.",
+  "config.rtkPath": "Path ke executable rtk. Kosong = `rtk` di PATH.",
+  "config.pricingOverrides": "Override harga per model dalam USD per satu juta token. Contoh: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Untuk model OpenAI gunakan `input`, `cachedInput`, dan `output`.",
+  "config.claudeConfigDir": "Path ke direktori konfigurasi Claude Code. Kosong = $CLAUDE_CONFIG_DIR atau ~/.claude.",
+  "config.codexHome": "Path ke direktori home Codex. Kosong = $CODEX_HOME atau ~/.codex."
+}

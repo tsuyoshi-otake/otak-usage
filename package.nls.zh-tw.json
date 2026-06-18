@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage 會在 VS Code 狀態列顯示 Claude Code 與 OpenAI Codex CLI 工作階段的 API 等效成本，並提供今天與本月的模型別明細。",
+  "command.togglePeriod": "切換期間（今天 / 本月）",
+  "command.refresh": "重新整理用量（清除快取並重新掃描）",
+  "command.copyUsage": "複製用量摘要",
+  "config.period": "狀態列中顯示的彙總期間。",
+  "config.updateIntervalSeconds": "重新掃描用量記錄的間隔（秒）。",
+  "config.dailyAlertThresholdUsd": "每日總成本提醒門檻（美元）。當今天的 Claude + Codex API 等效成本達到此金額時會顯示通知。設為 0 可停用。",
+  "config.showClaude": "在狀態列中顯示 Claude Code 用量。",
+  "config.showCodex": "在狀態列中顯示 Codex CLI 用量。",
+  "config.showRtk": "在工具提示中顯示 RTK (Rust Token Killer) 權杖節省量。找不到 rtk CLI 時會自動隱藏此區段。",
+  "config.rtkPath": "rtk 執行檔路徑。留空表示使用 PATH 中的 `rtk`。",
+  "config.pricingOverrides": "依模型覆寫價格，單位為每百萬權杖的美元價格。範例：`{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI 模型請使用 `input`、`cachedInput` 和 `output`。",
+  "config.claudeConfigDir": "Claude Code 設定目錄路徑。留空表示使用 $CLAUDE_CONFIG_DIR 或 ~/.claude。",
+  "config.codexHome": "Codex 主目錄路徑。留空表示使用 $CODEX_HOME 或 ~/.codex。"
+}

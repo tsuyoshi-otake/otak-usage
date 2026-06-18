@@ -39,6 +39,20 @@ export function addUsage(target: TokenUsage, source: TokenUsage): void {
     target.output += source.output;
 }
 
+/** Reverse a prior addUsage so a superseded record's contribution can be replaced. */
+export function subtractUsage(target: TokenUsage, source: TokenUsage): void {
+    target.input -= source.input;
+    target.cachedInput -= source.cachedInput;
+    target.cacheRead -= source.cacheRead;
+    target.cacheWrite5m -= source.cacheWrite5m;
+    target.cacheWrite1h -= source.cacheWrite1h;
+    target.output -= source.output;
+}
+
+export function totalTokens(u: TokenUsage): number {
+    return u.input + u.cachedInput + u.cacheRead + u.cacheWrite5m + u.cacheWrite1h + u.output;
+}
+
 export function bucketKey(provider: Provider, model: string): string {
     return `${provider}/${model}`;
 }

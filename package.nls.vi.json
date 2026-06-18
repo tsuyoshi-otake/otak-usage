@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage hiển thị chi phí tương đương API của các phiên Claude Code và OpenAI Codex CLI trên thanh trạng thái VS Code, kèm phân tích theo từng mô hình cho hôm nay và tháng hiện tại.",
+  "command.togglePeriod": "Chuyển kỳ (Hôm nay / Tháng này)",
+  "command.refresh": "Làm mới mức sử dụng (xóa cache và quét lại)",
+  "command.copyUsage": "Sao chép tóm tắt sử dụng",
+  "config.period": "Kỳ tổng hợp hiển thị trên thanh trạng thái.",
+  "config.updateIntervalSeconds": "Tần suất quét lại nhật ký sử dụng, tính bằng giây.",
+  "config.dailyAlertThresholdUsd": "Ngưỡng cảnh báo tổng chi phí hằng ngày bằng USD. Thông báo sẽ xuất hiện khi chi phí tương đương API của Claude + Codex hôm nay đạt mức này. Đặt 0 để tắt.",
+  "config.showClaude": "Hiển thị mức sử dụng Claude Code trên thanh trạng thái.",
+  "config.showCodex": "Hiển thị mức sử dụng Codex CLI trên thanh trạng thái.",
+  "config.showRtk": "Hiển thị lượng token tiết kiệm của RTK (Rust Token Killer) trong tooltip. Phần này tự động ẩn khi không tìm thấy CLI rtk.",
+  "config.rtkPath": "Đường dẫn tới tệp thực thi rtk. Để trống = dùng `rtk` trong PATH.",
+  "config.pricingOverrides": "Ghi đè giá theo từng mô hình, tính bằng USD trên mỗi triệu token. Ví dụ: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Với mô hình OpenAI, dùng `input`, `cachedInput` và `output`.",
+  "config.claudeConfigDir": "Đường dẫn tới thư mục cấu hình Claude Code. Để trống = $CLAUDE_CONFIG_DIR hoặc ~/.claude.",
+  "config.codexHome": "Đường dẫn tới thư mục chính của Codex. Để trống = $CODEX_HOME hoặc ~/.codex."
+}

@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage показывает API-эквивалентные затраты сеансов Claude Code и OpenAI Codex CLI в строке состояния VS Code, с разбивкой по моделям за сегодня и за текущий месяц.",
+  "command.togglePeriod": "Переключить период (Сегодня / Этот месяц)",
+  "command.refresh": "Обновить использование (очистить кэш и просканировать заново)",
+  "command.copyUsage": "Скопировать сводку использования",
+  "config.period": "Период агрегации, отображаемый в строке состояния.",
+  "config.updateIntervalSeconds": "Как часто повторно сканировать журналы использования, в секундах.",
+  "config.dailyAlertThresholdUsd": "Порог предупреждения о суммарных дневных затратах в USD. Уведомление появляется, когда сегодняшняя API-эквивалентная стоимость Claude + Codex достигает этой суммы. Установите 0 для отключения.",
+  "config.showClaude": "Показывать использование Claude Code в строке состояния.",
+  "config.showCodex": "Показывать использование Codex CLI в строке состояния.",
+  "config.showRtk": "Показывать экономию токенов RTK (Rust Token Killer) во всплывающей подсказке. Раздел автоматически скрывается, если CLI rtk не установлен.",
+  "config.rtkPath": "Путь к исполняемому файлу rtk. Пусто = `rtk` из PATH.",
+  "config.pricingOverrides": "Переопределение цен по моделям в USD за миллион токенов. Пример: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Для моделей OpenAI используйте `input`, `cachedInput` и `output`.",
+  "config.claudeConfigDir": "Путь к каталогу конфигурации Claude Code. Пусто = $CLAUDE_CONFIG_DIR или ~/.claude.",
+  "config.codexHome": "Путь к домашнему каталогу Codex. Пусто = $CODEX_HOME или ~/.codex."
+}

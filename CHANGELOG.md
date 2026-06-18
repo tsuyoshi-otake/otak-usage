@@ -2,6 +2,24 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Daily combined Claude + Codex cost alert (`otakUsage.dailyAlertThresholdUsd`, default `$10.00`). When today's API-equivalent total reaches the threshold, VS Code shows a notification with an action to open the setting; `0` disables the alert.
+- Localization for extension settings, commands, and runtime alert/status messages in G20 major locales: English, Arabic, German, Spanish, French, Hindi, Indonesian, Italian, Japanese, Korean, Brazilian Portuguese, Russian, Turkish, Simplified Chinese, Traditional Chinese, plus Vietnamese.
+
+## [1.1.0] - 2026-06-12
+
+### Added
+- RTK (Rust Token Killer) integration: when the `rtk` CLI is installed, the tooltip shows a `⚡` Token Savings table (Input / Output / Saved / Rate for Today, This Month, and All Time) and the Copy Summary output gains an `RTK saved:` line. Data comes from `rtk gain --daily --format json`; the section is hidden automatically when rtk is not installed. New settings: `otakUsage.showRtk`, `otakUsage.rtkPath`.
+
+### Removed
+- The "Some models have no known pricing" warning in the tooltip. Unknown models still appear with `n/a` costs and can be priced via `otakUsage.pricingOverrides`.
+
+### Fixed
+- Claude streaming partials are no longer double-counted: when the final record of a request supersedes an earlier partial snapshot, the earlier contribution is replaced instead of dropped or added twice (scan cache v3, re-ingests the current month).
+- Codex turns logged twice are now deduplicated by timestamp + token tuple.
+
 ## [1.0.2] - 2026-06-10
 
 ### Added

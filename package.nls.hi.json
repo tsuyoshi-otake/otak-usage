@@ -1,0 +1,16 @@
+{
+  "extension.description": "Otak Usage Claude Code और OpenAI Codex CLI सत्रों की API-समतुल्य लागत VS Code status bar में दिखाता है, आज और वर्तमान महीने के लिए प्रति-मॉडल विवरण के साथ।",
+  "command.togglePeriod": "अवधि बदलें (आज / यह महीना)",
+  "command.refresh": "उपयोग रीफ्रेश करें (कैश साफ करें और फिर से स्कैन करें)",
+  "command.copyUsage": "उपयोग सारांश कॉपी करें",
+  "config.period": "status bar में दिखाई जाने वाली aggregation अवधि।",
+  "config.updateIntervalSeconds": "उपयोग लॉग को फिर से स्कैन करने की आवृत्ति, सेकंड में।",
+  "config.dailyAlertThresholdUsd": "USD में दैनिक कुल लागत alert सीमा। जब आज की Claude + Codex API-समतुल्य लागत इस राशि तक पहुंचती है तो notification दिखाई देता है। अक्षम करने के लिए 0 सेट करें।",
+  "config.showClaude": "status bar में Claude Code उपयोग दिखाएं।",
+  "config.showCodex": "status bar में Codex CLI उपयोग दिखाएं।",
+  "config.showRtk": "tooltip में RTK (Rust Token Killer) token savings दिखाएं। rtk CLI installed न होने पर यह section अपने आप छिप जाता है।",
+  "config.rtkPath": "rtk executable का path। खाली = PATH में मौजूद `rtk`।",
+  "config.pricingOverrides": "प्रति मिलियन tokens USD में प्रति-मॉडल pricing overrides। उदाहरण: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`। OpenAI models के लिए `input`, `cachedInput`, और `output` इस्तेमाल करें।",
+  "config.claudeConfigDir": "Claude Code config directory का path। खाली = $CLAUDE_CONFIG_DIR या ~/.claude।",
+  "config.codexHome": "Codex home directory का path। खाली = $CODEX_HOME या ~/.codex।"
+}
