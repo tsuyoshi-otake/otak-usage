@@ -184,7 +184,7 @@ class UsageController implements vscode.Disposable {
         };
         this.lastViews = { claude, codex, rtk };
         this.statusBarItem.text = statusBarText(claude, codex, period, false);
-        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now)));
+        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n));
         tooltip.supportThemeIcons = true;
         tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage'] };
         this.statusBarItem.tooltip = tooltip;

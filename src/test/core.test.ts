@@ -297,6 +297,62 @@ suite('formatter', () => {
         assert.ok(md.includes('$(zap) **RTK — Token Savings**'));
     });
 
+    test('tooltip includes the combined OpenAI and Claude total', () => {
+        const claude = {
+            summary: { provider: 'claude' as const, todayCost: 12.34, monthCost: 24.68, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const codex = {
+            summary: { provider: 'codex' as const, todayCost: 5, monthCost: 10, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+
+        const md = tooltipMarkdown(claude, codex, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
+        assert.ok(md.includes('**OpenAI + Claude Total**'));
+        assert.ok(md.includes('| **$17.34** | **$34.68** |'));
+
+        const unavailableMd = tooltipMarkdown(claude, { ...codex, available: false }, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
+        assert.ok(!unavailableMd.includes('**OpenAI + Claude Total**'));
+    });
+
+    test('tooltip localizes runtime labels', () => {
+        const row = {
+            model: 'claude-fable-5',
+            todayUsage: emptyUsage(), monthUsage: emptyUsage(),
+            todayCost: 12.34, monthCost: 24.68,
+        };
+        const claude = {
+            summary: { provider: 'claude' as const, todayCost: 12.34, monthCost: 24.68, hasUnknownModel: false, models: [row] },
+            available: true,
+            show: true,
+        };
+        const codex = {
+            summary: { provider: 'codex' as const, todayCost: 5, monthCost: 10, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const rtk: RtkView = {
+            show: true,
+            stats: {
+                today: emptyRtkPeriod(),
+                month: { commands: 50, inputTokens: 2_000_000, outputTokens: 300_000, savedTokens: 1_700_000 },
+                allTime: { commands: 99, inputTokens: 107_270_123, outputTokens: 17_583_120, savedTokens: 89_719_478 },
+            },
+        };
+
+        const md = tooltipMarkdown(claude, codex, rtk, 'month', new Date(2026, 5, 10, 9, 5), new I18n('ja'));
+        assert.ok(md.includes('**otak-usage — API 相当コスト**'));
+        assert.ok(md.includes('**OpenAI + Claude 合計**'));
+        assert.ok(md.includes('| モデル | 本日 | 今月 |'));
+        assert.ok(md.includes('| **合計** | **$12.34** | **$24.68** |'));
+        assert.ok(md.includes('期間: **今月** · 更新 09:05 · クリックして期間を切り替え'));
+        assert.ok(md.includes('[$(copy) サマリーをコピー]'));
+        assert.ok(md.includes('$(zap) **RTK — トークン節約量**'));
+        assert.ok(md.includes('| 全期間 | 107.3M | 17.6M | 89.7M | 83.6% |'));
+    });
+
     test('tooltip contains the copy command link', () => {
         const view = {
             summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },

@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.2.4] - 2026-06-19
+
+### Added
+- The tooltip now shows the combined OpenAI + Claude total for today and this month.
+- Runtime tooltip labels are localized across the supported locales, including totals, period labels, table headers, empty/unavailable states, copy-summary text, and RTK table labels.
+
 ## [1.2.3] - 2026-06-19
 
 ### Added

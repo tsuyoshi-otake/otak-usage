@@ -1,10 +1,13 @@
 import { ProviderSummary } from './aggregator';
+import { I18n } from './i18n';
 import { Period } from './period';
 import { RtkPeriodStats, RtkStats, rtkSavingsPct } from './rtk';
 
 export const CLAUDE_ICON = '$(sparkle)';
 export const CODEX_ICON = '⬡';
 export const RTK_ICON = '$(zap)';
+
+const DEFAULT_I18N = new I18n('en');
 
 export function formatCost(v: number): string {
     return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -53,23 +56,39 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date): string {
-    const parts: string[] = ['**otak-usage — API-equivalent cost**\n'];
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N): string {
+    const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
+    const combined = combinedCostSection(claude, codex, i18n);
+    if (combined) {
+        parts.push(combined);
+    }
     if (claude.show) {
-        parts.push(providerSection('Claude Code', CLAUDE_ICON, claude));
+        parts.push(providerSection('Claude Code', CLAUDE_ICON, claude, i18n));
     }
     if (codex.show) {
-        parts.push(providerSection('Codex CLI', CODEX_ICON, codex));
+        parts.push(providerSection('Codex CLI', CODEX_ICON, codex, i18n));
     }
     if (rtk.show && rtk.stats) {
-        parts.push(rtkSection(rtk.stats));
+        parts.push(rtkSection(rtk.stats, i18n));
     }
     const hh = String(updatedAt.getHours()).padStart(2, '0');
     const mm = String(updatedAt.getMinutes()).padStart(2, '0');
-    const periodLabel = period === 'today' ? 'Today' : 'This Month';
-    parts.push(`---\n\nPeriod: **${periodLabel}** · Updated ${hh}:${mm} · Click to toggle period\n`);
-    parts.push('[$(copy) Copy Summary](command:otak-usage.copyUsage "Copy the usage summary to the clipboard")');
+    const periodLabel = period === 'today' ? i18n.t('tooltip.today') : i18n.t('tooltip.thisMonth');
+    parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
+    parts.push(`[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")`);
     return parts.join('\n');
+}
+
+function combinedCostSection(claude: ProviderView, codex: ProviderView, i18n: I18n): string | undefined {
+    if (!claude.show || !codex.show || !claude.available || !codex.available) {
+        return undefined;
+    }
+    const lines: string[] = [`**${i18n.t('tooltip.combinedTotal')}**\n`];
+    lines.push(`| ${i18n.t('tooltip.today')} | ${i18n.t('tooltip.thisMonth')} |`);
+    lines.push('| ---: | ---: |');
+    lines.push(`| **${formatCost(claude.summary.todayCost + codex.summary.todayCost)}** | **${formatCost(claude.summary.monthCost + codex.summary.monthCost)}** |`);
+    lines.push('');
+    return lines.join('\n');
 }
 
 /** Plain-text summary written to the clipboard by the Copy Summary link. */
@@ -97,34 +116,34 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
     return lines.join('\n');
 }
 
-function providerSection(title: string, icon: string, view: ProviderView): string {
+function providerSection(title: string, icon: string, view: ProviderView, i18n: I18n): string {
     const lines: string[] = [`${icon} **${title}**\n`];
     if (!view.available) {
-        lines.push('_Log directory not found._\n');
+        lines.push(`_${i18n.t('tooltip.logDirectoryNotFound')}_\n`);
         return lines.join('\n');
     }
     const models = view.summary.models;
     if (models.length === 0) {
-        lines.push('_No usage this month._\n');
+        lines.push(`_${i18n.t('tooltip.noUsageThisMonth')}_\n`);
         return lines.join('\n');
     }
-    lines.push('| Model | Today | This Month |');
+    lines.push(`| ${i18n.t('tooltip.model')} | ${i18n.t('tooltip.today')} | ${i18n.t('tooltip.thisMonth')} |`);
     lines.push('| :--- | ---: | ---: |');
     for (const row of models) {
         const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
         const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
         lines.push(`| ${row.model} | ${today} | ${month} |`);
     }
-    lines.push(`| **Total** | **${formatCost(view.summary.todayCost)}** | **${formatCost(view.summary.monthCost)}** |`);
+    lines.push(`| **${i18n.t('tooltip.total')}** | **${formatCost(view.summary.todayCost)}** | **${formatCost(view.summary.monthCost)}** |`);
     lines.push('');
     return lines.join('\n');
 }
 
-function rtkSection(stats: RtkStats): string {
-    const lines: string[] = [`${RTK_ICON} **RTK — Token Savings**\n`];
-    lines.push('| Period | Input | Output | Saved | Rate |');
+function rtkSection(stats: RtkStats, i18n: I18n): string {
+    const lines: string[] = [`${RTK_ICON} **${i18n.t('tooltip.rtkTitle')}**\n`];
+    lines.push(`| ${i18n.t('tooltip.period')} | ${i18n.t('tooltip.input')} | ${i18n.t('tooltip.output')} | ${i18n.t('tooltip.saved')} | ${i18n.t('tooltip.rate')} |`);
     lines.push('| :--- | ---: | ---: | ---: | ---: |');
-    for (const [label, s] of [['Today', stats.today], ['This Month', stats.month], ['All Time', stats.allTime]] as const) {
+    for (const [label, s] of [[i18n.t('tooltip.today'), stats.today], [i18n.t('tooltip.thisMonth'), stats.month], [i18n.t('tooltip.allTime'), stats.allTime]] as const) {
         lines.push(`| ${label} | ${formatTokens(s.inputTokens)} | ${formatTokens(s.outputTokens)} | ${formatTokens(s.savedTokens)} | ${formatPct(rtkSavingsPct(s))} |`);
     }
     lines.push('');
