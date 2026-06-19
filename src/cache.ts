@@ -4,9 +4,11 @@ import { DayBuckets, TokenUsage } from './types';
  * v2: fast-mode Claude usage moved to "<model>-fast" buckets.
  * v3: dedupe records carry the counted usage so a later (final) Claude
  * snapshot can supersede an earlier partial one instead of being dropped.
+ * v4: force a one-time re-ingest after 1.2.0 installs that may have retained
+ * stale file offsets while cost rendering was blocked by RTK stats refresh.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 3;
+export const CACHE_VERSION = 4;
 
 export interface FileState {
     size: number;

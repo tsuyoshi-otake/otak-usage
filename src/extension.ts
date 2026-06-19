@@ -26,6 +26,7 @@ class UsageController implements vscode.Disposable {
     private cache: ScanCacheData = emptyCache();
     private dedupe = new Map<string, DedupeEntry>();
     private scanning = false;
+    private rtkFetching = false;
     private initialScanDone = false;
     private focused = true;
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
@@ -113,27 +114,47 @@ class UsageController implements vscode.Disposable {
         }
         this.scanning = true;
         try {
-            const config = this.config();
             const now = Date.now();
-            const rtkPromise = config.get<boolean>('showRtk', true)
-                ? fetchRtkStats(config.get<string>('rtkPath'), dayKey(now))
-                : Promise.resolve(undefined);
             const targets = await this.resolveTargets();
             this.lastTargets = targets;
-            const [changed, rtkStats] = await Promise.all([
-                scanAll(this.cache, this.dedupe, targets, now),
-                rtkPromise,
-            ]);
-            this.lastRtkStats = rtkStats;
+            const changed = await scanAll(this.cache, this.dedupe, targets, now);
             this.initialScanDone = true;
             if (changed) {
                 await this.saveCache();
             }
             await this.renderAndCheckAlert();
+            void this.refreshRtkStats(dayKey(now));
         } catch (err) {
             console.error('otak-usage: scan failed', err);
         } finally {
             this.scanning = false;
+        }
+    }
+
+    private async refreshRtkStats(today: string): Promise<void> {
+        let fetching = false;
+        try {
+            const config = this.config();
+            if (!config.get<boolean>('showRtk', true)) {
+                if (this.lastRtkStats !== undefined) {
+                    this.lastRtkStats = undefined;
+                    this.render();
+                }
+                return;
+            }
+            if (this.rtkFetching) {
+                return;
+            }
+            this.rtkFetching = true;
+            fetching = true;
+            this.lastRtkStats = await fetchRtkStats(config.get<string>('rtkPath'), today);
+            this.render();
+        } catch (err) {
+            console.error('otak-usage: rtk stats failed', err);
+        } finally {
+            if (fetching) {
+                this.rtkFetching = false;
+            }
         }
     }
 
