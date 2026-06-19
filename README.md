@@ -9,7 +9,7 @@
 
 1. Install the extension - a cost readout appears on the right side of the status bar:
 
-   `✦ $12.34  ⬡ $5.67` (✦ Claude Code / ⬡ Codex CLI)
+   `$18.01` (Claude Code + Codex CLI total)
 
 2. Hover for a per-model breakdown of today and the current month
 3. Click to toggle the displayed period between **Today** and **This Month**
@@ -25,10 +25,10 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 - **Two providers, one glance**:
   - Claude Code (`~/.claude/projects/**/*.jsonl`)
   - OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`)
-  - Either one alone works fine - a missing tool shows as `—`
+  - The status bar shows the combined API-equivalent cost for the selected period; either one alone works fine
 
 - **RTK token savings** (optional):
-  - If the [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) CLI is installed, the tooltip adds a `⚡` Token Savings table - Input / Output / Saved / Rate for Today, This Month, and All Time (data comes from `rtk gain --daily --format json`)
+  - If the [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) CLI is installed, the tooltip adds a Token Savings table - Input / Output / Saved / Rate for Today, This Month, and All Time (data comes from `rtk gain --daily --format json`)
   - The section appears only when `rtk` is found - without it, nothing changes
 
 - **Daily cost alert**:
@@ -69,9 +69,9 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
 | `otakUsage.period` | `today` | Aggregation period shown in the status bar (`today` / `month`) |
 | `otakUsage.updateIntervalSeconds` | `60` | How often to rescan the logs (minimum 10) |
 | `otakUsage.dailyAlertThresholdUsd` | `10` | Daily combined Claude + Codex cost threshold in USD. A notification appears when today's total reaches this amount; set to `0` to disable |
-| `otakUsage.showClaude` | `true` | Show the Claude Code segment |
-| `otakUsage.showCodex` | `true` | Show the Codex CLI segment |
-| `otakUsage.showRtk` | `true` | Show the RTK token-savings table in the tooltip (auto-hidden when the `rtk` CLI is not installed) |
+| `otakUsage.showClaude` | `true` | Include Claude Code usage in the status bar total, tooltip, and copied summary |
+| `otakUsage.showCodex` | `true` | Include Codex CLI usage in the status bar total, tooltip, and copied summary |
+| `otakUsage.showRtk` | `true` | Show the RTK token-savings tooltip table (auto-hidden when the `rtk` CLI is not installed) |
 | `otakUsage.rtkPath` | `""` | Path to the rtk executable (empty = `rtk` on PATH) |
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, e.g. `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}` |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config dir (empty = `$CLAUDE_CONFIG_DIR` or `~/.claude`) |

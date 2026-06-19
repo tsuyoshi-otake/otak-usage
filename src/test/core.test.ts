@@ -238,22 +238,63 @@ suite('formatter', () => {
         assert.strictEqual(formatCost(1234.5), '$1,234.50');
     });
 
-    test('status bar shows both providers and em-dash when unavailable', () => {
+    test('status bar shows the selected-period total for visible available providers', () => {
         const summary = (cost: number) => ({
             provider: 'claude' as const, todayCost: cost, monthCost: cost * 2, hasUnknownModel: false, models: [],
         });
         const text = statusBarText(
             { summary: summary(12.34), available: true, show: true },
-            { summary: summary(5), available: false, show: true },
+            { summary: summary(5), available: true, show: true },
             'today', false,
         );
-        assert.strictEqual(text, '$(sparkle) $12.34  ⬡ —');
+        assert.strictEqual(text, '$17.34');
         const monthText = statusBarText(
             { summary: summary(12.34), available: true, show: true },
-            { summary: summary(5), available: false, show: false },
+            { summary: summary(5), available: true, show: false },
             'month', false,
         );
-        assert.strictEqual(monthText, '$(sparkle) $24.68');
+        assert.strictEqual(monthText, '$24.68');
+    });
+
+    test('status bar excludes unavailable providers and RTK stats', () => {
+        const summary = (cost: number) => ({
+            provider: 'claude' as const, todayCost: cost, monthCost: cost * 2, hasUnknownModel: false, models: [],
+        });
+        const rtk: RtkView = {
+            show: true,
+            stats: {
+                today: { commands: 5, inputTokens: 1000, outputTokens: 100, savedTokens: 900 },
+                month: { commands: 50, inputTokens: 2_000_000, outputTokens: 300_000, savedTokens: 1_700_000 },
+                allTime: { commands: 99, inputTokens: 107_270_123, outputTokens: 17_583_120, savedTokens: 89_719_478 },
+            },
+        };
+
+        assert.strictEqual(statusBarText(
+            { summary: summary(12.34), available: true, show: true },
+            { summary: summary(5), available: false, show: true },
+            'today', false,
+        ), '$12.34');
+
+        assert.strictEqual(statusBarText(
+            { summary: summary(12.34), available: true, show: false },
+            { summary: summary(5), available: true, show: false },
+            'month', false,
+        ), '—');
+
+        assert.strictEqual(statusBarText(
+            { summary: summary(12.34), available: true, show: true },
+            { summary: summary(5), available: true, show: true },
+            'today', true,
+        ), '$(loading~spin) usage');
+
+        const md = tooltipMarkdown(
+            { summary: summary(12.34), available: true, show: false },
+            { summary: summary(5), available: true, show: false },
+            rtk,
+            'today',
+            new Date(2026, 5, 10, 9, 5),
+        );
+        assert.ok(md.includes('$(zap) **RTK — Token Savings**'));
     });
 
     test('tooltip contains the copy command link', () => {

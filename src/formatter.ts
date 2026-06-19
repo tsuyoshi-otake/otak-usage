@@ -42,21 +42,15 @@ export function statusBarText(claude: ProviderView, codex: ProviderView, period:
     if (scanning) {
         return '$(loading~spin) usage';
     }
-    const segments: string[] = [];
-    if (claude.show) {
-        segments.push(`${CLAUDE_ICON} ${segmentText(claude, period)}`);
-    }
-    if (codex.show) {
-        segments.push(`${CODEX_ICON} ${segmentText(codex, period)}`);
-    }
-    return segments.join('  ');
-}
-
-function segmentText(view: ProviderView, period: Period): string {
-    if (!view.available) {
+    const visibleProviders = [claude, codex].filter((view) => view.show && view.available);
+    if (visibleProviders.length === 0) {
         return '—';
     }
-    return formatCost(period === 'today' ? view.summary.todayCost : view.summary.monthCost);
+    return formatCost(visibleProviders.reduce((total, view) => total + periodCost(view, period), 0));
+}
+
+function periodCost(view: ProviderView, period: Period): number {
+    return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
 export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date): string {

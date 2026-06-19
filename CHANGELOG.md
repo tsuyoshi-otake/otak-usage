@@ -2,11 +2,14 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
-## [Unreleased]
+## [1.2.3] - 2026-06-19
 
 ### Added
 - Daily combined Claude + Codex cost alert (`otakUsage.dailyAlertThresholdUsd`, default `$10.00`). When today's API-equivalent total reaches the threshold, VS Code shows a notification with an action to open the setting; `0` disables the alert.
 - Localization for extension settings, commands, and runtime alert/status messages in G20 major locales: English, Arabic, German, Spanish, French, Hindi, Indonesian, Italian, Japanese, Korean, Brazilian Portuguese, Russian, Turkish, Simplified Chinese, Traditional Chinese, plus Vietnamese.
+
+### Fixed
+- The status bar now shows only the selected-period Claude + Codex total. RTK token savings stay in the tooltip and copied summary.
 
 ## [1.1.0] - 2026-06-12
 
