@@ -1,10 +1,10 @@
 import { addEvent, pruneDaysBefore } from './aggregator';
-import { DedupeEntry, FileState, ScanCacheData, setDedupe } from './cache';
+import { DedupeEntry, FileState, ScanCacheData, pruneDedupeBefore, setDedupe } from './cache';
 import { dayKey, startOfMonth } from './period';
 import { UsageEvent, bucketKey, subtractUsage, totalTokens } from './types';
-import { readNewLines } from './scanner/jsonlReader';
-import { ScannedFile, listClaudeFiles, parseClaudeLine } from './scanner/claudeScanner';
-import { CodexParseState, listCodexFiles, parseCodexLine } from './scanner/codexScanner';
+import { visitNewLines } from './scanner/jsonlReader';
+import { ScannedFile, iterClaudeFiles, parseClaudeLine } from './scanner/claudeScanner';
+import { CodexParseState, iterCodexFiles, parseCodexLine } from './scanner/codexScanner';
 
 export interface ScanTargets {
     /** undefined = provider directory not found / disabled */
@@ -21,13 +21,21 @@ export async function scanAll(cache: ScanCacheData, dedupe: Map<string, DedupeEn
     const monthStartMs = startOfMonth(nowMs);
     const monthStartDay = dayKey(monthStartMs);
     let changed = pruneDaysBefore(cache.days, monthStartDay);
+    changed = pruneDedupeBefore(dedupe, monthStartDay) || changed;
 
-    const [claudeFiles, codexFiles] = await Promise.all([
-        targets.claudeDir ? listClaudeFiles(targets.claudeDir, monthStartMs) : Promise.resolve([]),
-        targets.codexHome ? listCodexFiles(targets.codexHome, nowMs, monthStartMs) : Promise.resolve([]),
+    const [claudeChanged, codexChanged] = await Promise.all([
+        targets.claudeDir ? scanClaudeFiles(cache, dedupe, iterClaudeFiles(targets.claudeDir, monthStartMs), monthStartMs) : Promise.resolve(false),
+        targets.codexHome ? scanCodexFiles(cache, dedupe, iterCodexFiles(targets.codexHome, nowMs, monthStartMs), monthStartMs) : Promise.resolve(false),
     ]);
 
-    for (const file of claudeFiles) {
+    changed = claudeChanged || codexChanged || changed;
+    changed = pruneStaleFileStates(cache, monthStartMs) || changed;
+    return changed;
+}
+
+async function scanClaudeFiles(cache: ScanCacheData, dedupe: Map<string, DedupeEntry>, files: AsyncIterable<ScannedFile>, monthStartMs: number): Promise<boolean> {
+    let changed = false;
+    for await (const file of files) {
         changed = (await ingestFile(cache, file, (line) => {
             const parsed = parseClaudeLine(line);
             if (!parsed || parsed.event.timestamp < monthStartMs) {
@@ -61,8 +69,12 @@ export async function scanAll(cache: ScanCacheData, dedupe: Map<string, DedupeEn
             return undefined; // handled directly; never double-add
         })) || changed;
     }
+    return changed;
+}
 
-    for (const file of codexFiles) {
+async function scanCodexFiles(cache: ScanCacheData, dedupe: Map<string, DedupeEntry>, files: AsyncIterable<ScannedFile>, monthStartMs: number): Promise<boolean> {
+    let changed = false;
+    for await (const file of files) {
         changed = (await ingestFile(cache, file, (line, state) => {
             const parseState: CodexParseState = { lastModel: state.lastModel };
             const event = parseCodexLine(line, parseState);
@@ -87,8 +99,6 @@ export async function scanAll(cache: ScanCacheData, dedupe: Map<string, DedupeEn
             return event;
         })) || changed;
     }
-
-    changed = pruneStaleFileStates(cache, monthStartMs) || changed;
     return changed;
 }
 
@@ -112,15 +122,14 @@ async function ingestFile(cache: ScanCacheData, file: ScannedFile, handle: LineH
     const next: FileState = state ?? { size: 0, mtimeMs: 0, offset: 0 };
     let result;
     try {
-        result = await readNewLines(file.path, next.offset);
+        result = await visitNewLines(file.path, next.offset, (line) => {
+            const event = handle(line, next);
+            if (event) {
+                addEvent(cache.days, event);
+            }
+        });
     } catch {
         return false; // unreadable right now; retry next tick
-    }
-    for (const line of result.lines) {
-        const event = handle(line, next);
-        if (event) {
-            addEvent(cache.days, event);
-        }
     }
     next.size = file.size;
     next.mtimeMs = file.mtimeMs;

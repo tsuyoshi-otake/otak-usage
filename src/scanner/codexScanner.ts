@@ -10,12 +10,18 @@ import { ScannedFile } from './claudeScanner';
  * directories are date-structured: <codexHome>/sessions/YYYY/MM/DD/rollout-*.jsonl.
  */
 export async function listCodexFiles(codexHome: string, nowMs: number, minMtimeMs: number): Promise<ScannedFile[]> {
+    const out: ScannedFile[] = [];
+    for await (const file of iterCodexFiles(codexHome, nowMs, minMtimeMs)) {
+        out.push(file);
+    }
+    return out;
+}
+
+export async function* iterCodexFiles(codexHome: string, nowMs: number, minMtimeMs: number): AsyncGenerator<ScannedFile> {
     const now = new Date(nowMs);
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const out: ScannedFile[] = [];
-    await walkMonth(monthDir(codexHome, now), 0, out);
-    await walkMonth(monthDir(codexHome, prev), minMtimeMs, out);
-    return out;
+    yield* walkMonth(monthDir(codexHome, now), 0);
+    yield* walkMonth(monthDir(codexHome, prev), minMtimeMs);
 }
 
 function monthDir(codexHome: string, d: Date): string {
@@ -23,37 +29,45 @@ function monthDir(codexHome: string, d: Date): string {
     return path.join(codexHome, 'sessions', String(d.getFullYear()), mm);
 }
 
-async function walkMonth(dir: string, minMtimeMs: number, out: ScannedFile[]): Promise<void> {
-    let dayDirs;
+async function* walkMonth(dir: string, minMtimeMs: number): AsyncGenerator<ScannedFile> {
+    let monthHandle: Awaited<ReturnType<typeof fsp.opendir>>;
     try {
-        dayDirs = await fsp.readdir(dir, { withFileTypes: true });
+        monthHandle = await fsp.opendir(dir);
     } catch {
         return;
     }
-    for (const dayDir of dayDirs) {
-        if (!dayDir.isDirectory()) {
-            continue;
-        }
-        let files;
-        try {
-            files = await fsp.readdir(path.join(dir, dayDir.name), { withFileTypes: true });
-        } catch {
-            continue;
-        }
-        for (const file of files) {
-            if (!file.isFile() || !file.name.endsWith('.jsonl')) {
+    try {
+        for await (const dayDir of monthHandle) {
+            if (!dayDir.isDirectory()) {
                 continue;
             }
-            const p = path.join(dir, dayDir.name, file.name);
+            let dayHandle: Awaited<ReturnType<typeof fsp.opendir>>;
             try {
-                const st = await fsp.stat(p);
-                if (st.mtimeMs >= minMtimeMs) {
-                    out.push({ path: p, size: st.size, mtimeMs: st.mtimeMs });
+                dayHandle = await fsp.opendir(path.join(dir, dayDir.name));
+            } catch {
+                continue;
+            }
+            try {
+                for await (const file of dayHandle) {
+                    if (!file.isFile() || !file.name.endsWith('.jsonl')) {
+                        continue;
+                    }
+                    const p = path.join(dir, dayDir.name, file.name);
+                    try {
+                        const st = await fsp.stat(p);
+                        if (st.mtimeMs >= minMtimeMs) {
+                            yield { path: p, size: st.size, mtimeMs: st.mtimeMs };
+                        }
+                    } catch {
+                        // file vanished between opendir and stat
+                    }
                 }
             } catch {
-                // file vanished between readdir and stat
+                continue; // day directory changed while scanning
             }
         }
+    } catch {
+        return; // month directory changed while scanning
     }
 }
 

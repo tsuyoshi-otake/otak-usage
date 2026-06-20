@@ -264,7 +264,11 @@ class UsageController implements vscode.Disposable {
     }
 
     private async saveCache(): Promise<void> {
-        this.cache.dedupe = [...this.dedupe].map(([k, e]) => ({ k, day: e.day, bucket: e.bucket, usage: e.usage }));
+        const dedupeRecords: ScanCacheData['dedupe'] = [];
+        for (const [k, e] of this.dedupe) {
+            dedupeRecords.push({ k, day: e.day, bucket: e.bucket, usage: e.usage });
+        }
+        this.cache.dedupe = dedupeRecords;
         await this.context.globalState.update(CACHE_KEY, this.cache);
     }
 }

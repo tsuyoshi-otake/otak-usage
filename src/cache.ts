@@ -72,3 +72,15 @@ export function setDedupe(dedupe: Map<string, DedupeEntry>, key: string, entry: 
         }
     }
 }
+
+/** Drop dedupe entries that can no longer affect retained day buckets. */
+export function pruneDedupeBefore(dedupe: Map<string, DedupeEntry>, minDay: string): boolean {
+    let pruned = false;
+    for (const [key, entry] of dedupe) {
+        if (entry.day < minDay) {
+            dedupe.delete(key);
+            pruned = true;
+        }
+    }
+    return pruned;
+}

@@ -45,8 +45,9 @@ otak-usage is a lightweight VS Code extension that reads the local session logs 
   - Unknown models count as $0 (shown as `n/a` per model) - add prices via `otakUsage.pricingOverrides`
 
 - **Fast and incremental**:
-  - Only files modified in the current month are considered; only new bytes are read
-  - Scan state persists across VS Code restarts (full rescan happens once, ever)
+  - Only files modified in the current month are considered; only new bytes are streamed from each file
+  - JSONL scanning avoids retaining whole unread files or line lists in memory
+  - Scan state persists across VS Code restarts, so refreshes reuse cached offsets after the initial scan
   - Steady-state refresh takes milliseconds even with gigabytes of logs
   - Polling slows down automatically when the window is unfocused
 

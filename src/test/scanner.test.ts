@@ -6,7 +6,7 @@ import { DedupeEntry, emptyCache } from '../cache';
 import { scanAll } from '../engine';
 import { parseClaudeLine } from '../scanner/claudeScanner';
 import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
-import { readNewLines } from '../scanner/jsonlReader';
+import { readNewLines, visitNewLines } from '../scanner/jsonlReader';
 
 function claudeLine(opts: { id: string; requestId: string; model?: string; iso: string; output?: number; speed?: string }): string {
     return JSON.stringify({
@@ -141,6 +141,31 @@ suite('jsonlReader', () => {
         assert.strictEqual(r.lines[1], line);
         fs.rmSync(dir, { recursive: true, force: true });
     });
+
+    test('visitor reads complete lines without changing offset semantics', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-'));
+        const file = path.join(dir, 'c.jsonl');
+        fs.writeFileSync(file, 'one\ntwo\npartial');
+        const lines: string[] = [];
+        const result = await visitNewLines(file, 0, (line) => lines.push(line));
+        assert.deepStrictEqual(lines, ['one', 'two']);
+        assert.strictEqual(result.lineCount, 2);
+        assert.strictEqual(result.newOffset, 'one\ntwo\n'.length);
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    test('visitor errors reject the read', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-'));
+        const file = path.join(dir, 'd.jsonl');
+        fs.writeFileSync(file, 'one\ntwo\n');
+        await assert.rejects(
+            visitNewLines(file, 0, () => {
+                throw new Error('visitor failed');
+            }),
+            /visitor failed/,
+        );
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
 });
 
 suite('engine.scanAll', () => {
@@ -196,5 +221,27 @@ suite('engine.scanAll', () => {
         assert.strictEqual(cache.days[day]['codex/gpt-5.5'].output, 60);
 
         fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('prunes dedupe entries older than the retained month', async () => {
+        const cache = emptyCache();
+        const dedupe = new Map<string, DedupeEntry>([
+            ['old', {
+                day: '2026-05-31',
+                bucket: 'codex/gpt-5.5',
+                usage: { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 },
+            }],
+            ['current', {
+                day: '2026-06-01',
+                bucket: 'codex/gpt-5.5',
+                usage: { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 },
+            }],
+        ]);
+
+        const changed = await scanAll(cache, dedupe, {}, new Date(2026, 5, 10).getTime());
+
+        assert.strictEqual(changed, true);
+        assert.strictEqual(dedupe.has('old'), false);
+        assert.strictEqual(dedupe.has('current'), true);
     });
 });

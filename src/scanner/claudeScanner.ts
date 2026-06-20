@@ -16,31 +16,41 @@ export interface ScannedFile {
  */
 export async function listClaudeFiles(claudeDir: string, minMtimeMs: number): Promise<ScannedFile[]> {
     const out: ScannedFile[] = [];
-    await walk(path.join(claudeDir, 'projects'), minMtimeMs, out);
+    for await (const file of iterClaudeFiles(claudeDir, minMtimeMs)) {
+        out.push(file);
+    }
     return out;
 }
 
-async function walk(dir: string, minMtimeMs: number, out: ScannedFile[]): Promise<void> {
-    let entries;
+export async function* iterClaudeFiles(claudeDir: string, minMtimeMs: number): AsyncGenerator<ScannedFile> {
+    yield* walk(path.join(claudeDir, 'projects'), minMtimeMs);
+}
+
+async function* walk(dir: string, minMtimeMs: number): AsyncGenerator<ScannedFile> {
+    let dirHandle: Awaited<ReturnType<typeof fsp.opendir>>;
     try {
-        entries = await fsp.readdir(dir, { withFileTypes: true });
+        dirHandle = await fsp.opendir(dir);
     } catch {
         return; // directory missing is a normal case
     }
-    for (const entry of entries) {
-        const p = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            await walk(p, minMtimeMs, out);
-        } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-            try {
-                const st = await fsp.stat(p);
-                if (st.mtimeMs >= minMtimeMs) {
-                    out.push({ path: p, size: st.size, mtimeMs: st.mtimeMs });
+    try {
+        for await (const entry of dirHandle) {
+            const p = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                yield* walk(p, minMtimeMs);
+            } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+                try {
+                    const st = await fsp.stat(p);
+                    if (st.mtimeMs >= minMtimeMs) {
+                        yield { path: p, size: st.size, mtimeMs: st.mtimeMs };
+                    }
+                } catch {
+                    // file vanished between opendir and stat
                 }
-            } catch {
-                // file vanished between readdir and stat
             }
         }
+    } catch {
+        return; // directory changed while scanning
     }
 }
 
