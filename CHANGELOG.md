@@ -2,6 +2,23 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.3.2] - 2026-06-24
+
+### Added
+- Choose which contents to export as telemetry via individual checkboxes: `otakUsage.telemetry.includeTokenUsage`, `includeCost`, and `includeRtkTokens`. All on by default.
+- New `otak_usage.cost.usd` metric (Sum, cumulative, USD) — month-to-date API-equivalent cost per model, labelled `gen_ai.system` / `gen_ai.response.model`. Unknown-priced models are skipped.
+
+## [1.3.1] - 2026-06-24
+
+### Added
+- `otakUsage.telemetry.serviceInstanceId` — a free-form source identifier (any string) you set yourself, exported as the OpenTelemetry `service.instance.id` resource attribute so you can tell apart where the telemetry came from. Empty = not sent.
+
+## [1.3.0] - 2026-06-24
+
+### Added
+- Optional OpenTelemetry usage telemetry. Enable `otakUsage.telemetry.enabled` to export aggregate metrics to an OTLP/HTTP endpoint (local Collector, Grafana Cloud, Honeycomb, …) as OTLP/JSON — no SDK dependency added. Labels follow the OpenTelemetry GenAI semantic conventions (`gen_ai.client.token.usage` with `gen_ai.system` / `gen_ai.response.model` / `gen_ai.token.type`, plus `otak_usage.rtk.tokens`). Configurable endpoint, custom headers (for auth), and `service.name`. Off by default; only aggregate token counts are sent, never prompt content.
+- A **Settings** link in the tooltip that opens the otak-usage telemetry settings.
+
 ## [1.2.4] - 2026-06-19
 
 ### Added

@@ -12,5 +12,13 @@
   "config.rtkPath": "rtk 実行ファイルへのパス。空の場合は PATH 上の `rtk` を使用します。",
   "config.pricingOverrides": "100万トークンあたり USD のモデル別価格上書き。例: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI モデルでは `input`、`cachedInput`、`output` を使用します。",
   "config.claudeConfigDir": "Claude Code 設定ディレクトリへのパス。空の場合は $CLAUDE_CONFIG_DIR または ~/.claude を使用します。",
-  "config.codexHome": "Codex ホームディレクトリへのパス。空の場合は $CODEX_HOME または ~/.codex を使用します。"
+  "config.codexHome": "Codex ホームディレクトリへのパス。空の場合は $CODEX_HOME または ~/.codex を使用します。",
+  "config.telemetryEnabled": "OpenTelemetry (OTLP/HTTP) エンドポイントへ、OpenTelemetry GenAI セマンティック規約に準拠したラベル付きで使用量テレメトリーを送信します。既定では無効です。",
+  "config.telemetryEndpoint": "テレメトリー送信先の OTLP/HTTP ベースエンドポイント。例: `http://localhost:4318`。`/v1/metrics` パスは自動で付与されます。",
+  "config.telemetryHeaders": "各テレメトリーリクエストに付与する追加 HTTP ヘッダ。例: Grafana Cloud や Honeycomb 向けの `{ \"Authorization\": \"Bearer <token>\" }`。",
+  "config.telemetryServiceName": "送信するテレメトリーに使用する OpenTelemetry の `service.name` リソース属性。",
+  "config.telemetryServiceInstanceId": "送信元を識別するための任意の文字列（自由入力）。OpenTelemetry の `service.instance.id` リソース属性として送信され、どの送信元から来たテレメトリーかを区別できます。空の場合は送信しません。",
+  "config.telemetryIncludeTokenUsage": "テレメトリーにモデル別のトークン使用量 (`gen_ai.client.token.usage`) を含めます。",
+  "config.telemetryIncludeCost": "テレメトリーにモデル別の API 相当コスト（USD、`otak_usage.cost.usd`）を含めます。",
+  "config.telemetryIncludeRtkTokens": "テレメトリーに RTK のトークン節約量 (`otak_usage.rtk.tokens`) を含めます。"
 }

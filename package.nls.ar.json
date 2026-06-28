@@ -12,5 +12,13 @@
   "config.rtkPath": "مسار ملف rtk التنفيذي. فارغ = استخدام `rtk` من PATH.",
   "config.pricingOverrides": "تجاوزات الأسعار حسب النموذج بالدولار الأمريكي لكل مليون رمز. مثال: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. لنماذج OpenAI استخدم `input` و`cachedInput` و`output`.",
   "config.claudeConfigDir": "مسار مجلد إعدادات Claude Code. فارغ = $CLAUDE_CONFIG_DIR أو ~/.claude.",
-  "config.codexHome": "مسار مجلد Codex الرئيسي. فارغ = $CODEX_HOME أو ~/.codex."
+  "config.codexHome": "مسار مجلد Codex الرئيسي. فارغ = $CODEX_HOME أو ~/.codex.",
+  "config.telemetryEnabled": "إرسال بيانات الاستخدام عن بُعد إلى نقطة نهاية OpenTelemetry (OTLP/HTTP) مع تسميات تتبع اصطلاحات OpenTelemetry GenAI الدلالية. معطّل افتراضيًا.",
+  "config.telemetryEndpoint": "نقطة نهاية OTLP/HTTP الأساسية للقياس عن بُعد، مثل `http://localhost:4318`. يُضاف المسار `/v1/metrics` تلقائيًا.",
+  "config.telemetryHeaders": "ترويسات HTTP إضافية تُرسل مع كل طلب قياس عن بُعد، مثل `{ \"Authorization\": \"Bearer <token>\" }` لخدمة Grafana Cloud أو Honeycomb.",
+  "config.telemetryServiceName": "سمة المورد `service.name` في OpenTelemetry المستخدمة للقياس عن بُعد المُصدَّر.",
+  "config.telemetryServiceInstanceId": "معرّف مصدر حر تختاره (أي نص)، يُصدَّر كسمة المورد `service.instance.id` في OpenTelemetry لتمييز مصدر القياس عن بُعد. فارغ = لا يُرسَل.",
+  "config.telemetryIncludeTokenUsage": "تضمين استخدام الرموز لكل نموذج (`gen_ai.client.token.usage`) في القياس عن بُعد.",
+  "config.telemetryIncludeCost": "تضمين التكلفة المكافئة لواجهة API بالدولار لكل نموذج (`otak_usage.cost.usd`) في القياس عن بُعد.",
+  "config.telemetryIncludeRtkTokens": "تضمين توفير رموز RTK (`otak_usage.rtk.tokens`) في القياس عن بُعد."
 }

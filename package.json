@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.2.5",
+  "version": "1.3.3",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -124,6 +124,49 @@
           "type": "string",
           "default": "",
           "description": "%config.codexHome%"
+        },
+        "otakUsage.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.telemetryEnabled%"
+        },
+        "otakUsage.telemetry.includeTokenUsage": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.telemetryIncludeTokenUsage%"
+        },
+        "otakUsage.telemetry.includeCost": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.telemetryIncludeCost%"
+        },
+        "otakUsage.telemetry.includeRtkTokens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.telemetryIncludeRtkTokens%"
+        },
+        "otakUsage.telemetry.endpoint": {
+          "type": "string",
+          "default": "http://localhost:4318",
+          "markdownDescription": "%config.telemetryEndpoint%"
+        },
+        "otakUsage.telemetry.headers": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "%config.telemetryHeaders%"
+        },
+        "otakUsage.telemetry.serviceName": {
+          "type": "string",
+          "default": "otak-usage",
+          "description": "%config.telemetryServiceName%"
+        },
+        "otakUsage.telemetry.serviceInstanceId": {
+          "type": "string",
+          "default": "",
+          "description": "%config.telemetryServiceInstanceId%"
         }
       }
     }

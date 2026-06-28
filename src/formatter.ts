@@ -75,7 +75,11 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     const mm = String(updatedAt.getMinutes()).padStart(2, '0');
     const periodLabel = period === 'today' ? i18n.t('tooltip.today') : i18n.t('tooltip.thisMonth');
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
-    parts.push(`[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")`);
+    const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage.telemetry']));
+    parts.push(
+        `[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")` +
+        ` · [$(gear) ${i18n.t('tooltip.settings')}](command:workbench.action.openSettings?${settingsArg} "${i18n.t('tooltip.settingsTitle')}")`,
+    );
     return parts.join('\n');
 }
 

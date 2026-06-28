@@ -2,15 +2,17 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
-import { summarize } from './aggregator';
+import { ProviderSummary, summarize } from './aggregator';
 import { DailyAlertState, evaluateDailyAlert, isValidDailyAlertState, normalizeDailyAlertThresholdUsd, sameDailyAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
 import { ProviderView, RtkView, clipboardText, formatCost, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
-import { Period, dayKey } from './period';
+import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
+import { TelemetryConfig, TelemetryMetric, exportTelemetry } from './telemetry';
+import { Provider } from './types';
 
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
@@ -32,6 +34,7 @@ class UsageController implements vscode.Disposable {
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
     private lastRtkStats: RtkStats | undefined;
     private lastViews: { claude: ProviderView; codex: ProviderView; rtk: RtkView } | undefined;
+    private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
     private readonly i18n = new I18n(vscode.env.language);
 
@@ -124,6 +127,7 @@ class UsageController implements vscode.Disposable {
             }
             await this.renderAndCheckAlert();
             void this.refreshRtkStats(dayKey(now));
+            void this.exportTelemetry(now);
         } catch (err) {
             console.error('otak-usage: scan failed', err);
         } finally {
@@ -158,6 +162,46 @@ class UsageController implements vscode.Disposable {
         }
     }
 
+    private telemetryConfig(): TelemetryConfig {
+        const tel = vscode.workspace.getConfiguration('otakUsage.telemetry');
+        const metrics: TelemetryMetric[] = [];
+        if (tel.get<boolean>('includeTokenUsage', true)) {
+            metrics.push('tokenUsage');
+        }
+        if (tel.get<boolean>('includeCost', true)) {
+            metrics.push('cost');
+        }
+        if (tel.get<boolean>('includeRtkTokens', true)) {
+            metrics.push('rtkTokens');
+        }
+        return {
+            enabled: tel.get<boolean>('enabled', false),
+            metrics,
+            endpoint: tel.get<string>('endpoint', 'http://localhost:4318'),
+            headers: tel.get<Record<string, string>>('headers', {}),
+            serviceName: tel.get<string>('serviceName', 'otak-usage'),
+            serviceVersion: this.context.extension?.packageJSON?.version ?? '0.0.0',
+            serviceInstanceId: tel.get<string>('serviceInstanceId', ''),
+        };
+    }
+
+    private async exportTelemetry(nowMs: number): Promise<void> {
+        const config = this.telemetryConfig();
+        if (!config.enabled || !this.lastSummaries) {
+            return;
+        }
+        try {
+            await exportTelemetry(config, {
+                timestampMs: nowMs,
+                windowStartMs: startOfMonth(nowMs),
+                summaries: this.lastSummaries,
+                rtk: this.lastRtkStats,
+            });
+        } catch (err) {
+            console.error('otak-usage: telemetry export failed', err);
+        }
+    }
+
     private render(): { day: string; todayTotalCost: number } | undefined {
         if (!this.initialScanDone) {
             return undefined;
@@ -168,6 +212,7 @@ class UsageController implements vscode.Disposable {
         const now = Date.now();
         const today = dayKey(now);
         const summaries = summarize(this.cache.days, today, overrides);
+        this.lastSummaries = summaries;
         const claude: ProviderView = {
             summary: summaries.claude,
             available: this.lastTargets.claudeAvailable,
@@ -186,7 +231,7 @@ class UsageController implements vscode.Disposable {
         this.statusBarItem.text = statusBarText(claude, codex, period, false);
         const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n));
         tooltip.supportThemeIcons = true;
-        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage'] };
+        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'workbench.action.openSettings'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
         return { day: today, todayTotalCost: summaries.claude.todayCost + summaries.codex.todayCost };

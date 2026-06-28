@@ -12,5 +12,13 @@
   "config.rtkPath": "Путь к исполняемому файлу rtk. Пусто = `rtk` из PATH.",
   "config.pricingOverrides": "Переопределение цен по моделям в USD за миллион токенов. Пример: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Для моделей OpenAI используйте `input`, `cachedInput` и `output`.",
   "config.claudeConfigDir": "Путь к каталогу конфигурации Claude Code. Пусто = $CLAUDE_CONFIG_DIR или ~/.claude.",
-  "config.codexHome": "Путь к домашнему каталогу Codex. Пусто = $CODEX_HOME или ~/.codex."
+  "config.codexHome": "Путь к домашнему каталогу Codex. Пусто = $CODEX_HOME или ~/.codex.",
+  "config.telemetryEnabled": "Отправлять телеметрию использования на конечную точку OpenTelemetry (OTLP/HTTP) с метками по семантическим соглашениям OpenTelemetry GenAI. По умолчанию отключено.",
+  "config.telemetryEndpoint": "Базовая конечная точка OTLP/HTTP для телеметрии, напр. `http://localhost:4318`. Путь `/v1/metrics` добавляется автоматически.",
+  "config.telemetryHeaders": "Дополнительные HTTP-заголовки, отправляемые с каждым запросом телеметрии, напр. `{ \"Authorization\": \"Bearer <token>\" }` для Grafana Cloud или Honeycomb.",
+  "config.telemetryServiceName": "Атрибут ресурса OpenTelemetry `service.name`, используемый для экспортируемой телеметрии.",
+  "config.telemetryServiceInstanceId": "Произвольный идентификатор источника на ваш выбор (любая строка), экспортируется как атрибут ресурса OpenTelemetry `service.instance.id`, чтобы различать источник телеметрии. Пусто = не отправляется.",
+  "config.telemetryIncludeTokenUsage": "Включать в телеметрию использование токенов по моделям (`gen_ai.client.token.usage`).",
+  "config.telemetryIncludeCost": "Включать в телеметрию эквивалентную API стоимость в USD по моделям (`otak_usage.cost.usd`).",
+  "config.telemetryIncludeRtkTokens": "Включать в телеметрию экономию токенов RTK (`otak_usage.rtk.tokens`)."
 }

@@ -12,5 +12,13 @@
   "config.rtkPath": "Path ke executable rtk. Kosong = `rtk` di PATH.",
   "config.pricingOverrides": "Override harga per model dalam USD per satu juta token. Contoh: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Untuk model OpenAI gunakan `input`, `cachedInput`, dan `output`.",
   "config.claudeConfigDir": "Path ke direktori konfigurasi Claude Code. Kosong = $CLAUDE_CONFIG_DIR atau ~/.claude.",
-  "config.codexHome": "Path ke direktori home Codex. Kosong = $CODEX_HOME atau ~/.codex."
+  "config.codexHome": "Path ke direktori home Codex. Kosong = $CODEX_HOME atau ~/.codex.",
+  "config.telemetryEnabled": "Kirim telemetri penggunaan ke endpoint OpenTelemetry (OTLP/HTTP), dengan label yang mengikuti konvensi semantik OpenTelemetry GenAI. Nonaktif secara default.",
+  "config.telemetryEndpoint": "Endpoint dasar OTLP/HTTP untuk telemetri, mis. `http://localhost:4318`. Path `/v1/metrics` ditambahkan otomatis.",
+  "config.telemetryHeaders": "Header HTTP tambahan yang dikirim pada setiap permintaan telemetri, mis. `{ \"Authorization\": \"Bearer <token>\" }` untuk Grafana Cloud atau Honeycomb.",
+  "config.telemetryServiceName": "Atribut resource OpenTelemetry `service.name` yang digunakan untuk telemetri yang diekspor.",
+  "config.telemetryServiceInstanceId": "Pengidentifikasi sumber bebas pilihan Anda (string apa pun), diekspor sebagai atribut resource OpenTelemetry `service.instance.id` untuk membedakan asal telemetri. Kosong = tidak dikirim.",
+  "config.telemetryIncludeTokenUsage": "Sertakan penggunaan token per model (`gen_ai.client.token.usage`) dalam telemetri.",
+  "config.telemetryIncludeCost": "Sertakan biaya setara API dalam USD per model (`otak_usage.cost.usd`) dalam telemetri.",
+  "config.telemetryIncludeRtkTokens": "Sertakan penghematan token RTK (`otak_usage.rtk.tokens`) dalam telemetri."
 }

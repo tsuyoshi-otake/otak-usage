@@ -12,5 +12,13 @@
   "config.rtkPath": "rtk 可执行文件路径。留空表示使用 PATH 中的 `rtk`。",
   "config.pricingOverrides": "按模型覆盖价格，单位为每百万令牌的美元价格。示例：`{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI 模型请使用 `input`、`cachedInput` 和 `output`。",
   "config.claudeConfigDir": "Claude Code 配置目录路径。留空表示使用 $CLAUDE_CONFIG_DIR 或 ~/.claude。",
-  "config.codexHome": "Codex 主目录路径。留空表示使用 $CODEX_HOME 或 ~/.codex。"
+  "config.codexHome": "Codex 主目录路径。留空表示使用 $CODEX_HOME 或 ~/.codex。",
+  "config.telemetryEnabled": "将使用量遥测发送到 OpenTelemetry (OTLP/HTTP) 端点，并使用符合 OpenTelemetry GenAI 语义约定的标签。默认禁用。",
+  "config.telemetryEndpoint": "遥测的 OTLP/HTTP 基础端点，例如 `http://localhost:4318`。会自动追加 `/v1/metrics` 路径。",
+  "config.telemetryHeaders": "随每个遥测请求发送的额外 HTTP 头，例如用于 Grafana Cloud 或 Honeycomb 的 `{ \"Authorization\": \"Bearer <token>\" }`。",
+  "config.telemetryServiceName": "用于导出遥测的 OpenTelemetry `service.name` 资源属性。",
+  "config.telemetryServiceInstanceId": "由你自定义的来源标识（任意字符串），作为 OpenTelemetry 的 `service.instance.id` 资源属性发送，用于区分遥测来自哪个来源。留空则不发送。",
+  "config.telemetryIncludeTokenUsage": "在遥测中包含按模型的 Token 使用量（`gen_ai.client.token.usage`）。",
+  "config.telemetryIncludeCost": "在遥测中包含按模型的 API 等效费用（美元，`otak_usage.cost.usd`）。",
+  "config.telemetryIncludeRtkTokens": "在遥测中包含 RTK Token 节省（`otak_usage.rtk.tokens`）。"
 }

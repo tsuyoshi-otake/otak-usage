@@ -12,5 +12,13 @@
   "config.rtkPath": "rtk executable का path। खाली = PATH में मौजूद `rtk`।",
   "config.pricingOverrides": "प्रति मिलियन tokens USD में प्रति-मॉडल pricing overrides। उदाहरण: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`। OpenAI models के लिए `input`, `cachedInput`, और `output` इस्तेमाल करें।",
   "config.claudeConfigDir": "Claude Code config directory का path। खाली = $CLAUDE_CONFIG_DIR या ~/.claude।",
-  "config.codexHome": "Codex home directory का path। खाली = $CODEX_HOME या ~/.codex।"
+  "config.codexHome": "Codex home directory का path। खाली = $CODEX_HOME या ~/.codex।",
+  "config.telemetryEnabled": "OpenTelemetry (OTLP/HTTP) एंडपॉइंट पर उपयोग टेलीमेट्री भेजें, जिसमें OpenTelemetry GenAI सिमेंटिक कन्वेंशन के अनुरूप लेबल हों। डिफ़ॉल्ट रूप से अक्षम।",
+  "config.telemetryEndpoint": "टेलीमेट्री के लिए OTLP/HTTP बेस एंडपॉइंट, जैसे `http://localhost:4318`. `/v1/metrics` पथ स्वतः जुड़ जाता है।",
+  "config.telemetryHeaders": "प्रत्येक टेलीमेट्री अनुरोध के साथ भेजे जाने वाले अतिरिक्त HTTP हेडर, जैसे Grafana Cloud या Honeycomb के लिए `{ \"Authorization\": \"Bearer <token>\" }`।",
+  "config.telemetryServiceName": "निर्यातित टेलीमेट्री के लिए उपयोग किया जाने वाला OpenTelemetry `service.name` रिसोर्स विशेषता।",
+  "config.telemetryServiceInstanceId": "आपके द्वारा चुना गया मुक्त स्रोत पहचानकर्ता (कोई भी स्ट्रिंग), जो OpenTelemetry के `service.instance.id` रिसोर्स विशेषता के रूप में भेजा जाता है ताकि टेलीमेट्री के स्रोत में अंतर किया जा सके। खाली = नहीं भेजा जाता।",
+  "config.telemetryIncludeTokenUsage": "टेलीमेट्री में प्रति-मॉडल टोकन उपयोग (`gen_ai.client.token.usage`) शामिल करें।",
+  "config.telemetryIncludeCost": "टेलीमेट्री में प्रति-मॉडल API-समतुल्य लागत (USD में, `otak_usage.cost.usd`) शामिल करें।",
+  "config.telemetryIncludeRtkTokens": "टेलीमेट्री में RTK टोकन बचत (`otak_usage.rtk.tokens`) शामिल करें।"
 }

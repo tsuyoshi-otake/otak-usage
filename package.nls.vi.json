@@ -12,5 +12,13 @@
   "config.rtkPath": "Đường dẫn tới tệp thực thi rtk. Để trống = dùng `rtk` trong PATH.",
   "config.pricingOverrides": "Ghi đè giá theo từng mô hình, tính bằng USD trên mỗi triệu token. Ví dụ: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Với mô hình OpenAI, dùng `input`, `cachedInput` và `output`.",
   "config.claudeConfigDir": "Đường dẫn tới thư mục cấu hình Claude Code. Để trống = $CLAUDE_CONFIG_DIR hoặc ~/.claude.",
-  "config.codexHome": "Đường dẫn tới thư mục chính của Codex. Để trống = $CODEX_HOME hoặc ~/.codex."
+  "config.codexHome": "Đường dẫn tới thư mục chính của Codex. Để trống = $CODEX_HOME hoặc ~/.codex.",
+  "config.telemetryEnabled": "Gửi dữ liệu đo từ xa về mức sử dụng đến điểm cuối OpenTelemetry (OTLP/HTTP), với nhãn tuân theo quy ước ngữ nghĩa OpenTelemetry GenAI. Mặc định bị tắt.",
+  "config.telemetryEndpoint": "Điểm cuối cơ sở OTLP/HTTP cho đo từ xa, ví dụ `http://localhost:4318`. Đường dẫn `/v1/metrics` được thêm tự động.",
+  "config.telemetryHeaders": "Tiêu đề HTTP bổ sung gửi kèm mỗi yêu cầu đo từ xa, ví dụ `{ \"Authorization\": \"Bearer <token>\" }` cho Grafana Cloud hoặc Honeycomb.",
+  "config.telemetryServiceName": "Thuộc tính tài nguyên OpenTelemetry `service.name` dùng cho dữ liệu đo từ xa được xuất.",
+  "config.telemetryServiceInstanceId": "Mã định danh nguồn tùy ý do bạn chọn (bất kỳ chuỗi nào), được xuất dưới dạng thuộc tính tài nguyên `service.instance.id` của OpenTelemetry để phân biệt nguồn gửi dữ liệu đo từ xa. Để trống = không gửi.",
+  "config.telemetryIncludeTokenUsage": "Bao gồm mức sử dụng token theo mô hình (`gen_ai.client.token.usage`) trong dữ liệu đo từ xa.",
+  "config.telemetryIncludeCost": "Bao gồm chi phí tương đương API bằng USD theo mô hình (`otak_usage.cost.usd`) trong dữ liệu đo từ xa.",
+  "config.telemetryIncludeRtkTokens": "Bao gồm tiết kiệm token RTK (`otak_usage.rtk.tokens`) trong dữ liệu đo từ xa."
 }

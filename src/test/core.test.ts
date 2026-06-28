@@ -6,7 +6,8 @@ import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
 import { calcCost, resolvePricing } from '../pricing';
 import { emptyRtkPeriod, parseRtkGain, rtkSavingsPct } from '../rtk';
-import { DayBuckets, UsageEvent, emptyUsage } from '../types';
+import { ALL_TELEMETRY_METRICS, buildMetricsPayload, metricsUrl, TelemetryConfig, TelemetrySnapshot } from '../telemetry';
+import { DayBuckets, TokenUsage, UsageEvent, emptyUsage } from '../types';
 
 const noRtk: RtkView = { stats: undefined, show: true };
 
@@ -474,5 +475,172 @@ suite('rtk', () => {
         assert.strictEqual(parseRtkGain('not json', '2026-06-12'), undefined);
         assert.strictEqual(parseRtkGain('"json but not an object"', '2026-06-12'), undefined);
         assert.strictEqual(parseRtkGain('{}', '2026-06-12'), undefined);
+    });
+});
+
+suite('telemetry', () => {
+    const t = new Date(2026, 5, 12, 9, 30, 0).getTime(); // 2026-06-12 local
+    const today = dayKey(t);
+    const config: TelemetryConfig = {
+        enabled: true,
+        metrics: ALL_TELEMETRY_METRICS,
+        endpoint: 'http://localhost:4318',
+        headers: {},
+        serviceName: 'otak-usage',
+        serviceVersion: '9.9.9',
+        serviceInstanceId: '',
+    };
+
+    function usage(partial: Partial<TokenUsage>): TokenUsage {
+        return { ...emptyUsage(), ...partial };
+    }
+
+    function attrs(point: { attributes: Array<{ key: string; value: unknown }> }): Record<string, string> {
+        const out: Record<string, string> = {};
+        for (const kv of point.attributes) {
+            out[kv.key] = (kv.value as { stringValue?: string }).stringValue ?? '';
+        }
+        return out;
+    }
+
+    function buildFromEvents(events: UsageEvent[], rtkStats?: TelemetrySnapshot['rtk']) {
+        const days: DayBuckets = {};
+        for (const ev of events) {
+            addEvent(days, ev);
+        }
+        const summaries = summarize(days, today);
+        const snapshot: TelemetrySnapshot = { timestampMs: t, windowStartMs: startOfMonth(t), summaries, rtk: rtkStats };
+        return buildMetricsPayload(config, snapshot);
+    }
+
+    function metricByName(payload: ReturnType<typeof buildMetricsPayload>, name: string) {
+        assert.ok(payload);
+        return payload.resourceMetrics[0].scopeMetrics[0].metrics.find((m) => m.name === name);
+    }
+
+    function findPoint(metric: { sum: { dataPoints: Array<{ attributes: Array<{ key: string; value: unknown }>; asInt?: string }> } } | undefined, match: Record<string, string>) {
+        assert.ok(metric);
+        return metric.sum.dataPoints.find((p) => {
+            const a = attrs(p);
+            return Object.entries(match).every(([k, v]) => a[k] === v);
+        });
+    }
+
+    test('maps token usage to gen_ai semantic-convention labels', () => {
+        const payload = buildFromEvents([
+            { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 100, cacheRead: 35369, cacheWrite5m: 200, cacheWrite1h: 40, output: 336 }) },
+            { provider: 'codex', model: 'gpt-5.5', timestamp: t, usage: usage({ input: 50, cachedInput: 20, output: 80 }) },
+        ]);
+        const metric = metricByName(payload, 'gen_ai.client.token.usage');
+        assert.ok(metric);
+        assert.strictEqual(metric.unit, '{token}');
+        assert.strictEqual(metric.sum.aggregationTemporality, 2);
+        assert.strictEqual(metric.sum.isMonotonic, true);
+
+        // Claude → anthropic; cache_creation = 5m + 1h.
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'anthropic', 'gen_ai.response.model': 'claude-opus-4-8', 'gen_ai.token.type': 'input' })?.asInt, '100');
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'anthropic', 'gen_ai.token.type': 'output' })?.asInt, '336');
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'anthropic', 'gen_ai.token.type': 'cache_read' })?.asInt, '35369');
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'anthropic', 'gen_ai.token.type': 'cache_creation' })?.asInt, '240');
+
+        // Codex → openai; cachedInput folds into cache_read.
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'openai', 'gen_ai.response.model': 'gpt-5.5', 'gen_ai.token.type': 'input' })?.asInt, '50');
+        assert.strictEqual(findPoint(metric, { 'gen_ai.system': 'openai', 'gen_ai.token.type': 'cache_read' })?.asInt, '20');
+
+        // Counter start time = month start, data point time = now.
+        const dp = findPoint(metric, { 'gen_ai.system': 'openai', 'gen_ai.token.type': 'output' });
+        assert.strictEqual(dp?.asInt, '80');
+    });
+
+    test('carries service resource attributes and scope', () => {
+        const payload = buildFromEvents([
+            { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 1 }) },
+        ]);
+        assert.ok(payload);
+        const resAttrs = attrs(payload.resourceMetrics[0].resource);
+        assert.strictEqual(resAttrs['service.name'], 'otak-usage');
+        assert.strictEqual(resAttrs['service.version'], '9.9.9');
+        assert.strictEqual(payload.resourceMetrics[0].scopeMetrics[0].scope.name, 'otak-usage');
+        // Blank instance id is omitted from resource attributes.
+        assert.ok(!('service.instance.id' in resAttrs));
+    });
+
+    test('exports a user-set source as service.instance.id', () => {
+        const days: DayBuckets = {};
+        addEvent(days, { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 1 }) });
+        const snapshot: TelemetrySnapshot = { timestampMs: t, windowStartMs: startOfMonth(t), summaries: summarize(days, today), rtk: undefined };
+        const payload = buildMetricsPayload({ ...config, serviceInstanceId: '  my-laptop  ' }, snapshot);
+        assert.ok(payload);
+        const resAttrs = attrs(payload.resourceMetrics[0].resource);
+        // Free-form string, trimmed.
+        assert.strictEqual(resAttrs['service.instance.id'], 'my-laptop');
+    });
+
+    test('omits zero-valued data points and returns undefined when empty', () => {
+        assert.strictEqual(buildFromEvents([]), undefined);
+        const payload = buildFromEvents([
+            { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 5 }) },
+        ]);
+        const metric = metricByName(payload, 'gen_ai.client.token.usage');
+        assert.ok(metric);
+        // Only the input bucket is non-zero.
+        assert.strictEqual(metric.sum.dataPoints.length, 1);
+    });
+
+    test('emits all-time RTK token counts with rtk type labels', () => {
+        const rtk = {
+            today: emptyRtkPeriod(),
+            month: emptyRtkPeriod(),
+            allTime: { commands: 3, inputTokens: 1000, outputTokens: 200, savedTokens: 800 },
+        };
+        const payload = buildFromEvents([
+            { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 1 }) },
+        ], rtk);
+        const metric = metricByName(payload, 'otak_usage.rtk.tokens');
+        assert.ok(metric);
+        assert.strictEqual(findPoint(metric, { 'otak_usage.rtk.type': 'saved' })?.asInt, '800');
+        assert.strictEqual(findPoint(metric, { 'otak_usage.rtk.type': 'input' })?.asInt, '1000');
+        assert.strictEqual(findPoint(metric, { 'otak_usage.rtk.type': 'output' })?.asInt, '200');
+        assert.strictEqual(metric.sum.dataPoints[0].startTimeUnixNano, '0');
+    });
+
+    test('emits per-model cost in USD as a double', () => {
+        const days: DayBuckets = {};
+        addEvent(days, { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 1_000_000, output: 1_000_000 }) });
+        const snapshot: TelemetrySnapshot = { timestampMs: t, windowStartMs: startOfMonth(t), summaries: summarize(days, today), rtk: undefined };
+        const payload = buildMetricsPayload(config, snapshot);
+        const metric = metricByName(payload, 'otak_usage.cost.usd');
+        assert.ok(metric);
+        assert.strictEqual(metric.unit, 'USD');
+        const dp = metric.sum.dataPoints.find((p) => attrs(p)['gen_ai.response.model'] === 'claude-opus-4-8');
+        assert.ok(dp);
+        assert.strictEqual(attrs(dp)['gen_ai.system'], 'anthropic');
+        assert.ok(typeof dp.asDouble === 'number' && dp.asDouble > 0);
+    });
+
+    test('exports only the selected contents', () => {
+        const days: DayBuckets = {};
+        addEvent(days, { provider: 'claude', model: 'claude-opus-4-8', timestamp: t, usage: usage({ input: 1000, output: 1000 }) });
+        const rtk = { today: emptyRtkPeriod(), month: emptyRtkPeriod(), allTime: { commands: 1, inputTokens: 10, outputTokens: 2, savedTokens: 8 } };
+        const snapshot: TelemetrySnapshot = { timestampMs: t, windowStartMs: startOfMonth(t), summaries: summarize(days, today), rtk };
+
+        const onlyRtk = buildMetricsPayload({ ...config, metrics: ['rtkTokens'] }, snapshot);
+        assert.strictEqual(metricByName(onlyRtk, 'gen_ai.client.token.usage'), undefined);
+        assert.strictEqual(metricByName(onlyRtk, 'otak_usage.cost.usd'), undefined);
+        assert.ok(metricByName(onlyRtk, 'otak_usage.rtk.tokens'));
+
+        const onlyTokens = buildMetricsPayload({ ...config, metrics: ['tokenUsage'] }, snapshot);
+        assert.ok(metricByName(onlyTokens, 'gen_ai.client.token.usage'));
+        assert.strictEqual(metricByName(onlyTokens, 'otak_usage.cost.usd'), undefined);
+        assert.strictEqual(metricByName(onlyTokens, 'otak_usage.rtk.tokens'), undefined);
+
+        // Nothing selected → nothing to send.
+        assert.strictEqual(buildMetricsPayload({ ...config, metrics: [] }, snapshot), undefined);
+    });
+
+    test('metricsUrl appends /v1/metrics once', () => {
+        assert.strictEqual(metricsUrl('http://localhost:4318'), 'http://localhost:4318/v1/metrics');
+        assert.strictEqual(metricsUrl('http://localhost:4318/'), 'http://localhost:4318/v1/metrics');
+        assert.strictEqual(metricsUrl('https://otlp.example.com/v1/metrics'), 'https://otlp.example.com/v1/metrics');
     });
 });

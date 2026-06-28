@@ -12,5 +12,13 @@
   "config.rtkPath": "Path to the rtk executable. Empty = `rtk` on PATH.",
   "config.pricingOverrides": "Per-model pricing overrides in USD per million tokens. Example: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. For OpenAI models use `input`, `cachedInput`, and `output`.",
   "config.claudeConfigDir": "Path to the Claude Code config directory. Empty = $CLAUDE_CONFIG_DIR or ~/.claude.",
-  "config.codexHome": "Path to the Codex home directory. Empty = $CODEX_HOME or ~/.codex."
+  "config.codexHome": "Path to the Codex home directory. Empty = $CODEX_HOME or ~/.codex.",
+  "config.telemetryEnabled": "Send usage telemetry to an OpenTelemetry (OTLP/HTTP) endpoint, with labels following the OpenTelemetry GenAI semantic conventions. Disabled by default.",
+  "config.telemetryEndpoint": "OTLP/HTTP base endpoint for telemetry, e.g. `http://localhost:4318`. The `/v1/metrics` path is appended automatically.",
+  "config.telemetryHeaders": "Extra HTTP headers sent with each telemetry request, e.g. `{ \"Authorization\": \"Bearer <token>\" }` for Grafana Cloud or Honeycomb.",
+  "config.telemetryServiceName": "OpenTelemetry `service.name` resource attribute used for exported telemetry.",
+  "config.telemetryServiceInstanceId": "Free-form source identifier you choose (any string), exported as the OpenTelemetry `service.instance.id` resource attribute to distinguish where telemetry came from. Empty = not sent.",
+  "config.telemetryIncludeTokenUsage": "Include per-model token usage (`gen_ai.client.token.usage`) in telemetry.",
+  "config.telemetryIncludeCost": "Include per-model API-equivalent cost in USD (`otak_usage.cost.usd`) in telemetry.",
+  "config.telemetryIncludeRtkTokens": "Include RTK token savings (`otak_usage.rtk.tokens`) in telemetry."
 }

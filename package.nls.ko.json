@@ -12,5 +12,13 @@
   "config.rtkPath": "rtk 실행 파일 경로입니다. 비워 두면 PATH의 `rtk`를 사용합니다.",
   "config.pricingOverrides": "백만 토큰당 USD 기준 모델별 가격 재정의입니다. 예: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. OpenAI 모델은 `input`, `cachedInput`, `output`을 사용합니다.",
   "config.claudeConfigDir": "Claude Code 설정 디렉터리 경로입니다. 비워 두면 $CLAUDE_CONFIG_DIR 또는 ~/.claude를 사용합니다.",
-  "config.codexHome": "Codex 홈 디렉터리 경로입니다. 비워 두면 $CODEX_HOME 또는 ~/.codex를 사용합니다."
+  "config.codexHome": "Codex 홈 디렉터리 경로입니다. 비워 두면 $CODEX_HOME 또는 ~/.codex를 사용합니다.",
+  "config.telemetryEnabled": "OpenTelemetry GenAI 시맨틱 규약을 따르는 레이블과 함께 사용량 텔레메트리를 OpenTelemetry(OTLP/HTTP) 엔드포인트로 전송합니다. 기본적으로 비활성화됩니다.",
+  "config.telemetryEndpoint": "텔레메트리용 OTLP/HTTP 기본 엔드포인트입니다. 예: `http://localhost:4318`. `/v1/metrics` 경로는 자동으로 추가됩니다.",
+  "config.telemetryHeaders": "각 텔레메트리 요청에 함께 보낼 추가 HTTP 헤더입니다. 예: Grafana Cloud 또는 Honeycomb용 `{ \"Authorization\": \"Bearer <token>\" }`.",
+  "config.telemetryServiceName": "내보내는 텔레메트리에 사용되는 OpenTelemetry `service.name` 리소스 속성입니다.",
+  "config.telemetryServiceInstanceId": "직접 입력하는 자유 형식의 송신원 식별자(임의의 문자열)로, OpenTelemetry `service.instance.id` 리소스 속성으로 전송되어 텔레메트리의 출처를 구분합니다. 비어 있으면 전송하지 않습니다.",
+  "config.telemetryIncludeTokenUsage": "텔레메트리에 모델별 토큰 사용량(`gen_ai.client.token.usage`)을 포함합니다.",
+  "config.telemetryIncludeCost": "텔레메트리에 모델별 API 상당 비용(USD, `otak_usage.cost.usd`)을 포함합니다.",
+  "config.telemetryIncludeRtkTokens": "텔레메트리에 RTK 토큰 절약(`otak_usage.rtk.tokens`)을 포함합니다."
 }
