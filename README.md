@@ -158,7 +158,7 @@ ext install odangoo.otak-usage
 ```bash
 npm install
 npm run package
-code --install-extension otak-usage-1.3.3.vsix
+code --install-extension otak-usage-1.3.4.vsix
 ```
 
 Reload VS Code after installing the VSIX.

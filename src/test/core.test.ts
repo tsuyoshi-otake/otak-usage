@@ -53,6 +53,22 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('gpt-4.1-mini')?.input, 0.4);
     });
 
+    test('claude sonnet 5 resolves introductory and standard prices', () => {
+        const intro = resolvePricing('claude-sonnet-5', undefined, '2026-08-31');
+        assert.strictEqual(intro?.input, 2);
+        assert.strictEqual(intro?.output, 10);
+        assert.strictEqual(intro?.cacheWrite, 2.5);
+        assert.strictEqual(intro?.cacheWrite1h, 4);
+        assert.strictEqual(intro?.cacheRead, 0.2);
+
+        const standard = resolvePricing('claude-sonnet-5-20260630', undefined, '2026-09-01');
+        assert.strictEqual(standard?.input, 3);
+        assert.strictEqual(standard?.output, 15);
+        assert.strictEqual(standard?.cacheWrite, 3.75);
+        assert.strictEqual(standard?.cacheWrite1h, 6);
+        assert.ok(Math.abs((standard?.cacheRead ?? 0) - 0.3) < 1e-12);
+    });
+
     test('unknown model returns undefined', () => {
         assert.strictEqual(resolvePricing('llama-99'), undefined);
         assert.strictEqual(calcCost('llama-99', emptyUsage()), undefined);
@@ -147,6 +163,14 @@ suite('aggregator', () => {
         assert.strictEqual(s.claude.monthCost, 0);
         assert.strictEqual(s.claude.hasUnknownModel, true);
         assert.strictEqual(s.claude.models[0].monthCost, undefined);
+    });
+
+    test('pricing uses the aggregation day for scheduled model prices', () => {
+        const days: DayBuckets = {};
+        addEvent(days, { ...ev(2, 'claude-sonnet-5', 1_000_000), timestamp: new Date(2026, 8, 2, 10).getTime() });
+        const s = summarize(days, '2026-09-02');
+        assert.strictEqual(s.claude.monthCost, 15);
+        assert.strictEqual(s.claude.hasUnknownModel, false);
     });
 
     test('pruneDaysBefore removes only older days', () => {

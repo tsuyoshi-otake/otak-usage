@@ -20,7 +20,7 @@ export interface ModelPricing {
 }
 
 /**
- * Verified against the official pricing pages on 2026-06-10:
+ * Verified against the official pricing pages on 2026-07-02:
  * - https://platform.claude.com/docs/en/about-claude/pricing
  * - https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
@@ -44,6 +44,7 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-opus-4-8-fast': { input: 10, output: 50 },
     'claude-opus-4-7-fast': { input: 30, output: 150 },
     'claude-opus-4-6-fast': { input: 30, output: 150 },
+    'claude-sonnet-5': { input: 2, output: 10 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-sonnet-4-5': { input: 3, output: 15 },
     'claude-sonnet-4': { input: 3, output: 15 },
@@ -84,35 +85,68 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'gpt-4o': { input: 2.5, cachedInput: 1.25, output: 10 },
 };
 
+const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>> = {
+    'claude-sonnet-5': [
+        { from: '2026-09-01', pricing: { input: 3, output: 15 } },
+    ],
+};
+
 export type PricingOverrides = Record<string, Partial<ModelPricing>>;
 
 /**
  * Exact match first, then longest prefix match, per table. Override entries are
  * merged on top of the default entry, so a partial override (e.g. only `input`)
- * still inherits the remaining prices. Returns undefined for unknown models.
+ * still inherits the remaining prices. `effectiveDay`, when provided, is a
+ * YYYY-MM-DD day used for scheduled pricing revisions. Returns undefined for
+ * unknown models.
  */
-export function resolvePricing(model: string, overrides?: PricingOverrides): ModelPricing | undefined {
-    const base = lookup(model, DEFAULT_PRICING);
-    const over = overrides ? lookup(model, overrides) : undefined;
+export function resolvePricing(model: string, overrides?: PricingOverrides, effectiveDay?: string): ModelPricing | undefined {
+    const base = lookup(model, DEFAULT_PRICING, effectiveDay, DEFAULT_PRICING_REVISIONS);
+    const over = overrides ? lookup(model, overrides, effectiveDay) : undefined;
     if (!base && !over) {
         return undefined;
     }
     return withDefaults({ ...base, ...over });
 }
 
-function lookup(model: string, table: Record<string, Partial<ModelPricing>>): Partial<ModelPricing> | undefined {
+function lookup(
+    model: string,
+    table: Record<string, Partial<ModelPricing>>,
+    effectiveDay?: string,
+    revisions: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>> = {},
+): Partial<ModelPricing> | undefined {
     if (table[model]) {
-        return table[model];
+        return applyRevisions(model, table[model], effectiveDay, revisions);
     }
     let best: Partial<ModelPricing> | undefined;
+    let bestKey: string | undefined;
     let bestLen = -1;
     for (const key of Object.keys(table)) {
         if (matches(model, key) && key.length > bestLen) {
             best = table[key];
+            bestKey = key;
             bestLen = key.length;
         }
     }
-    return best;
+    return bestKey && best ? applyRevisions(bestKey, best, effectiveDay, revisions) : undefined;
+}
+
+function applyRevisions(
+    key: string,
+    pricing: Partial<ModelPricing>,
+    effectiveDay: string | undefined,
+    revisions: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>>,
+): Partial<ModelPricing> {
+    if (!effectiveDay) {
+        return pricing;
+    }
+    let resolved = pricing;
+    for (const revision of revisions[key] ?? []) {
+        if (effectiveDay >= revision.from) {
+            resolved = { ...resolved, ...revision.pricing };
+        }
+    }
+    return resolved;
 }
 
 /**
@@ -146,8 +180,8 @@ function withDefaults(p: Partial<ModelPricing>): ModelPricing | undefined {
 const M = 1_000_000;
 
 /** Cost in USD. Returns undefined for unknown models. */
-export function calcCost(model: string, usage: TokenUsage, overrides?: PricingOverrides): number | undefined {
-    const p = resolvePricing(model, overrides);
+export function calcCost(model: string, usage: TokenUsage, overrides?: PricingOverrides, effectiveDay?: string): number | undefined {
+    const p = resolvePricing(model, overrides, effectiveDay);
     if (!p) {
         return undefined;
     }

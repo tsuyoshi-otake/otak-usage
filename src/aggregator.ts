@@ -64,8 +64,8 @@ export function summarize(days: DayBuckets, today: string, overrides?: PricingOv
         codex: { provider: 'codex', todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] },
     };
     for (const row of rows.values()) {
-        row.todayCost = calcCost(row.model, row.todayUsage, overrides);
-        row.monthCost = calcCost(row.model, row.monthUsage, overrides);
+        row.todayCost = calcCost(row.model, row.todayUsage, overrides, today);
+        row.monthCost = calcCost(row.model, row.monthUsage, overrides, today);
         const summary = result[row.provider];
         summary.todayCost += row.todayCost ?? 0;
         summary.monthCost += row.monthCost ?? 0;

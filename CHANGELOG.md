@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.3.4] - 2026-07-02
+
+### Added
+- Claude Sonnet 5 pricing support, including the introductory price through 2026-08-31 and the standard price from 2026-09-01. (#4)
+
 ## [1.3.2] - 2026-06-24
 
 ### Added
