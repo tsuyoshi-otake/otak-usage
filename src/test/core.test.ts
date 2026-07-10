@@ -123,6 +123,32 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('gpt-5.4')?.input, 2.5);
     });
 
+    test('gpt-5.6 family and alias resolve per official prices', () => {
+        const alias = resolvePricing('gpt-5.6');
+        assert.strictEqual(alias?.input, 5);
+        assert.strictEqual(alias?.cachedInput, 0.5);
+        assert.strictEqual(alias?.output, 30);
+        assert.strictEqual(alias?.longContextThreshold, 272_000);
+        assert.strictEqual(resolvePricing('gpt-5.6-sol')?.output, 30);
+        assert.strictEqual(resolvePricing('gpt-5.6-terra')?.input, 2.5);
+        assert.strictEqual(resolvePricing('gpt-5.6-terra-20260710')?.cachedInput, 0.25);
+        assert.strictEqual(resolvePricing('gpt-5.6-luna')?.output, 6);
+    });
+
+    test('gpt-5.6 long-context premium applies to the full request', () => {
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        assert.ok(Math.abs((calcCost('gpt-5.6-sol', usage) ?? 0) - 3.6) < 1e-12);
+
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCachedInput: usage.cachedInput,
+            longContextOutput: usage.output,
+        };
+        // Input and cached input are 2x; output is 1.5x: $1 + $0.2 + $4.5 = $5.7.
+        assert.ok(Math.abs((calcCost('gpt-5.6-sol', longUsage) ?? 0) - 5.7) < 1e-12);
+    });
+
     test('codex cost formula (cached input at cached price)', () => {
         const usage = { input: 1000, cachedInput: 9000, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 100 };
         // gpt-5.5: 1000*5 + 9000*0.5 + 100*30 = 12500 µ$
@@ -171,6 +197,24 @@ suite('aggregator', () => {
         const s = summarize(days, '2026-09-02');
         assert.strictEqual(s.claude.monthCost, 15);
         assert.strictEqual(s.claude.hasUnknownModel, false);
+    });
+
+    test('gpt-5.6 long-context premium survives daily and monthly aggregation', () => {
+        const days: DayBuckets = {};
+        const usage = {
+            ...emptyUsage(),
+            input: 100_000,
+            cachedInput: 200_000,
+            output: 100_000,
+            longContextInput: 100_000,
+            longContextCachedInput: 200_000,
+            longContextOutput: 100_000,
+        };
+        addEvent(days, { provider: 'codex', model: 'gpt-5.6-sol', timestamp: new Date(2026, 6, 10, 10).getTime(), usage });
+        const s = summarize(days, '2026-07-10');
+        assert.ok(Math.abs(s.codex.todayCost - 5.7) < 1e-12);
+        assert.ok(Math.abs(s.codex.monthCost - 5.7) < 1e-12);
+        assert.strictEqual(s.codex.models[0].todayUsage.longContextCachedInput, 200_000);
     });
 
     test('pruneDaysBefore removes only older days', () => {

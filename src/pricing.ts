@@ -17,12 +17,21 @@ export interface ModelPricing {
     cacheWrite?: number;
     cacheWrite1h?: number;
     cachedInput?: number;
+    longContextThreshold?: number;
+    longContextInputMultiplier?: number;
+    longContextOutputMultiplier?: number;
 }
 
+const GPT_LONG_CONTEXT_PRICING = {
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 1.5,
+} as const;
+
 /**
- * Verified against the official pricing pages on 2026-07-02:
- * - https://platform.claude.com/docs/en/about-claude/pricing
- * - https://developers.openai.com/api/docs/pricing
+ * Verified against the official pricing pages:
+ * - Claude prices on 2026-07-02: https://platform.claude.com/docs/en/about-claude/pricing
+ * - OpenAI prices on 2026-07-10: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -56,12 +65,17 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
-    'gpt-5.5-pro': { input: 30, output: 180 },
-    'gpt-5.5': { input: 5, cachedInput: 0.5, output: 30 },
-    'gpt-5.4-pro': { input: 30, output: 180 },
+    'gpt-5.6-sol': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-5.6-terra': { input: 2.5, cachedInput: 0.25, output: 15, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-5.6-luna': { input: 1, cachedInput: 0.1, output: 6, ...GPT_LONG_CONTEXT_PRICING },
+    // The unsuffixed alias routes to GPT-5.6 Sol.
+    'gpt-5.6': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-5.5-pro': { input: 30, output: 180, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-5.5': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-5.4-pro': { input: 30, output: 180, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.4-mini': { input: 0.75, cachedInput: 0.075, output: 4.5 },
     'gpt-5.4-nano': { input: 0.2, cachedInput: 0.02, output: 1.25 },
-    'gpt-5.4': { input: 2.5, cachedInput: 0.25, output: 15 },
+    'gpt-5.4': { input: 2.5, cachedInput: 0.25, output: 15, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.3-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
     'gpt-5.2-codex': { input: 1.75, cachedInput: 0.175, output: 14 },
     'gpt-5.2': { input: 1.75, cachedInput: 0.175, output: 14 },
@@ -174,7 +188,16 @@ function withDefaults(p: Partial<ModelPricing>): ModelPricing | undefined {
         cacheWrite: p.cacheWrite ?? p.input * 1.25,
         cacheWrite1h: p.cacheWrite1h ?? p.input * 2,
         cachedInput: p.cachedInput ?? p.input * 0.1,
+        longContextThreshold: p.longContextThreshold,
+        longContextInputMultiplier: p.longContextInputMultiplier,
+        longContextOutputMultiplier: p.longContextOutputMultiplier,
     };
+}
+
+/** Whether one request crosses the model's long-context pricing threshold. */
+export function isLongContextRequest(model: string, inputTokens: number): boolean {
+    const threshold = resolvePricing(model)?.longContextThreshold;
+    return threshold !== undefined && inputTokens > threshold;
 }
 
 const M = 1_000_000;
@@ -185,12 +208,17 @@ export function calcCost(model: string, usage: TokenUsage, overrides?: PricingOv
     if (!p) {
         return undefined;
     }
+    const longInputPremium = (p.longContextInputMultiplier ?? 1) - 1;
+    const longOutputPremium = (p.longContextOutputMultiplier ?? 1) - 1;
     return (
         (usage.input * p.input +
             usage.cachedInput * (p.cachedInput ?? 0) +
             usage.cacheRead * (p.cacheRead ?? 0) +
             usage.cacheWrite5m * (p.cacheWrite ?? 0) +
             usage.cacheWrite1h * (p.cacheWrite1h ?? 0) +
-            usage.output * p.output) / M
+            usage.output * p.output +
+            (usage.longContextInput ?? 0) * p.input * longInputPremium +
+            (usage.longContextCachedInput ?? 0) * (p.cachedInput ?? 0) * longInputPremium +
+            (usage.longContextOutput ?? 0) * p.output * longOutputPremium) / M
     );
 }

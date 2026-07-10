@@ -13,6 +13,10 @@ export interface TokenUsage {
     cacheWrite5m: number;
     cacheWrite1h: number;
     output: number;
+    /** Subsets billed with a model's long-context premium; excluded from displayed token totals. */
+    longContextInput?: number;
+    longContextCachedInput?: number;
+    longContextOutput?: number;
 }
 
 export interface UsageEvent {
@@ -27,7 +31,17 @@ export interface UsageEvent {
 export type DayBuckets = Record<string, Record<string, TokenUsage>>;
 
 export function emptyUsage(): TokenUsage {
-    return { input: 0, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 };
+    return {
+        input: 0,
+        cachedInput: 0,
+        cacheRead: 0,
+        cacheWrite5m: 0,
+        cacheWrite1h: 0,
+        output: 0,
+        longContextInput: 0,
+        longContextCachedInput: 0,
+        longContextOutput: 0,
+    };
 }
 
 export function addUsage(target: TokenUsage, source: TokenUsage): void {
@@ -37,6 +51,9 @@ export function addUsage(target: TokenUsage, source: TokenUsage): void {
     target.cacheWrite5m += source.cacheWrite5m;
     target.cacheWrite1h += source.cacheWrite1h;
     target.output += source.output;
+    target.longContextInput = (target.longContextInput ?? 0) + (source.longContextInput ?? 0);
+    target.longContextCachedInput = (target.longContextCachedInput ?? 0) + (source.longContextCachedInput ?? 0);
+    target.longContextOutput = (target.longContextOutput ?? 0) + (source.longContextOutput ?? 0);
 }
 
 /** Reverse a prior addUsage so a superseded record's contribution can be replaced. */
@@ -47,6 +64,9 @@ export function subtractUsage(target: TokenUsage, source: TokenUsage): void {
     target.cacheWrite5m -= source.cacheWrite5m;
     target.cacheWrite1h -= source.cacheWrite1h;
     target.output -= source.output;
+    target.longContextInput = (target.longContextInput ?? 0) - (source.longContextInput ?? 0);
+    target.longContextCachedInput = (target.longContextCachedInput ?? 0) - (source.longContextCachedInput ?? 0);
+    target.longContextOutput = (target.longContextOutput ?? 0) - (source.longContextOutput ?? 0);
 }
 
 export function totalTokens(u: TokenUsage): number {

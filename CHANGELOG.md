@@ -2,6 +2,14 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.3.5] - 2026-07-10
+
+### Added
+- GPT-5.6 Sol, Terra, Luna, and `gpt-5.6` alias pricing, including per-turn long-context rates above 272K input tokens. (#5)
+
+### Fixed
+- Replayed Codex token-count history that appears before the first model-bearing `turn_context` is no longer ingested as unknown usage. (#5)
+
 ## [1.3.4] - 2026-07-02
 
 ### Added

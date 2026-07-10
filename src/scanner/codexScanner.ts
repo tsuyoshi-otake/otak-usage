@@ -1,5 +1,6 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { isLongContextRequest } from '../pricing';
 import { TokenUsage, UsageEvent } from '../types';
 import { ScannedFile } from './claudeScanner';
 
@@ -107,6 +108,12 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
     if (!last) {
         return undefined;
     }
+    // Forked/resumed rollout files can replay historical token_count records
+    // before their first turn_context. They have no reliable model attribution
+    // and were already counted in the source session, so do not ingest them.
+    if (!state.lastModel) {
+        return undefined;
+    }
     const timestamp = Date.parse(rec.timestamp);
     if (Number.isNaN(timestamp)) {
         return undefined;
@@ -123,5 +130,10 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
         cacheWrite1h: 0,
         output: last.output_tokens ?? 0,
     };
-    return { provider: 'codex', model: state.lastModel ?? 'unknown', timestamp, usage };
+    if (isLongContextRequest(state.lastModel, rawInput)) {
+        usage.longContextInput = usage.input;
+        usage.longContextCachedInput = usage.cachedInput;
+        usage.longContextOutput = usage.output;
+    }
+    return { provider: 'codex', model: state.lastModel, timestamp, usage };
 }

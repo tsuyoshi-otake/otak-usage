@@ -6,9 +6,11 @@ import { DayBuckets, TokenUsage } from './types';
  * snapshot can supersede an earlier partial one instead of being dropped.
  * v4: force a one-time re-ingest after 1.2.0 installs that may have retained
  * stale file offsets while cost rendering was blocked by RTK stats refresh.
+ * v5: capture per-turn long-context pricing and skip replayed Codex usage that
+ * appears before the first model-bearing turn_context in forked sessions.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 4;
+export const CACHE_VERSION = 5;
 
 export interface FileState {
     size: number;

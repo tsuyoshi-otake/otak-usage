@@ -104,6 +104,25 @@ suite('parseCodexLine', () => {
         assert.strictEqual(event.usage.cachedInput, 100);
     });
 
+    test('token_count before the first turn_context is skipped as replayed history', () => {
+        const state: CodexParseState = {};
+        const event = parseCodexLine(codexTokenCount('2026-07-10T03:00:00.000Z', 283_574, 281_344, 304), state);
+        assert.strictEqual(event, undefined);
+    });
+
+    test('gpt-5.6 marks only requests above 272K for long-context pricing', () => {
+        const state: CodexParseState = { lastModel: 'gpt-5.6-sol' };
+        const boundary = parseCodexLine(codexTokenCount('2026-07-10T03:00:00.000Z', 272_000, 270_000, 100), state);
+        assert.ok(boundary);
+        assert.strictEqual(boundary.usage.longContextInput, undefined);
+
+        const long = parseCodexLine(codexTokenCount('2026-07-10T03:00:01.000Z', 272_001, 270_000, 100), state);
+        assert.ok(long);
+        assert.strictEqual(long.usage.longContextInput, 2_001);
+        assert.strictEqual(long.usage.longContextCachedInput, 270_000);
+        assert.strictEqual(long.usage.longContextOutput, 100);
+    });
+
     test('token_count without info is skipped', () => {
         const state: CodexParseState = {};
         const line = JSON.stringify({ timestamp: '2026-06-10T03:00:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: null } });
