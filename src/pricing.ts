@@ -99,6 +99,11 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'gpt-4o': { input: 2.5, cachedInput: 1.25, output: 10 },
 };
 
+// Entries are maintained newest-first within each provider and also define the
+// stable display order used by model breakdowns.
+const DEFAULT_PRICING_KEYS = Object.keys(DEFAULT_PRICING);
+const DEFAULT_PRICING_ORDER = new Map(DEFAULT_PRICING_KEYS.map((key, index) => [key, index]));
+
 const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>> = {
     'claude-sonnet-5': [
         { from: '2026-09-01', pricing: { input: 3, output: 15 } },
@@ -106,6 +111,24 @@ const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: P
 };
 
 export type PricingOverrides = Record<string, Partial<ModelPricing>>;
+
+/** Newest-first position in the built-in pricing table, including dated IDs. */
+export function defaultPricingOrder(model: string): number | undefined {
+    const exact = DEFAULT_PRICING_ORDER.get(model);
+    if (exact !== undefined) {
+        return exact;
+    }
+    let bestOrder: number | undefined;
+    let bestLen = -1;
+    for (let index = 0; index < DEFAULT_PRICING_KEYS.length; index++) {
+        const key = DEFAULT_PRICING_KEYS[index];
+        if (matches(model, key) && key.length > bestLen) {
+            bestOrder = index;
+            bestLen = key.length;
+        }
+    }
+    return bestOrder;
+}
 
 /**
  * Exact match first, then longest prefix match, per table. Override entries are

@@ -1,6 +1,6 @@
 import { DayBuckets, Provider, TokenUsage, UsageEvent, addUsage, bucketKey, emptyUsage, parseBucketKey } from './types';
 import { dayKey } from './period';
-import { PricingOverrides, calcCost } from './pricing';
+import { PricingOverrides, calcCost, defaultPricingOrder } from './pricing';
 
 export function addEvent(days: DayBuckets, event: UsageEvent): void {
     const day = dayKey(event.timestamp);
@@ -75,7 +75,20 @@ export function summarize(days: DayBuckets, today: string, overrides?: PricingOv
         summary.models.push(row);
     }
     for (const summary of Object.values(result)) {
-        summary.models.sort((a, b) => (b.monthCost ?? 0) - (a.monthCost ?? 0));
+        summary.models.sort((a, b) => {
+            const aOrder = defaultPricingOrder(a.model);
+            const bOrder = defaultPricingOrder(b.model);
+            if (aOrder !== undefined && bOrder !== undefined) {
+                return aOrder - bOrder;
+            }
+            if (aOrder !== undefined) {
+                return -1;
+            }
+            if (bOrder !== undefined) {
+                return 1;
+            }
+            return a.model < b.model ? -1 : a.model > b.model ? 1 : 0;
+        });
     }
     return result;
 }

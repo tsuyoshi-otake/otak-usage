@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.3.6] - 2026-07-10
+
+### Changed
+- Model breakdowns now use a stable newest-model-first order instead of changing with month-to-date cost; unknown models appear last in name order. (#6)
+
 ## [1.3.5] - 2026-07-10
 
 ### Added

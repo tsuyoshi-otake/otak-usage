@@ -44,6 +44,7 @@ Hover the status-bar item for a per-model breakdown of today and the current mon
 
 - **Two providers, one glance**: Claude Code (`~/.claude/projects/**/*.jsonl`) and OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`) roll up into one status-bar total. Either provider can be used on its own.
 - **Per-model cost breakdowns**: the tooltip and copied summary show token usage and API-equivalent USD by provider, model, and period.
+- **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Daily cost alert**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured threshold.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
@@ -158,7 +159,7 @@ ext install odangoo.otak-usage
 ```bash
 npm install
 npm run package
-code --install-extension otak-usage-1.3.5.vsix
+code --install-extension otak-usage-1.3.6.vsix
 ```
 
 Reload VS Code after installing the VSIX.

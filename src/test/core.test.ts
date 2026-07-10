@@ -217,6 +217,33 @@ suite('aggregator', () => {
         assert.strictEqual(s.codex.models[0].todayUsage.longContextCachedInput, 200_000);
     });
 
+    test('model breakdowns are newest-first with unknown models last', () => {
+        const days: DayBuckets = {};
+        addEvent(days, ev(10, 'gpt-5.4', 1_000_000, 'codex'));
+        addEvent(days, ev(10, 'gpt-5.6-sol-20260710', 1, 'codex'));
+        addEvent(days, ev(10, 'gpt-5.5', 1_000, 'codex'));
+        addEvent(days, ev(10, 'z-future-model', 10_000_000, 'codex'));
+        addEvent(days, ev(10, 'a-future-model', 10_000_000, 'codex'));
+
+        addEvent(days, ev(10, 'claude-haiku-4-5', 1_000_000));
+        addEvent(days, ev(10, 'claude-fable-5', 1));
+        addEvent(days, ev(10, 'claude-opus-4-8', 1_000));
+
+        const s = summarize(days, '2026-07-10');
+        assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
+            'gpt-5.6-sol-20260710',
+            'gpt-5.5',
+            'gpt-5.4',
+            'a-future-model',
+            'z-future-model',
+        ]);
+        assert.deepStrictEqual(s.claude.models.map((row) => row.model), [
+            'claude-fable-5',
+            'claude-opus-4-8',
+            'claude-haiku-4-5',
+        ]);
+    });
+
     test('pruneDaysBefore removes only older days', () => {
         const days: DayBuckets = { '2026-05-31': {}, '2026-06-01': {}, '2026-06-10': {} };
         assert.strictEqual(pruneDaysBefore(days, '2026-06-01'), true);
