@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.2] - 2026-07-11
+
+### Changed
+- Brand icons back up one step (700/1000 em) — 640 was a touch too small. (#7)
+- Claude rate-limit polling relaxed from every minute to every 5 minutes: the usage endpoint returns 429 readily when polled alongside Claude Code's own calls, which showed up as a missing Claude limits row after a window reload. The last snapshot is kept on failure. (#7)
+
 ## [1.8.1] - 2026-07-11
 
 ### Changed

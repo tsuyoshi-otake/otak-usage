@@ -171,8 +171,13 @@ class UsageController implements vscode.Disposable {
         }
     }
 
-    /** Claude limits come from a network endpoint — poll at most once a minute. */
-    private static readonly CLAUDE_LIMITS_MIN_INTERVAL_MS = 60_000;
+    /**
+     * Claude limits come from a network endpoint that rate-limits eagerly
+     * (observed 429s at once-a-minute polling alongside Claude Code's own
+     * /usage calls) — poll at most every 5 minutes; the last snapshot is
+     * kept on failure.
+     */
+    private static readonly CLAUDE_LIMITS_MIN_INTERVAL_MS = 300_000;
 
     private async refreshLimits(nowMs: number): Promise<void> {
         if (this.limitsFetching) {
