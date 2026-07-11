@@ -122,6 +122,12 @@ suite('limits: formatting', () => {
         assert.strictEqual(limitsLines({ asOfMs: NOW_MS }, NOW), undefined);
     });
 
+    test('limitsLines joins with a custom separator for table cells', () => {
+        const out = limitsLines(limits, NOW, undefined, '<br>');
+        assert.strictEqual(out?.split('<br>').length, 3);
+        assert.ok(!out?.includes('  \n'));
+    });
+
     suite('statusBarText modes', () => {
         const emptySummary: ProviderSummary = { provider: 'claude', todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] };
         const view = (limits?: ProviderLimits): ProviderView => ({
@@ -138,12 +144,17 @@ suite('limits: formatting', () => {
             assert.strictEqual(statusBarText(claude, codex, 'today', false, 'cost'), '$0.00');
         });
 
-        test('limits mode shows only the most constrained percentage per provider', () => {
-            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'limits'), '$(sparkle)8% ⬡100%');
+        test('limits mode shows the 5-hour window percentage per provider', () => {
+            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'limits'), '$(otak-claude)5% $(otak-openai)100%');
         });
 
         test('costAndLimits mode shows cost then percentages', () => {
-            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'costAndLimits'), '$0.00  $(sparkle)8% ⬡100%');
+            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-claude)5% $(otak-openai)100%');
+        });
+
+        test('falls back to the weekly window when a snapshot has no 5-hour data', () => {
+            const weeklyOnly = view({ secondary: { usedPercent: 42 }, asOfMs: NOW_MS });
+            assert.strictEqual(statusBarText(weeklyOnly, view(undefined), 'today', false, 'limits'), '$(otak-claude)42%');
         });
 
         test('limits mode falls back to cost when no snapshot is available', () => {
@@ -151,7 +162,7 @@ suite('limits: formatting', () => {
         });
 
         test('a provider without a snapshot contributes no segment', () => {
-            assert.strictEqual(statusBarText(view(undefined), codex, 'today', false, 'costAndLimits'), '$0.00  ⬡100%');
+            assert.strictEqual(statusBarText(view(undefined), codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-openai)100%');
         });
     });
 

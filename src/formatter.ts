@@ -4,8 +4,9 @@ import { LimitWindow, ProviderLimits } from './limits';
 import { Period } from './period';
 import { RtkPeriodStats, RtkStats, rtkSavingsPct } from './rtk';
 
-export const CLAUDE_ICON = '$(sparkle)';
-export const CODEX_ICON = '⬡';
+// Brand glyphs shipped as an icon font (contributes.icons in package.json).
+export const CLAUDE_ICON = '$(otak-claude)';
+export const CODEX_ICON = '$(otak-openai)';
 export const RTK_ICON = '$(zap)';
 
 const DEFAULT_I18N = new I18n('en');
@@ -64,7 +65,7 @@ export function statusBarText(claude: ProviderView, codex: ProviderView, period:
     const segments: string[] = [];
     if (mode !== 'cost') {
         for (const [icon, view] of [[CLAUDE_ICON, claude], [CODEX_ICON, codex]] as const) {
-            const pct = worstUsedPercent(view.show && view.available ? view.limits : undefined);
+            const pct = statusBarUsedPercent(view.show && view.available ? view.limits : undefined);
             if (pct !== undefined) {
                 segments.push(`${icon}${Math.round(pct)}%`);
             }
@@ -100,10 +101,13 @@ export function cycleStatusBarView(period: Period, mode: StatusBarMode, limitsEn
     return { period, mode: 'limits' };
 }
 
-/** The most constrained window's used percentage — what the user will hit first. */
-function worstUsedPercent(limits: ProviderLimits | undefined): number | undefined {
-    const values = [limits?.primary?.usedPercent, limits?.secondary?.usedPercent].filter((v): v is number => v !== undefined);
-    return values.length === 0 ? undefined : Math.max(...values);
+/**
+ * The 5-hour (primary) window's used percentage, so both providers show the
+ * same window side by side; falls back to the weekly window when a snapshot
+ * lacks primary data. The tooltip still shows both windows in full.
+ */
+function statusBarUsedPercent(limits: ProviderLimits | undefined): number | undefined {
+    return limits?.primary?.usedPercent ?? limits?.secondary?.usedPercent;
 }
 
 function periodCost(view: ProviderView, period: Period): number {
@@ -116,11 +120,9 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     if (combined) {
         parts.push(combined);
     }
-    if (claude.show) {
-        parts.push(providerSection('Claude Code', CLAUDE_ICON, claude, i18n, updatedAt));
-    }
-    if (codex.show) {
-        parts.push(providerSection('Codex CLI', CODEX_ICON, codex, i18n, updatedAt));
+    const grid = providerGrid(claude, codex, i18n, updatedAt);
+    if (grid) {
+        parts.push(grid);
     }
     if (rtk.show && rtk.stats) {
         parts.push(rtkSection(rtk.stats, i18n));
@@ -188,31 +190,58 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
     return lines.join('\n');
 }
 
-function providerSection(title: string, icon: string, view: ProviderView, i18n: I18n, updatedAt: Date): string {
-    const lines: string[] = [`${icon} **${title}**\n`];
-    if (!view.available) {
-        lines.push(`_${i18n.t('tooltip.logDirectoryNotFound')}_\n`);
-        return lines.join('\n');
+interface ProviderColumn {
+    header: string;
+    limits: string | undefined;
+    usage: string;
+}
+
+/**
+ * Providers rendered side by side as columns of one table (Claude Code left,
+ * Codex right), each cell stacking its lines with `<br>` — the caller must
+ * enable `supportHtml` on the MarkdownString. Costs read `today / month`.
+ */
+function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, updatedAt: Date): string | undefined {
+    const columns: ProviderColumn[] = [];
+    if (claude.show) {
+        columns.push(providerColumn('Claude Code', CLAUDE_ICON, claude, i18n, updatedAt));
     }
-    const limits = limitsLines(view.limits, updatedAt, i18n);
-    if (limits) {
-        lines.push(`${limits}\n`);
+    if (codex.show) {
+        columns.push(providerColumn('Codex CLI', CODEX_ICON, codex, i18n, updatedAt));
     }
-    const models = view.summary.models;
-    if (models.length === 0) {
-        lines.push(`_${i18n.t('tooltip.noUsageThisMonth')}_\n`);
-        return lines.join('\n');
+    if (columns.length === 0) {
+        return undefined;
     }
-    lines.push(`| ${i18n.t('tooltip.model')} | ${i18n.t('tooltip.today')} | ${i18n.t('tooltip.thisMonth')} |`);
-    lines.push('| :--- | ---: | ---: |');
-    for (const row of models) {
-        const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
-        const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
-        lines.push(`| ${row.model} | ${today} | ${month} |`);
+    const lines: string[] = [];
+    lines.push(`| ${columns.map((c) => c.header).join(' | ')} |`);
+    lines.push(`|${columns.map(() => ' :--- ').join('|')}|`);
+    if (columns.some((c) => c.limits)) {
+        lines.push(`| ${columns.map((c) => c.limits ?? '—').join(' | ')} |`);
     }
-    lines.push(`| **${i18n.t('tooltip.total')}** | **${formatCost(view.summary.todayCost)}** | **${formatCost(view.summary.monthCost)}** |`);
+    lines.push(`| ${columns.map((c) => c.usage).join(' | ')} |`);
+    lines.push('');
+    lines.push(`_${i18n.t('tooltip.today')} / ${i18n.t('tooltip.thisMonth')}_`);
     lines.push('');
     return lines.join('\n');
+}
+
+function providerColumn(title: string, icon: string, view: ProviderView, i18n: I18n, updatedAt: Date): ProviderColumn {
+    const header = `${icon} **${title}**`;
+    if (!view.available) {
+        return { header, limits: undefined, usage: `_${i18n.t('tooltip.logDirectoryNotFound')}_` };
+    }
+    const limits = limitsLines(view.limits, updatedAt, i18n, '<br>');
+    const models = view.summary.models;
+    if (models.length === 0) {
+        return { header, limits, usage: `_${i18n.t('tooltip.noUsageThisMonth')}_` };
+    }
+    const usageLines = models.map((row) => {
+        const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
+        const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
+        return `${row.model}: ${today} / ${month}`;
+    });
+    usageLines.push(`**${i18n.t('tooltip.total')}: ${formatCost(view.summary.todayCost)} / ${formatCost(view.summary.monthCost)}**`);
+    return { header, limits, usage: usageLines.join('<br>') };
 }
 
 /**
@@ -222,10 +251,10 @@ function providerSection(title: string, icon: string, view: ProviderView, i18n: 
  * 5h · **5% used** · resets 16:40
  * 7d · **19% used** · resets 07-15 14:00
  * ```
- * Lines are joined with a Markdown hard break ("  \n") so each window renders
- * on its own row inside the tooltip.
+ * Lines are joined with `separator` — a Markdown hard break ("  \n") for
+ * standalone use, or `<br>` when embedded inside a table cell.
  */
-export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N): string | undefined {
+export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N, separator = '  \n'): string | undefined {
     if (!limits) {
         return undefined;
     }
@@ -241,7 +270,7 @@ export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n 
         return undefined;
     }
     const plan = limits.planType ? ` (${limits.planType})` : '';
-    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows].join('  \n');
+    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows].join(separator);
 }
 
 function resetSuffix(window: LimitWindow, now: Date, i18n: I18n): string {

@@ -2,6 +2,15 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.7.0] - 2026-07-11
+
+### Added
+- Claude and OpenAI brand logos, shipped as a bundled icon font (`contributes.icons`), replace the generic `$(sparkle)` / `⬡` glyphs everywhere the providers appear (status bar and tooltip). (#7)
+
+### Changed
+- The tooltip now lays Claude Code and Codex CLI out side by side in a two-column grid — limits row, then per-model costs as `today / month` — with RTK savings below. (#7)
+- The status-bar limits view shows each provider's **5-hour window** percentage (instead of the most constrained window), so both providers read on the same scale; snapshots without 5-hour data fall back to the weekly window. (#7)
+
 ## [1.6.0] - 2026-07-11
 
 ### Added

@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -192,6 +192,22 @@
           "type": "string",
           "default": "",
           "description": "%config.telemetryServiceInstanceId%"
+        }
+      }
+    },
+    "icons": {
+      "otak-openai": {
+        "description": "OpenAI logo (Codex CLI)",
+        "default": {
+          "fontPath": "./images/otak-usage-icons.woff",
+          "fontCharacter": "\\E900"
+        }
+      },
+      "otak-claude": {
+        "description": "Claude logo (Claude Code)",
+        "default": {
+          "fontPath": "./images/otak-usage-icons.woff",
+          "fontCharacter": "\\E901"
         }
       }
     }

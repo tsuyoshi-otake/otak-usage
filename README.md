@@ -43,7 +43,7 @@ Hover the status-bar item for a per-model breakdown of today and the current mon
 ## Capabilities
 
 - **Two providers, one glance**: Claude Code (`~/.claude/projects/**/*.jsonl`) and OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`) roll up into one status-bar total. Either provider can be used on its own.
-- **Per-model cost breakdowns**: the tooltip and copied summary show token usage and API-equivalent USD by provider, model, and period.
+- **Per-model cost breakdowns**: the tooltip and copied summary show token usage and API-equivalent USD by provider, model, and period. In the tooltip, Claude Code and Codex sit side by side (with their brand logos) and RTK savings follow below.
 - **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses. Optionally mirrored in the status bar.
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
@@ -114,11 +114,11 @@ Limits (max)
 - **Codex CLI**: read entirely locally. Rollout session logs already contain the server-reported `rate_limits` snapshot on every turn; the extension reads the tail of the most recent log. Because the snapshot dates from your last Codex activity, a window whose reset time has already passed is shown as 0% used rather than a stale value.
 - **Claude Code**: local logs carry no rate-limit data, so the extension calls the Anthropic usage endpoint — the same source as the CLI's `/usage` command — authenticated with the OAuth token Claude Code stores in `.credentials.json`. The token is read-only: it is never refreshed, written, or sent anywhere except `api.anthropic.com`. If the credentials file is absent (for example on macOS, where Claude Code uses the Keychain) or the token has expired, Claude limits are simply omitted.
 
-Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself:
+Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself. Each provider is shown with its brand logo (Claude / OpenAI, shipped as an icon font) followed by its **5-hour window** percentage, so both providers read on the same scale; a snapshot without 5-hour data falls back to its weekly window.
 
 - `cost` (default): the API-equivalent cost, e.g. `$18.01`.
-- `limits`: each provider's most constrained window percentage instead of cost, e.g. `✦8% ⬡100%` (falls back to cost until a snapshot is available).
-- `costAndLimits`: both, e.g. `$18.01  ✦8% ⬡100%`.
+- `limits`: the per-provider percentages instead of cost, e.g. `{claude} 5% {openai} 100%` (falls back to cost until a snapshot is available).
+- `costAndLimits`: both, e.g. `$18.01 {claude} 5% {openai} 100%`.
 
 **Clicking the status-bar item cycles the view**: today's cost → this month's cost → limits → back to today's cost. Leaving the limits view restores your configured mode, so a `costAndLimits` preference survives the round trip.
 
