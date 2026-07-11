@@ -3,7 +3,7 @@
 # otak-usage
 
 **See what your AI pair programmers would cost, right in the VS Code status bar.**  
-otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts token counts into API-equivalent USD, and can add RTK savings plus optional OpenTelemetry export.
+otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts token counts into API-equivalent USD, shows how much of your subscription rate limits is used, and can add RTK savings plus optional OpenTelemetry export.
 
 [![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/odangoo.otak-usage?label=Marketplace&color=1d4ed8)](https://marketplace.visualstudio.com/items?itemName=odangoo.otak-usage)
 [![VS Code engine](https://img.shields.io/badge/VS%20Code-%5E1.90.0-007acc)](https://code.visualstudio.com/)
@@ -14,7 +14,7 @@ otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts t
 ![Codex CLI](https://img.shields.io/badge/Codex%20CLI-supported-0f766e)
 ![RTK savings](https://img.shields.io/badge/RTK%20savings-optional-2563eb)
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-opt--in-334155)
-![Local by default](https://img.shields.io/badge/data-local%20by%20default-64748b)
+![Local-first](https://img.shields.io/badge/data-local--first-64748b)
 
 [**Install**](https://marketplace.visualstudio.com/items?itemName=odangoo.otak-usage) ·
 [**GitHub**](https://github.com/tsuyoshi-otake/otak-usage) ·
@@ -61,8 +61,9 @@ On each refresh, otak-usage:
 2. Streams current-month JSONL logs from the available providers.
 3. Deduplicates transcript records and normalizes token counters.
 4. Applies built-in pricing plus any `otakUsage.pricingOverrides`.
-5. Updates the status bar, tooltip, and copied summary data.
-6. Optionally reads RTK aggregate savings and exports OpenTelemetry metrics.
+5. Reads the latest Codex rate-limit snapshot from the session logs and, when `otakUsage.showRateLimits` is enabled, fetches Claude Code limits from the Anthropic usage endpoint.
+6. Updates the status bar, tooltip, and copied summary data.
+7. Optionally reads RTK aggregate savings and exports OpenTelemetry metrics.
 
 If a provider directory is missing, that provider is skipped without blocking the other one. Unknown-priced models are counted as usage but shown as `n/a` for cost until you add an override.
 
@@ -186,7 +187,7 @@ ext install odangoo.otak-usage
 ```bash
 npm install
 npm run package
-code --install-extension otak-usage-1.3.6.vsix
+code --install-extension otak-usage-<version>.vsix
 ```
 
 Reload VS Code after installing the VSIX.
@@ -198,6 +199,7 @@ Reload VS Code after installing the VSIX.
 - **The status bar does not show usage**: confirm Claude Code or Codex CLI has created local session logs on the same machine or remote host where the VS Code extension host is running.
 - **One provider is missing**: check `otakUsage.claudeConfigDir` or `otakUsage.codexHome` if your logs are outside the default locations.
 - **A model shows `n/a` cost**: add an entry to `otakUsage.pricingOverrides` for that model.
+- **Rate limits are not showing**: Codex limits appear after the first Codex turn on this machine (they come from session logs). Claude limits require `~/.claude/.credentials.json` with a valid OAuth token — on macOS Claude Code keeps credentials in the Keychain, so Claude limits are unavailable there. Also confirm `otakUsage.showRateLimits` is enabled and reload the window after installing an update.
 - **RTK savings are absent**: install `rtk`, put it on `PATH`, or set `otakUsage.rtkPath`.
 - **Telemetry is not appearing**: confirm `otakUsage.telemetry.enabled`, the OTLP/HTTP base endpoint, custom headers, and the collector's `/v1/metrics` route.
 - **The numbers differ from a subscription bill**: otak-usage estimates API-equivalent cost, not subscription spend.
