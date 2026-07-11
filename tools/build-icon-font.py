@@ -25,9 +25,9 @@ ASCENT = 850
 DESCENT = -150
 # Glyphs are drawn smaller than the em box so the icons match the optical
 # size of the status-bar text instead of towering over it.
-GLYPH = 760      # icon box (width and height) in font units
-X_BEARING = 40   # side bearing; advance = GLYPH + 2 * X_BEARING
-Y_BOTTOM = -60   # slight descent so the icon centers on the text
+GLYPH = 640      # icon box (width and height) in font units
+X_BEARING = 60   # side bearing; advance = GLYPH + 2 * X_BEARING
+Y_BOTTOM = -20   # sit almost on the baseline, top near cap height
 
 def svg_d(path):
     src = open(path, encoding='utf-8').read()

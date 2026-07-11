@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.1] - 2026-07-11
+
+### Changed
+- Brand icons shrunk another step (640/1000 em, sitting on the baseline) — they were still optically larger than the status-bar text. (#7)
+
 ## [1.8.0] - 2026-07-11
 
 ### Added
