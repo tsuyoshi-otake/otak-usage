@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.8.5",
+  "version": "1.9.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -69,11 +69,35 @@
           "minimum": 10,
           "description": "%config.updateIntervalSeconds%"
         },
+        "otakUsage.alertMode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "cost",
+            "limit",
+            "both"
+          ],
+          "enumDescriptions": [
+            "%config.alertMode.off%",
+            "%config.alertMode.cost%",
+            "%config.alertMode.limit%",
+            "%config.alertMode.both%"
+          ],
+          "default": "both",
+          "description": "%config.alertMode%"
+        },
         "otakUsage.dailyAlertThresholdUsd": {
           "type": "number",
           "default": 10,
           "minimum": 0,
           "description": "%config.dailyAlertThresholdUsd%"
+        },
+        "otakUsage.limitAlertThresholdPercent": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "%config.limitAlertThresholdPercent%"
         },
         "otakUsage.showClaude": {
           "type": "boolean",

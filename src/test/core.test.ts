@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
-import { evaluateDailyAlert, normalizeDailyAlertThresholdUsd } from '../alert';
+import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState } from '../alert';
 import { RtkView, clipboardText, formatCost, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
@@ -290,6 +290,103 @@ suite('daily alert', () => {
     });
 });
 
+suite('alert mode', () => {
+    test('normalizes the alert mode with a "both" fallback', () => {
+        for (const mode of ['off', 'cost', 'limit', 'both'] as AlertMode[]) {
+            assert.strictEqual(normalizeAlertMode(mode), mode);
+        }
+        assert.strictEqual(normalizeAlertMode(undefined), 'both');
+        assert.strictEqual(normalizeAlertMode('nonsense'), 'both');
+    });
+
+    test('clamps the limit alert threshold percent to 0-100', () => {
+        assert.strictEqual(normalizeLimitAlertThresholdPercent(undefined), 80);
+        assert.strictEqual(normalizeLimitAlertThresholdPercent(Number.NaN), 80);
+        assert.strictEqual(normalizeLimitAlertThresholdPercent(-5), 0);
+        assert.strictEqual(normalizeLimitAlertThresholdPercent(150), 100);
+        assert.strictEqual(normalizeLimitAlertThresholdPercent(72), 72);
+    });
+});
+
+suite('limit alert', () => {
+    const win = (over: Partial<LimitAlertWindow> = {}): LimitAlertWindow => ({
+        id: 'claude:primary', provider: 'Claude', window: '5h', usedPercent: 90, resetsAtMs: 1000, ...over,
+    });
+
+    test('notifies once when a window reaches the threshold', () => {
+        const decision = evaluateLimitAlert([win({ usedPercent: 82 })], 80, undefined);
+        assert.strictEqual(decision.triggered.length, 1);
+        assert.strictEqual(decision.triggered[0].id, 'claude:primary');
+        assert.deepStrictEqual(decision.nextState.notified['claude:primary'], { resetsAtMs: 1000, thresholdPercent: 80 });
+
+        // Same window instance climbing further does not re-notify.
+        const again = evaluateLimitAlert([win({ usedPercent: 95 })], 80, decision.nextState);
+        assert.strictEqual(again.triggered.length, 0);
+    });
+
+    test('does not notify below the threshold', () => {
+        const decision = evaluateLimitAlert([win({ usedPercent: 79 })], 80, undefined);
+        assert.strictEqual(decision.triggered.length, 0);
+        assert.deepStrictEqual(decision.nextState.notified, {});
+    });
+
+    test('re-arms when the window resets to a new instance', () => {
+        const first = evaluateLimitAlert([win({ usedPercent: 90 })], 80, undefined);
+        assert.strictEqual(first.triggered.length, 1);
+        const nextInstance = evaluateLimitAlert([win({ usedPercent: 90, resetsAtMs: 2000 })], 80, first.nextState);
+        assert.strictEqual(nextInstance.triggered.length, 1);
+        assert.strictEqual(nextInstance.nextState.notified['claude:primary'].resetsAtMs, 2000);
+    });
+
+    test('re-notifies when the threshold is raised above the level already sent', () => {
+        const first = evaluateLimitAlert([win({ usedPercent: 96 })], 80, undefined);
+        assert.strictEqual(first.triggered.length, 1);
+        // Lowered threshold: already covered by the 80% alert, stays silent.
+        const lower = evaluateLimitAlert([win({ usedPercent: 96 })], 70, first.nextState);
+        assert.strictEqual(lower.triggered.length, 0);
+        assert.strictEqual(lower.nextState.notified['claude:primary'].thresholdPercent, 80);
+        // Raised threshold and still crossed: a more severe alert fires again.
+        const higher = evaluateLimitAlert([win({ usedPercent: 96 })], 95, first.nextState);
+        assert.strictEqual(higher.triggered.length, 1);
+        assert.strictEqual(higher.nextState.notified['claude:primary'].thresholdPercent, 95);
+    });
+
+    test('threshold zero disables limit notifications', () => {
+        const decision = evaluateLimitAlert([win({ usedPercent: 100 })], 0, undefined);
+        assert.strictEqual(decision.triggered.length, 0);
+        assert.deepStrictEqual(decision.nextState.notified, {});
+    });
+
+    test('drops state for windows no longer present', () => {
+        const first = evaluateLimitAlert([win({ usedPercent: 90 })], 80, undefined);
+        const gone = evaluateLimitAlert([], 80, first.nextState);
+        assert.deepStrictEqual(gone.nextState.notified, {});
+    });
+
+    test('evaluates each provider window independently', () => {
+        const windows = [
+            win({ id: 'claude:primary', usedPercent: 85 }),
+            win({ id: 'codex:secondary', provider: 'Codex', window: '7d', usedPercent: 50, resetsAtMs: 3000 }),
+        ];
+        const decision = evaluateLimitAlert(windows, 80, undefined);
+        assert.deepStrictEqual(decision.triggered.map((w) => w.id), ['claude:primary']);
+    });
+
+    test('state validation and equality', () => {
+        assert.strictEqual(isValidLimitAlertState({ notified: {} }), true);
+        assert.strictEqual(isValidLimitAlertState({ notified: { 'claude:primary': { resetsAtMs: null, thresholdPercent: 80 } } }), true);
+        assert.strictEqual(isValidLimitAlertState({ notified: { x: { resetsAtMs: 'no', thresholdPercent: 80 } } }), false);
+        assert.strictEqual(isValidLimitAlertState(undefined), false);
+        assert.strictEqual(isValidLimitAlertState({}), false);
+
+        const a = { notified: { 'claude:primary': { resetsAtMs: 1000, thresholdPercent: 80 } } };
+        const b = { notified: { 'claude:primary': { resetsAtMs: 1000, thresholdPercent: 80 } } };
+        assert.strictEqual(sameLimitAlertState(a, b), true);
+        assert.strictEqual(sameLimitAlertState(a, { notified: {} }), false);
+        assert.strictEqual(sameLimitAlertState(undefined, undefined), true);
+    });
+});
+
 suite('i18n', () => {
     test('resolves supported and regional locales', () => {
         assert.strictEqual(resolveSupportedLocale('en-US'), 'en');
@@ -324,6 +421,17 @@ suite('i18n', () => {
             assert.ok(message.includes('$10.00'), locale);
             assert.ok(!message.includes('{total}'), locale);
             assert.ok(!message.includes('{threshold}'), locale);
+        }
+    });
+
+    test('all supported locales substitute the limit alert message', () => {
+        for (const locale of SUPPORTED_LOCALES) {
+            const message = new I18n(locale).t('alert.limitExceeded', { provider: 'Claude', window: '5h', pct: '82', threshold: '80' });
+            assert.ok(message.includes('Claude'), locale);
+            assert.ok(message.includes('82'), locale);
+            for (const ph of ['{provider}', '{window}', '{pct}', '{threshold}']) {
+                assert.ok(!message.includes(ph), `${locale}: ${ph}`);
+            }
         }
     });
 });
