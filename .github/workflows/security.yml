@@ -27,7 +27,11 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        # The extension ships zero runtime dependencies (everything is a
+        # devDependency used only for build/test/packaging), so only the
+        # production dependency tree is relevant to the published artifact.
+        # Dev-tooling advisories (mocha/vsce transitive deps) don't reach users.
+        run: npm audit --omit=dev --audit-level=high
 
   codeql-analysis:
     name: CodeQL Analysis
