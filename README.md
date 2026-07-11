@@ -38,6 +38,32 @@ $18.01
 
 Hover the status-bar item for a per-model breakdown of today and the current month. Click it to cycle between **Today**, **This Month**, and **Limits** (subscription rate-limit usage).
 
+The hover tooltip puts Claude Code and Codex CLI side by side — each with its brand logo, rate-limit windows, per-model cost, and a provider total — followed by RTK token savings:
+
+```text
+otak-usage — API-equivalent cost
+
+OpenAI + Claude Total: $9.80 / $297.45
+
+Claude Code — Limits (max)        │ Codex CLI — Limits (pro)
+5h · 28% used · resets 16:39      │ 5h · 5% used · resets 18:59
+7d · 13% used · resets 07-15      │ 7d · 21% used · resets 07-18
+claude-opus-4-8:  $6.20 / $142.30 │ gpt-5.5:      $2.14 / $88.60
+claude-sonnet-5:  $1.05 / $58.40  │ gpt-5.4-mini: $0.41 / $6.05
+claude-haiku-4-5: $0.00 / $2.10   │
+Total:            $7.25 / $202.80 │ Total:        $2.55 / $94.65
+
+RTK — Token Savings
+Period       Input    Output   Saved    Rate
+Today        7.1M     2.9M     4.2M     59.5%
+This Month   12.4M    5.1M     7.3M     58.9%
+All Time     3.0B     110.1M   2.9B     96.4%
+
+Period: This Month · Updated 16:09 · Click to switch view
+```
+
+> Amounts above are illustrative. The status bar shows the combined total; the two provider columns, the limit windows, and the RTK table each appear only when that data is available and enabled.
+
 > **Disclaimer**: The amounts shown are API-equivalent estimates computed from local session logs and per-token API prices. If you use a subscription plan such as Claude Pro/Max or ChatGPT Plus/Pro, this is not what you actually pay; it is what the same usage would have cost through the API.
 
 ## Capabilities
