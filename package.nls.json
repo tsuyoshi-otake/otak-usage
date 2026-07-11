@@ -1,6 +1,7 @@
 {
   "extension.description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
   "command.togglePeriod": "Toggle Period (Today / This Month)",
+  "command.cycleStatusBarView": "Cycle Status Bar View (Today / This Month / Limits)",
   "command.refresh": "Refresh Usage (Clear Cache and Rescan)",
   "command.copyUsage": "Copy Usage Summary",
   "config.period": "Aggregation period shown in the status bar.",
@@ -8,6 +9,8 @@
   "config.dailyAlertThresholdUsd": "Daily total cost alert threshold in USD. A notification appears when today's Claude + Codex API-equivalent cost reaches this amount. Set to 0 to disable.",
   "config.showClaude": "Show Claude Code usage in the status bar.",
   "config.showCodex": "Show Codex CLI usage in the status bar.",
+  "config.showRateLimits": "Show subscription rate-limit usage (5-hour and weekly windows) in the tooltip. Codex limits are read from local session logs; Claude Code limits are fetched from the Anthropic API using the OAuth token that Claude Code stores locally.",
+  "config.statusBarMode": "What the status-bar item shows: cost only, subscription rate limits only, or both.",
   "config.showRtk": "Show RTK (Rust Token Killer) token savings in the tooltip. The section is hidden automatically when the rtk CLI is not installed.",
   "config.rtkPath": "Path to the rtk executable. Empty = `rtk` on PATH.",
   "config.pricingOverrides": "Per-model pricing overrides in USD per million tokens. Example: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. For OpenAI models use `input`, `cachedInput`, and `output`.",

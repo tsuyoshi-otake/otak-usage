@@ -1,6 +1,7 @@
 {
   "extension.description": "Otak Usage 在 VS Code 状态栏中显示 Claude Code 和 OpenAI Codex CLI 会话的 API 等效成本，并提供今天和本月的按模型明细。",
   "command.togglePeriod": "切换周期（今天 / 本月）",
+  "command.cycleStatusBarView": "切换状态栏视图（今天 / 本月 / 限额）",
   "command.refresh": "刷新用量（清除缓存并重新扫描）",
   "command.copyUsage": "复制用量摘要",
   "config.period": "状态栏中显示的汇总周期。",
@@ -8,6 +9,8 @@
   "config.dailyAlertThresholdUsd": "每日总成本提醒阈值（美元）。当今天的 Claude + Codex API 等效成本达到此金额时会显示通知。设为 0 可禁用。",
   "config.showClaude": "在状态栏中显示 Claude Code 用量。",
   "config.showCodex": "在状态栏中显示 Codex CLI 用量。",
+  "config.showRateLimits": "在工具提示中显示订阅速率限制的使用情况（5 小时窗口和每周窗口）。Codex 限额从本地会话日志读取；Claude Code 限额使用本地存储的 OAuth 令牌从 Anthropic API 获取。",
+  "config.statusBarMode": "状态栏项目显示的内容：仅费用、仅订阅速率限制，或两者都显示。",
   "config.showRtk": "在工具提示中显示 RTK (Rust Token Killer) 令牌节省量。未安装 rtk CLI 时会自动隐藏该部分。",
   "config.rtkPath": "rtk 可执行文件路径。留空表示使用 PATH 中的 `rtk`。",
   "config.pricingOverrides": "按模型覆盖价格，单位为每百万令牌的美元价格。示例：`{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI 模型请使用 `input`、`cachedInput` 和 `output`。",

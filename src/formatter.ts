@@ -1,5 +1,6 @@
 import { ProviderSummary } from './aggregator';
 import { I18n } from './i18n';
+import { LimitWindow, ProviderLimits } from './limits';
 import { Period } from './period';
 import { RtkPeriodStats, RtkStats, rtkSavingsPct } from './rtk';
 
@@ -33,6 +34,8 @@ export interface ProviderView {
     /** false when the provider's log directory was not found */
     available: boolean;
     show: boolean;
+    /** subscription rate-limit snapshot; undefined = unknown or disabled */
+    limits?: ProviderLimits;
 }
 
 export interface RtkView {
@@ -41,7 +44,16 @@ export interface RtkView {
     show: boolean;
 }
 
-export function statusBarText(claude: ProviderView, codex: ProviderView, period: Period, scanning: boolean): string {
+/**
+ * What the status-bar item displays:
+ * - `cost`: API-equivalent cost only (default, unchanged behaviour).
+ * - `limits`: each provider's most constrained rate-limit percentage only,
+ *   falling back to cost when no rate-limit snapshot is available.
+ * - `costAndLimits`: cost followed by the rate-limit percentages.
+ */
+export type StatusBarMode = 'cost' | 'limits' | 'costAndLimits';
+
+export function statusBarText(claude: ProviderView, codex: ProviderView, period: Period, scanning: boolean, mode: StatusBarMode = 'cost'): string {
     if (scanning) {
         return '$(loading~spin) usage';
     }
@@ -49,7 +61,49 @@ export function statusBarText(claude: ProviderView, codex: ProviderView, period:
     if (visibleProviders.length === 0) {
         return '—';
     }
-    return formatCost(visibleProviders.reduce((total, view) => total + periodCost(view, period), 0));
+    const segments: string[] = [];
+    if (mode !== 'cost') {
+        for (const [icon, view] of [[CLAUDE_ICON, claude], [CODEX_ICON, codex]] as const) {
+            const pct = worstUsedPercent(view.show && view.available ? view.limits : undefined);
+            if (pct !== undefined) {
+                segments.push(`${icon}${Math.round(pct)}%`);
+            }
+        }
+    }
+    const parts: string[] = [];
+    // 'limits' hides cost, but still shows it when no limit snapshot exists yet.
+    if (mode !== 'limits' || segments.length === 0) {
+        parts.push(formatCost(visibleProviders.reduce((total, view) => total + periodCost(view, period), 0)));
+    }
+    if (segments.length > 0) {
+        parts.push(segments.join(' '));
+    }
+    return parts.join('  ');
+}
+
+/**
+ * The status-bar click cycle: today's cost → this month's cost → limits →
+ * back to today's cost. `baseMode` is the mode to restore when leaving the
+ * limits view (so a user-configured `costAndLimits` survives the round trip).
+ * With rate limits disabled the click degrades to the classic period toggle.
+ */
+export function cycleStatusBarView(period: Period, mode: StatusBarMode, limitsEnabled: boolean, baseMode: StatusBarMode = 'cost'): { period: Period; mode: StatusBarMode } {
+    if (!limitsEnabled) {
+        return { period: period === 'today' ? 'month' : 'today', mode };
+    }
+    if (mode === 'limits') {
+        return { period: 'today', mode: baseMode === 'limits' ? 'cost' : baseMode };
+    }
+    if (period === 'today') {
+        return { period: 'month', mode };
+    }
+    return { period, mode: 'limits' };
+}
+
+/** The most constrained window's used percentage — what the user will hit first. */
+function worstUsedPercent(limits: ProviderLimits | undefined): number | undefined {
+    const values = [limits?.primary?.usedPercent, limits?.secondary?.usedPercent].filter((v): v is number => v !== undefined);
+    return values.length === 0 ? undefined : Math.max(...values);
 }
 
 function periodCost(view: ProviderView, period: Period): number {
@@ -63,10 +117,10 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
         parts.push(combined);
     }
     if (claude.show) {
-        parts.push(providerSection('Claude Code', CLAUDE_ICON, claude, i18n));
+        parts.push(providerSection('Claude Code', CLAUDE_ICON, claude, i18n, updatedAt));
     }
     if (codex.show) {
-        parts.push(providerSection('Codex CLI', CODEX_ICON, codex, i18n));
+        parts.push(providerSection('Codex CLI', CODEX_ICON, codex, i18n, updatedAt));
     }
     if (rtk.show && rtk.stats) {
         parts.push(rtkSection(rtk.stats, i18n));
@@ -107,6 +161,20 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
             continue;
         }
         lines.push(`${title}: today ${formatCost(view.summary.todayCost)} / month ${formatCost(view.summary.monthCost)}`);
+        const limits = view.limits;
+        if (limits) {
+            const rows: string[] = [];
+            for (const [label, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
+                if (window) {
+                    const reset = window.resetsAtMs === undefined ? '' : ` (resets ${formatResetTime(window.resetsAtMs, now)})`;
+                    rows.push(`    ${label} ${Math.round(window.usedPercent)}% used${reset}`);
+                }
+            }
+            if (rows.length > 0) {
+                lines.push(`  limits${limits.planType ? ` (${limits.planType})` : ''}:`);
+                lines.push(...rows);
+            }
+        }
         for (const row of view.summary.models) {
             const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
             const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
@@ -120,11 +188,15 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
     return lines.join('\n');
 }
 
-function providerSection(title: string, icon: string, view: ProviderView, i18n: I18n): string {
+function providerSection(title: string, icon: string, view: ProviderView, i18n: I18n, updatedAt: Date): string {
     const lines: string[] = [`${icon} **${title}**\n`];
     if (!view.available) {
         lines.push(`_${i18n.t('tooltip.logDirectoryNotFound')}_\n`);
         return lines.join('\n');
+    }
+    const limits = limitsLines(view.limits, updatedAt, i18n);
+    if (limits) {
+        lines.push(`${limits}\n`);
     }
     const models = view.summary.models;
     if (models.length === 0) {
@@ -141,6 +213,52 @@ function providerSection(title: string, icon: string, view: ProviderView, i18n: 
     lines.push(`| **${i18n.t('tooltip.total')}** | **${formatCost(view.summary.todayCost)}** | **${formatCost(view.summary.monthCost)}** |`);
     lines.push('');
     return lines.join('\n');
+}
+
+/**
+ * Rate-limit summary as a header line plus one line per window, e.g.
+ * ```
+ * $(dashboard) **Limits** (max)
+ * 5h · **5% used** · resets 16:40
+ * 7d · **19% used** · resets 07-15 14:00
+ * ```
+ * Lines are joined with a Markdown hard break ("  \n") so each window renders
+ * on its own row inside the tooltip.
+ */
+export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N): string | undefined {
+    if (!limits) {
+        return undefined;
+    }
+    const rows: string[] = [];
+    for (const [label, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
+        if (!window) {
+            continue;
+        }
+        const used = i18n.t('tooltip.limitUsed', { pct: String(Math.round(window.usedPercent)) });
+        rows.push(`${label} · **${used}**${resetSuffix(window, now, i18n)}`);
+    }
+    if (rows.length === 0) {
+        return undefined;
+    }
+    const plan = limits.planType ? ` (${limits.planType})` : '';
+    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows].join('  \n');
+}
+
+function resetSuffix(window: LimitWindow, now: Date, i18n: I18n): string {
+    if (window.resetsAtMs === undefined) {
+        return '';
+    }
+    return ` · ${i18n.t('tooltip.limitResets', { time: formatResetTime(window.resetsAtMs, now) })}`;
+}
+
+/** HH:mm for same-day resets, MM-DD HH:mm otherwise (local time). */
+function formatResetTime(resetsAtMs: number, now: Date): string {
+    const d = new Date(resetsAtMs);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+        return hhmm;
+    }
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hhmm}`;
 }
 
 function rtkSection(stats: RtkStats, i18n: I18n): string {

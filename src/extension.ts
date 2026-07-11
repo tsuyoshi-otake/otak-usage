@@ -6,8 +6,9 @@ import { ProviderSummary, summarize } from './aggregator';
 import { DailyAlertState, evaluateDailyAlert, isValidDailyAlertState, normalizeDailyAlertThresholdUsd, sameDailyAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, RtkView, clipboardText, formatCost, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, formatCost, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
+import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
@@ -16,6 +17,7 @@ import { Provider } from './types';
 
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
+const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -33,6 +35,10 @@ class UsageController implements vscode.Disposable {
     private focused = true;
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
     private lastRtkStats: RtkStats | undefined;
+    private lastClaudeLimits: ProviderLimits | undefined;
+    private lastCodexLimits: ProviderLimits | undefined;
+    private limitsFetching = false;
+    private lastClaudeLimitsFetchMs = 0;
     private lastViews: { claude: ProviderView; codex: ProviderView; rtk: RtkView } | undefined;
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
@@ -41,7 +47,7 @@ class UsageController implements vscode.Disposable {
     constructor(private readonly context: vscode.ExtensionContext) { }
 
     start(): void {
-        this.statusBarItem.command = 'otak-usage.togglePeriod';
+        this.statusBarItem.command = 'otak-usage.cycleStatusBarView';
         this.context.subscriptions.push(this.statusBarItem);
         this.loadCache();
         this.loadDailyAlertState();
@@ -49,6 +55,7 @@ class UsageController implements vscode.Disposable {
         this.statusBarItem.show();
         this.context.subscriptions.push(
             vscode.commands.registerCommand('otak-usage.togglePeriod', () => this.togglePeriod()),
+            vscode.commands.registerCommand('otak-usage.cycleStatusBarView', () => this.cycleStatusBarView()),
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
             vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
             vscode.workspace.onDidChangeConfiguration((e) => {
@@ -127,6 +134,7 @@ class UsageController implements vscode.Disposable {
             }
             await this.renderAndCheckAlert();
             void this.refreshRtkStats(dayKey(now));
+            void this.refreshLimits(now);
             void this.exportTelemetry(now);
         } catch (err) {
             console.error('otak-usage: scan failed', err);
@@ -159,6 +167,51 @@ class UsageController implements vscode.Disposable {
             if (fetching) {
                 this.rtkFetching = false;
             }
+        }
+    }
+
+    /** Claude limits come from a network endpoint — poll at most once a minute. */
+    private static readonly CLAUDE_LIMITS_MIN_INTERVAL_MS = 60_000;
+
+    private async refreshLimits(nowMs: number): Promise<void> {
+        if (this.limitsFetching) {
+            return;
+        }
+        this.limitsFetching = true;
+        try {
+            if (!this.config().get<boolean>('showRateLimits', true)) {
+                if (this.lastClaudeLimits || this.lastCodexLimits) {
+                    this.lastClaudeLimits = undefined;
+                    this.lastCodexLimits = undefined;
+                    this.render();
+                }
+                return;
+            }
+            const { claudeDir, codexHome } = this.lastTargets;
+            const fetchClaude = claudeDir !== undefined
+                && nowMs - this.lastClaudeLimitsFetchMs >= UsageController.CLAUDE_LIMITS_MIN_INTERVAL_MS;
+            if (fetchClaude) {
+                this.lastClaudeLimitsFetchMs = nowMs;
+            }
+            const [claude, codex] = await Promise.all([
+                fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs) : Promise.resolve(undefined),
+                codexHome ? readCodexLimits(codexHome, nowMs) : Promise.resolve(undefined),
+            ]);
+            // A failed fetch keeps the previous snapshot; effectiveLimits()
+            // neutralizes windows whose reset time has since passed.
+            if (claude) {
+                this.lastClaudeLimits = claude;
+            }
+            if (codex) {
+                this.lastCodexLimits = codex;
+            }
+            if (claude || codex) {
+                this.render();
+            }
+        } catch (err) {
+            console.error('otak-usage: rate limit refresh failed', err);
+        } finally {
+            this.limitsFetching = false;
         }
     }
 
@@ -213,22 +266,26 @@ class UsageController implements vscode.Disposable {
         const today = dayKey(now);
         const summaries = summarize(this.cache.days, today, overrides);
         this.lastSummaries = summaries;
+        const showLimits = config.get<boolean>('showRateLimits', true);
         const claude: ProviderView = {
             summary: summaries.claude,
             available: this.lastTargets.claudeAvailable,
             show: config.get<boolean>('showClaude', true),
+            limits: showLimits ? effectiveLimits(this.lastClaudeLimits, now) : undefined,
         };
         const codex: ProviderView = {
             summary: summaries.codex,
             available: this.lastTargets.codexAvailable,
             show: config.get<boolean>('showCodex', true),
+            limits: showLimits ? effectiveLimits(this.lastCodexLimits, now) : undefined,
         };
         const rtk: RtkView = {
             stats: this.lastRtkStats,
             show: config.get<boolean>('showRtk', true),
         };
         this.lastViews = { claude, codex, rtk };
-        this.statusBarItem.text = statusBarText(claude, codex, period, false);
+        const statusBarMode = showLimits ? config.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
+        this.statusBarItem.text = statusBarText(claude, codex, period, false, statusBarMode);
         const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n));
         tooltip.supportThemeIcons = true;
         tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'workbench.action.openSettings'] };
@@ -283,6 +340,26 @@ class UsageController implements vscode.Disposable {
     private async togglePeriod(): Promise<void> {
         const next: Period = this.period() === 'today' ? 'month' : 'today';
         await this.config().update('period', next, vscode.ConfigurationTarget.Global);
+        void this.renderAndCheckAlert();
+    }
+
+    /** Status-bar click: today's cost → this month's cost → limits → today's cost. */
+    private async cycleStatusBarView(): Promise<void> {
+        const config = this.config();
+        const mode = config.get<StatusBarMode>('statusBarMode', 'cost');
+        const limitsEnabled = config.get<boolean>('showRateLimits', true);
+        const baseMode = this.context.globalState.get<StatusBarMode>(BASE_STATUS_BAR_MODE_KEY, 'cost');
+        const next = cycleStatusBarView(this.period(), mode, limitsEnabled, baseMode);
+        if (next.mode === 'limits' && mode !== 'limits') {
+            // Remember what to restore when the cycle leaves the limits view.
+            await this.context.globalState.update(BASE_STATUS_BAR_MODE_KEY, mode);
+        }
+        if (next.period !== this.period()) {
+            await config.update('period', next.period, vscode.ConfigurationTarget.Global);
+        }
+        if (next.mode !== mode) {
+            await config.update('statusBarMode', next.mode, vscode.ConfigurationTarget.Global);
+        }
         void this.renderAndCheckAlert();
     }
 

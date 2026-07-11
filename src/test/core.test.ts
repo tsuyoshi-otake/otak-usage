@@ -443,7 +443,7 @@ suite('formatter', () => {
         assert.ok(md.includes('**OpenAI + Claude 合計**'));
         assert.ok(md.includes('| モデル | 本日 | 今月 |'));
         assert.ok(md.includes('| **合計** | **$12.34** | **$24.68** |'));
-        assert.ok(md.includes('期間: **今月** · 更新 09:05 · クリックして期間を切り替え'));
+        assert.ok(md.includes('期間: **今月** · 更新 09:05 · クリックして表示を切り替え'));
         assert.ok(md.includes('[$(copy) サマリーをコピー]'));
         assert.ok(md.includes('$(zap) **RTK — トークン節約量**'));
         assert.ok(md.includes('| 全期間 | 107.3M | 17.6M | 89.7M | 83.6% |'));

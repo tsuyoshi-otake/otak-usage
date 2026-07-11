@@ -1,6 +1,7 @@
 {
   "extension.description": "Otak Usage Claude Code और OpenAI Codex CLI सत्रों की API-समतुल्य लागत VS Code status bar में दिखाता है, आज और वर्तमान महीने के लिए प्रति-मॉडल विवरण के साथ।",
   "command.togglePeriod": "अवधि बदलें (आज / यह महीना)",
+  "command.cycleStatusBarView": "स्टेटस बार दृश्य बदलें (आज / इस महीने / सीमाएँ)",
   "command.refresh": "उपयोग रीफ्रेश करें (कैश साफ करें और फिर से स्कैन करें)",
   "command.copyUsage": "उपयोग सारांश कॉपी करें",
   "config.period": "status bar में दिखाई जाने वाली aggregation अवधि।",
@@ -8,6 +9,8 @@
   "config.dailyAlertThresholdUsd": "USD में दैनिक कुल लागत alert सीमा। जब आज की Claude + Codex API-समतुल्य लागत इस राशि तक पहुंचती है तो notification दिखाई देता है। अक्षम करने के लिए 0 सेट करें।",
   "config.showClaude": "status bar में Claude Code उपयोग दिखाएं।",
   "config.showCodex": "status bar में Codex CLI उपयोग दिखाएं।",
+  "config.showRateLimits": "टूलटिप में सदस्यता की दर-सीमा का उपयोग (5-घंटे और साप्ताहिक विंडो) दिखाएँ। Codex की सीमाएँ स्थानीय सत्र लॉग से पढ़ी जाती हैं; Claude Code की सीमाएँ स्थानीय रूप से संग्रहीत OAuth टोकन के साथ Anthropic API से प्राप्त की जाती हैं।",
+  "config.statusBarMode": "स्टेटस बार आइटम क्या दिखाता है: केवल लागत, केवल सदस्यता दर-सीमाएँ, या दोनों।",
   "config.showRtk": "tooltip में RTK (Rust Token Killer) token savings दिखाएं। rtk CLI installed न होने पर यह section अपने आप छिप जाता है।",
   "config.rtkPath": "rtk executable का path। खाली = PATH में मौजूद `rtk`।",
   "config.pricingOverrides": "प्रति मिलियन tokens USD में प्रति-मॉडल pricing overrides। उदाहरण: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`। OpenAI models के लिए `input`, `cachedInput`, और `output` इस्तेमाल करें।",

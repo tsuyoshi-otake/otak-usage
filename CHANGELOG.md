@@ -2,6 +2,23 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.6.0] - 2026-07-11
+
+### Added
+- Clicking the status-bar item now cycles through three views: today's cost → this month's cost → rate limits → back to today's cost (`Otak Usage: Cycle Status Bar View`). Leaving the limits view restores the configured `statusBarMode`, and disabling `otakUsage.showRateLimits` reverts the click to the classic Today/This Month toggle. (#7)
+- The tooltip footer hint now reads "Click to switch view" accordingly (all 16 languages).
+
+## [1.5.0] - 2026-07-11
+
+### Added
+- Subscription rate-limit display for Claude Code and Codex CLI: the tooltip now shows how much of the 5-hour and weekly windows is used, with reset times and plan type, rendered as one row per window. (#7)
+  - Codex limits are read locally from the `rate_limits` snapshots that rollout session logs already contain.
+  - Claude Code limits are fetched from the Anthropic usage endpoint (the same source as the CLI's `/usage` command) using the OAuth token Claude Code stores in `.credentials.json`; the token is only read, never refreshed or written. Unavailable when credentials live in the macOS Keychain.
+  - `otakUsage.showRateLimits` (default `true`) toggles the feature; disabling it also stops the network request.
+  - `otakUsage.statusBarMode` (default `cost`) chooses what the status-bar item shows: `cost`, `limits` (each provider's most constrained percentage instead of cost, e.g. `✦8% ⬡100%`, falling back to cost until a snapshot is available), or `costAndLimits` (e.g. `$18.01  ✦8% ⬡100%`).
+  - A window whose reset time has already passed is shown as 0% used instead of a stale percentage.
+  - The copied summary includes a per-provider `limits:` block, one line per window.
+
 ## [1.3.6] - 2026-07-10
 
 ### Changed

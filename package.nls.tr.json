@@ -1,6 +1,7 @@
 {
   "extension.description": "Otak Usage, Claude Code ve OpenAI Codex CLI oturumlarının API eşdeğeri maliyetlerini VS Code durum çubuğunda gösterir; bugün ve geçerli ay için model bazlı döküm sağlar.",
   "command.togglePeriod": "Dönemi Değiştir (Bugün / Bu Ay)",
+  "command.cycleStatusBarView": "Durum çubuğu görünümünü değiştir (Bugün / Bu Ay / Limitler)",
   "command.refresh": "Kullanımı Yenile (önbelleği temizle ve yeniden tara)",
   "command.copyUsage": "Kullanım Özetini Kopyala",
   "config.period": "Durum çubuğunda gösterilen toplama dönemi.",
@@ -8,6 +9,8 @@
   "config.dailyAlertThresholdUsd": "USD cinsinden günlük toplam maliyet uyarı eşiği. Bugünkü Claude + Codex API eşdeğeri maliyeti bu tutara ulaştığında bildirim gösterilir. Devre dışı bırakmak için 0 yapın.",
   "config.showClaude": "Durum çubuğunda Claude Code kullanımını göster.",
   "config.showCodex": "Durum çubuğunda Codex CLI kullanımını göster.",
+  "config.showRateLimits": "Araç ipucunda abonelik hız limiti kullanımını (5 saatlik ve haftalık pencereler) gösterir. Codex limitleri yerel oturum günlüklerinden okunur; Claude Code limitleri yerelde saklanan OAuth belirteciyle Anthropic API'sinden alınır.",
+  "config.statusBarMode": "Durum çubuğu öğesinin gösterdiği: yalnızca maliyet, yalnızca abonelik hız limitleri veya her ikisi.",
   "config.showRtk": "Araç ipucunda RTK (Rust Token Killer) token tasarruflarını göster. rtk CLI yüklü değilse bölüm otomatik olarak gizlenir.",
   "config.rtkPath": "rtk çalıştırılabilir dosyasının yolu. Boş = PATH üzerindeki `rtk`.",
   "config.pricingOverrides": "Milyon token başına USD cinsinden model bazlı fiyat geçersiz kılmaları. Örnek: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. OpenAI modelleri için `input`, `cachedInput` ve `output` kullanın.",

@@ -1,6 +1,7 @@
 {
   "extension.description": "Otak Usage affiche dans la barre d'état de VS Code les coûts équivalents API des sessions Claude Code et OpenAI Codex CLI, avec le détail par modèle pour aujourd'hui et le mois en cours.",
   "command.togglePeriod": "Basculer la période (Aujourd'hui / Ce mois-ci)",
+  "command.cycleStatusBarView": "Changer la vue de la barre d'état (Aujourd'hui / Ce mois-ci / Limites)",
   "command.refresh": "Actualiser l'utilisation (vider le cache et rescanner)",
   "command.copyUsage": "Copier le résumé d'utilisation",
   "config.period": "Période d'agrégation affichée dans la barre d'état.",
@@ -8,6 +9,8 @@
   "config.dailyAlertThresholdUsd": "Seuil d'alerte du coût total quotidien en USD. Une notification apparaît lorsque le coût équivalent API de Claude + Codex aujourd'hui atteint ce montant. Définir sur 0 pour désactiver.",
   "config.showClaude": "Afficher l'utilisation de Claude Code dans la barre d'état.",
   "config.showCodex": "Afficher l'utilisation de Codex CLI dans la barre d'état.",
+  "config.showRateLimits": "Affiche l'utilisation des limites de débit de l'abonnement (fenêtres de 5 heures et hebdomadaire) dans l'infobulle. Les limites Codex sont lues dans les journaux de session locaux ; celles de Claude Code sont récupérées via l'API Anthropic avec le jeton OAuth stocké localement.",
+  "config.statusBarMode": "Ce qu'affiche l'élément de la barre d'état : le coût seul, les limites de débit de l'abonnement seules, ou les deux.",
   "config.showRtk": "Afficher les économies de tokens RTK (Rust Token Killer) dans l'infobulle. La section est masquée automatiquement si la CLI rtk n'est pas installée.",
   "config.rtkPath": "Chemin vers l'exécutable rtk. Vide = `rtk` dans PATH.",
   "config.pricingOverrides": "Remplacements de prix par modèle en USD par million de tokens. Exemple : `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`. Pour les modèles OpenAI, utilisez `input`, `cachedInput` et `output`.",
