@@ -25,7 +25,7 @@ ASCENT = 850
 DESCENT = -150
 # Glyphs are drawn smaller than the em box so the icons match the optical
 # size of the status-bar text instead of towering over it.
-GLYPH = 700      # icon box (width and height) in font units
+GLYPH = 850      # icon box (width and height) in font units
 X_BEARING = 50   # side bearing; advance = GLYPH + 2 * X_BEARING
 Y_BOTTOM = -20   # sit almost on the baseline, top near cap height
 

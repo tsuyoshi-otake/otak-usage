@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.3] - 2026-07-11
+
+### Changed
+
+- Enlarged the OpenAI/Claude brand glyphs one more step (700 → 850 em) so they match the optical size of the native Restart (sync) codicon in the status bar.
+
 ## [1.8.2] - 2026-07-11
 
 ### Changed
