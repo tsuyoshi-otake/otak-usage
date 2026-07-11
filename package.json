@@ -221,7 +221,8 @@
     "test": "vscode-test",
     "package": "vsce package",
     "package:vsix": "vsce package",
-    "deploy": "vsce publish --skip-duplicate"
+    "deploy": "vsce publish --skip-duplicate",
+    "deploy:ovsx": "ovsx publish --skip-duplicate"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -233,6 +234,7 @@
     "@vscode/test-electron": "^2.4.1",
     "@vscode/vsce": "^3.6.0",
     "eslint": "^9.19.0",
+    "ovsx": "^1.0.2",
     "typescript": "^5.7.3"
   }
 }
