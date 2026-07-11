@@ -213,16 +213,26 @@ function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, upd
         return undefined;
     }
     const lines: string[] = [];
-    lines.push(`| ${columns.map((c) => c.header).join(' | ')} |`);
-    lines.push(`|${columns.map(() => ' :--- ').join('|')}|`);
+    lines.push(`| ${row(columns.map((c) => c.header))} |`);
+    lines.push(`|${columns.map(() => ' :--- ').join('| :---: |')}|`);
     if (columns.some((c) => c.limits)) {
-        lines.push(`| ${columns.map((c) => c.limits ?? '—').join(' | ')} |`);
+        lines.push(`| ${row(columns.map((c) => c.limits ?? '—'))} |`);
     }
-    lines.push(`| ${columns.map((c) => c.usage).join(' | ')} |`);
+    lines.push(`| ${row(columns.map((c) => c.usage))} |`);
     lines.push('');
     lines.push(`_${i18n.t('tooltip.today')} / ${i18n.t('tooltip.thisMonth')}_`);
     lines.push('');
     return lines.join('\n');
+}
+
+/**
+ * Join a row's cells with a separator column of `│` glyphs, one per rendered
+ * line of the row's tallest cell, so the divider spans the cells' full height.
+ */
+function row(cells: string[]): string {
+    const height = Math.max(...cells.map((c) => c.split('<br>').length));
+    const divider = Array(height).fill('│').join('<br>');
+    return cells.join(` | ${divider} | `);
 }
 
 function providerColumn(title: string, icon: string, view: ProviderView, i18n: I18n, updatedAt: Date): ProviderColumn {

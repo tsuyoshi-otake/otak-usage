@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.7.1] - 2026-07-11
+
+### Changed
+- A vertical divider (`│`, sized to the tallest cell of each row) now separates the Claude Code and Codex CLI columns in the tooltip. (#7)
+
 ## [1.7.0] - 2026-07-11
 
 ### Added
