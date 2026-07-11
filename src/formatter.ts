@@ -1,4 +1,5 @@
 import { ProviderSummary } from './aggregator';
+import { CLAUDE_SVG_PATH, OPENAI_SVG_PATH, brandIconImg } from './brandIcons';
 import { I18n } from './i18n';
 import { LimitWindow, ProviderLimits } from './limits';
 import { Period } from './period';
@@ -8,6 +9,11 @@ import { RtkPeriodStats, RtkStats, rtkSavingsPct } from './rtk';
 export const CLAUDE_ICON = '$(otak-claude)';
 export const CODEX_ICON = '$(otak-openai)';
 export const RTK_ICON = '$(zap)';
+
+// The tooltip renders the brand marks as inline SVG images (see brandIcons.ts)
+// so they can be sized independently of the status-bar icon font — larger than
+// the status-bar codicons, which track the status-bar text size.
+const TOOLTIP_ICON_SIZE = 18;
 
 const DEFAULT_I18N = new I18n('en');
 
@@ -125,13 +131,13 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string): string {
     const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
     const combined = combinedCostSection(claude, codex, i18n);
     if (combined) {
         parts.push(combined);
     }
-    const grid = providerGrid(claude, codex, i18n, updatedAt);
+    const grid = providerGrid(claude, codex, i18n, updatedAt, iconColor);
     if (grid) {
         parts.push(grid);
     }
@@ -209,13 +215,17 @@ interface ProviderColumn {
  * Codex right), each cell stacking its lines with `<br>` — the caller must
  * enable `supportHtml` on the MarkdownString. Costs read `today / month`.
  */
-function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, updatedAt: Date): string | undefined {
+function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, updatedAt: Date, iconColor?: string): string | undefined {
+    // With a theme colour available, render the brand marks as independently
+    // sized inline images; otherwise fall back to the shared status-bar codicon.
+    const claudeIcon = iconColor ? brandIconImg(CLAUDE_SVG_PATH, iconColor, TOOLTIP_ICON_SIZE) : CLAUDE_ICON;
+    const codexIcon = iconColor ? brandIconImg(OPENAI_SVG_PATH, iconColor, TOOLTIP_ICON_SIZE) : CODEX_ICON;
     const columns: ProviderColumn[] = [];
     if (claude.show) {
-        columns.push(providerColumn('Claude Code', CLAUDE_ICON, claude, i18n, updatedAt));
+        columns.push(providerColumn('Claude Code', claudeIcon, claude, i18n, updatedAt));
     }
     if (codex.show) {
-        columns.push(providerColumn('Codex CLI', CODEX_ICON, codex, i18n, updatedAt));
+        columns.push(providerColumn('Codex CLI', codexIcon, codex, i18n, updatedAt));
     }
     if (columns.length === 0) {
         return undefined;

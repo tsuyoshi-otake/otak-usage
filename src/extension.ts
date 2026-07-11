@@ -71,6 +71,9 @@ class UsageController implements vscode.Disposable {
                     this.restartTimer();
                 }
             }),
+            // Re-render so the tooltip's inline brand marks pick up the new
+            // theme's foreground colour (data-URI images can't use currentColor).
+            vscode.window.onDidChangeActiveColorTheme(() => this.render()),
         );
         void this.tick();
         this.restartTimer();
@@ -321,7 +324,7 @@ class UsageController implements vscode.Disposable {
         this.lastViews = { claude, codex, rtk };
         const statusBarMode = showLimits ? config.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
         this.statusBarItem.text = statusBarText(claude, codex, period, false, statusBarMode);
-        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n));
+        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n, tooltipIconColor()));
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider grid cells stack lines with <br>
 
@@ -430,6 +433,16 @@ class UsageController implements vscode.Disposable {
         this.cache.dedupe = dedupeRecords;
         await this.context.globalState.update(CACHE_KEY, this.cache);
     }
+}
+
+/**
+ * Foreground colour for the tooltip's inline brand marks, tracking the active
+ * theme (data-URI SVG images can't inherit `currentColor` like codicons do).
+ */
+function tooltipIconColor(): string {
+    const kind = vscode.window.activeColorTheme.kind;
+    const dark = kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast;
+    return dark ? '#cccccc' : '#3b3b3b';
 }
 
 function firstNonEmpty(...values: (string | undefined)[]): string | undefined {

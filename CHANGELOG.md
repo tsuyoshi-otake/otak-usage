@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.4] - 2026-07-11
+
+### Changed
+
+- Tooltip brand marks now render as theme-coloured inline SVG images sized independently of the status-bar icon font, so the Claude Code / Codex CLI header icons are larger and no longer tied to the status-bar codicon size. They re-tint on theme changes to stay legible in light and dark themes.
+
 ## [1.8.3] - 2026-07-11
 
 ### Changed

@@ -412,6 +412,38 @@ suite('formatter', () => {
         assert.ok(!unavailableMd.includes('OpenAI + Claude Total'));
     });
 
+    test('tooltip renders brand icons as sized theme-coloured images when a colour is given', () => {
+        const claude = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const codex = {
+            summary: { provider: 'codex' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const now = new Date(2026, 5, 10, 9, 5);
+
+        // Without a colour, the header keeps the shared status-bar codicons.
+        const codicon = tooltipMarkdown(claude, codex, noRtk, 'today', now);
+        assert.ok(codicon.includes('$(otak-claude)') && codicon.includes('$(otak-openai)'));
+        assert.ok(!codicon.includes('<img'));
+
+        // With a colour, both marks become independently sized inline images
+        // tinted to the active theme's foreground.
+        const img = tooltipMarkdown(claude, codex, noRtk, 'today', now, new I18n('en'), '#cccccc');
+        const imgCount = (img.match(/<img src="data:image\/svg\+xml;base64,/g) ?? []).length;
+        assert.strictEqual(imgCount, 2);
+        assert.ok(img.includes('width="18" height="18"'));
+        assert.ok(!img.includes('$(otak-claude)') && !img.includes('$(otak-openai)'));
+        // The chosen colour is baked into the SVG (base64), so it must decode back.
+        const decoded = img
+            .match(/base64,([^"]+)"/g)!
+            .map((m) => Buffer.from(m.slice(7, -1), 'base64').toString('utf8'));
+        assert.ok(decoded.every((svg) => svg.includes('fill="#cccccc"')));
+    });
+
     test('tooltip localizes runtime labels', () => {
         const row = {
             model: 'claude-fable-5',
