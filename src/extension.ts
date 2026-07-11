@@ -6,7 +6,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { DailyAlertState, evaluateDailyAlert, isValidDailyAlertState, normalizeDailyAlertThresholdUsd, sameDailyAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, formatCost, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
 import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
@@ -18,6 +18,7 @@ import { Provider } from './types';
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
+const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -208,11 +209,40 @@ class UsageController implements vscode.Disposable {
             if (claude || codex) {
                 this.render();
             }
+            await this.maybeDefaultToLimitsMode();
         } catch (err) {
             console.error('otak-usage: rate limit refresh failed', err);
         } finally {
             this.limitsFetching = false;
         }
+    }
+
+    /**
+     * One-time first-run default: subscription users get the limits view in
+     * the status bar. Runs until either a plan is detected (switch once) or
+     * the user expresses a choice — an explicit statusBarMode in any settings
+     * scope, or showRateLimits turned off — which is then final. Never runs
+     * again after the flag is set, so later user changes always stick.
+     */
+    private async maybeDefaultToLimitsMode(): Promise<void> {
+        if (this.context.globalState.get<boolean>(STATUS_BAR_MODE_INITIALIZED_KEY, false)) {
+            return;
+        }
+        const config = this.config();
+        const inspected = config.inspect<StatusBarMode>('statusBarMode');
+        const userChose = inspected?.globalValue !== undefined
+            || inspected?.workspaceValue !== undefined
+            || inspected?.workspaceFolderValue !== undefined;
+        if (userChose || !config.get<boolean>('showRateLimits', true)) {
+            await this.context.globalState.update(STATUS_BAR_MODE_INITIALIZED_KEY, true);
+            return;
+        }
+        const mode = detectSubscriptionMode(this.lastClaudeLimits, this.lastCodexLimits);
+        if (!mode) {
+            return; // no plan proven yet — try again on a later refresh
+        }
+        await config.update('statusBarMode', mode, vscode.ConfigurationTarget.Global);
+        await this.context.globalState.update(STATUS_BAR_MODE_INITIALIZED_KEY, true);
     }
 
     private telemetryConfig(): TelemetryConfig {

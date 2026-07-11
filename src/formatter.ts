@@ -102,6 +102,17 @@ export function cycleStatusBarView(period: Period, mode: StatusBarMode, limitsEn
 }
 
 /**
+ * First-run default: subscription users care about their remaining limits
+ * more than API-equivalent cost, so when either provider reports a plan
+ * (Claude `subscriptionType`, Codex `plan_type`) the status bar should start
+ * in `limits` mode. Returns undefined while no snapshot proves a plan yet —
+ * the caller keeps the regular `cost` default and may retry later.
+ */
+export function detectSubscriptionMode(claude: ProviderLimits | undefined, codex: ProviderLimits | undefined): StatusBarMode | undefined {
+    return claude?.planType || codex?.planType ? 'limits' : undefined;
+}
+
+/**
  * The 5-hour (primary) window's used percentage, so both providers show the
  * same window side by side; falls back to the weekly window when a snapshot
  * lacks primary data. The tooltip still shows both windows in full.

@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.0] - 2026-07-11
+
+### Added
+- First-run subscription detection: when a rate-limit snapshot proves a subscription plan (Claude `subscriptionType` or Codex `plan_type`), the status bar defaults to the `limits` view — once. An explicit `statusBarMode` in any settings scope, a disabled `showRateLimits`, or any later change by the user is always respected. (#7)
+
 ## [1.7.4] - 2026-07-11
 
 ### Changed

@@ -86,7 +86,7 @@ If a provider directory is missing, that provider is skipped without blocking th
 | `otakUsage.showClaude` | `true` | Include Claude Code usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showCodex` | `true` | Include Codex CLI usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showRateLimits` | `true` | Show subscription rate-limit usage (5-hour and weekly windows) in the tooltip. See [Subscription Rate Limits](#subscription-rate-limits). |
-| `otakUsage.statusBarMode` | `cost` | What the status-bar item shows: `cost` (API-equivalent cost only), `limits` (each provider's most constrained rate-limit percentage only, falling back to cost until a snapshot is available), or `costAndLimits` (both). Requires `showRateLimits` for the limit modes. |
+| `otakUsage.statusBarMode` | `cost` | What the status-bar item shows: `cost` (API-equivalent cost only), `limits` (each provider's 5-hour window percentage only, falling back to cost until a snapshot is available), or `costAndLimits` (both). Requires `showRateLimits` for the limit modes. On first run, if a subscription plan is detected (Claude Pro/Max or a Codex plan), otak-usage sets this to `limits` once; any choice you make afterwards is final. |
 | `otakUsage.showRtk` | `true` | Show the RTK token-savings tooltip table. It is hidden automatically when `rtk` is unavailable. |
 | `otakUsage.rtkPath` | `""` | Path to the `rtk` executable. Empty means `rtk` on `PATH`. |
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, for example `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}`. |
@@ -115,6 +115,8 @@ Limits (max)
 - **Claude Code**: local logs carry no rate-limit data, so the extension calls the Anthropic usage endpoint — the same source as the CLI's `/usage` command — authenticated with the OAuth token Claude Code stores in `.credentials.json`. The token is read-only: it is never refreshed, written, or sent anywhere except `api.anthropic.com`. If the credentials file is absent (for example on macOS, where Claude Code uses the Keychain) or the token has expired, Claude limits are simply omitted.
 
 Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself. Each provider is shown with its brand logo (Claude / OpenAI, shipped as an icon font) followed by its **5-hour window** percentage, so both providers read on the same scale; a snapshot without 5-hour data falls back to its weekly window.
+
+**Subscription users get `limits` by default**: on first run, when a rate-limit snapshot proves a subscription plan (Claude Pro/Max via the OAuth credentials, or a Codex `plan_type`), the status bar switches to the limits view once. This never overrides you — if `statusBarMode` is already set in any settings scope, or `showRateLimits` is off, the detection marks itself done and every later change is yours.
 
 - `cost` (default): the API-equivalent cost, e.g. `$18.01`.
 - `limits`: the per-provider percentages instead of cost, e.g. `{claude} 5% {openai} 100%` (falls back to cost until a snapshot is available).

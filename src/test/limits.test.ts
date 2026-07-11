@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { ProviderSummary } from '../aggregator';
-import { ProviderView, cycleStatusBarView, limitsLines, statusBarText } from '../formatter';
+import { ProviderView, cycleStatusBarView, detectSubscriptionMode, limitsLines, statusBarText } from '../formatter';
 import { I18n } from '../i18n';
 import { ProviderLimits, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine } from '../limits';
 
@@ -186,6 +186,22 @@ suite('limits: formatting', () => {
 
         test('a stale limits baseMode falls back to cost', () => {
             assert.deepStrictEqual(cycleStatusBarView('month', 'limits', true, 'limits'), { period: 'today', mode: 'cost' });
+        });
+    });
+
+    suite('detectSubscriptionMode (first-run default)', () => {
+        const withPlan = (planType?: string): ProviderLimits => ({ primary: { usedPercent: 5 }, planType, asOfMs: NOW_MS });
+
+        test('a plan on either provider selects the limits view', () => {
+            assert.strictEqual(detectSubscriptionMode(withPlan('max'), undefined), 'limits');
+            assert.strictEqual(detectSubscriptionMode(undefined, withPlan('pro')), 'limits');
+            assert.strictEqual(detectSubscriptionMode(withPlan('max'), withPlan('pro')), 'limits');
+        });
+
+        test('no snapshot or no plan yields undefined (keep the cost default)', () => {
+            assert.strictEqual(detectSubscriptionMode(undefined, undefined), undefined);
+            assert.strictEqual(detectSubscriptionMode(withPlan(undefined), withPlan(undefined)), undefined);
+            assert.strictEqual(detectSubscriptionMode(withPlan(''), undefined), undefined);
         });
     });
 });
