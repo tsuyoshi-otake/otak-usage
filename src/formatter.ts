@@ -220,8 +220,6 @@ function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, upd
     }
     lines.push(`| ${row(columns.map((c) => c.usage))} |`);
     lines.push('');
-    lines.push(`_${i18n.t('tooltip.today')} / ${i18n.t('tooltip.thisMonth')}_`);
-    lines.push('');
     return lines.join('\n');
 }
 

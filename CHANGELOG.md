@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.7.2] - 2026-07-11
+
+### Changed
+- Removed the redundant "Today / This Month" legend line under the provider grid — the `$today / $month` cost format is self-explanatory. (#7)
+
 ## [1.7.1] - 2026-07-11
 
 ### Changed

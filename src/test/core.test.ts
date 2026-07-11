@@ -445,7 +445,7 @@ suite('formatter', () => {
         assert.ok(md.includes('| :--- | :---: | :--- |'));
         assert.ok(md.includes('claude-fable-5: $12.34 / $24.68'));
         assert.ok(md.includes('**合計: $12.34 / $24.68**'));
-        assert.ok(md.includes('_本日 / 今月_'));
+        assert.ok(!md.includes('_本日 / 今月_'));
         assert.ok(md.includes('期間: **今月** · 更新 09:05 · クリックして表示を切り替え'));
         assert.ok(md.includes('[$(copy) サマリーをコピー]'));
         assert.ok(md.includes('$(zap) **RTK — トークン節約量**'));
