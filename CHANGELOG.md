@@ -2,6 +2,11 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.7.4] - 2026-07-11
+
+### Changed
+- Added a space between each brand icon and its percentage in the status-bar limits view. (#7)
+
 ## [1.7.3] - 2026-07-11
 
 ### Changed

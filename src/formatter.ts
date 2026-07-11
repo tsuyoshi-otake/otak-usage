@@ -67,7 +67,7 @@ export function statusBarText(claude: ProviderView, codex: ProviderView, period:
         for (const [icon, view] of [[CLAUDE_ICON, claude], [CODEX_ICON, codex]] as const) {
             const pct = statusBarUsedPercent(view.show && view.available ? view.limits : undefined);
             if (pct !== undefined) {
-                segments.push(`${icon}${Math.round(pct)}%`);
+                segments.push(`${icon} ${Math.round(pct)}%`);
             }
         }
     }
