@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.8.5] - 2026-07-11
+
+### Added
+
+- Releases are now published to the Open VSX Registry (`odangoo.otak-usage`) alongside the Visual Studio Marketplace.
+- README Quick Start now shows the hover tooltip layout (side-by-side Claude Code / Codex CLI columns plus the RTK savings table).
+
 ## [1.8.4] - 2026-07-11
 
 ### Changed
