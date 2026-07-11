@@ -143,12 +143,9 @@ function combinedCostSection(claude: ProviderView, codex: ProviderView, i18n: I1
     if (!claude.show || !codex.show || !claude.available || !codex.available) {
         return undefined;
     }
-    const lines: string[] = [`**${i18n.t('tooltip.combinedTotal')}**\n`];
-    lines.push(`| ${i18n.t('tooltip.today')} | ${i18n.t('tooltip.thisMonth')} |`);
-    lines.push('| ---: | ---: |');
-    lines.push(`| **${formatCost(claude.summary.todayCost + codex.summary.todayCost)}** | **${formatCost(claude.summary.monthCost + codex.summary.monthCost)}** |`);
-    lines.push('');
-    return lines.join('\n');
+    const today = claude.summary.todayCost + codex.summary.todayCost;
+    const month = claude.summary.monthCost + codex.summary.monthCost;
+    return `**${i18n.t('tooltip.combinedTotal')}: ${formatCost(today)} / ${formatCost(month)}**\n`;
 }
 
 /** Plain-text summary written to the clipboard by the Copy Summary link. */

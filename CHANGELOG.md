@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.7.3] - 2026-07-11
+
+### Changed
+- Brand icons are drawn at ~76% of the em box (with side bearings) so they match the optical size of the status-bar text instead of towering over it. (#7)
+- The combined OpenAI + Claude total is now a single line (`OpenAI + Claude Total: $x / $y`) instead of a two-column table, removing the odd leading gap in the tooltip. (#7)
+
 ## [1.7.2] - 2026-07-11
 
 ### Changed

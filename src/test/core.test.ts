@@ -406,11 +406,10 @@ suite('formatter', () => {
         };
 
         const md = tooltipMarkdown(claude, codex, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
-        assert.ok(md.includes('**OpenAI + Claude Total**'));
-        assert.ok(md.includes('| **$17.34** | **$34.68** |'));
+        assert.ok(md.includes('**OpenAI + Claude Total: $17.34 / $34.68**'));
 
         const unavailableMd = tooltipMarkdown(claude, { ...codex, available: false }, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
-        assert.ok(!unavailableMd.includes('**OpenAI + Claude Total**'));
+        assert.ok(!unavailableMd.includes('OpenAI + Claude Total'));
     });
 
     test('tooltip localizes runtime labels', () => {
@@ -440,7 +439,7 @@ suite('formatter', () => {
 
         const md = tooltipMarkdown(claude, codex, rtk, 'month', new Date(2026, 5, 10, 9, 5), new I18n('ja'));
         assert.ok(md.includes('**otak-usage — API 相当コスト**'));
-        assert.ok(md.includes('**OpenAI + Claude 合計**'));
+        assert.ok(md.includes('**OpenAI + Claude 合計: $17.34 / $34.68**'));
         assert.ok(md.includes('| $(otak-claude) **Claude Code** | │ | $(otak-openai) **Codex CLI** |'));
         assert.ok(md.includes('| :--- | :---: | :--- |'));
         assert.ok(md.includes('claude-fable-5: $12.34 / $24.68'));

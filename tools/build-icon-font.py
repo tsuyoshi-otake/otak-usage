@@ -23,6 +23,11 @@ OUT = sys.argv[2]
 UPM = 1000
 ASCENT = 850
 DESCENT = -150
+# Glyphs are drawn smaller than the em box so the icons match the optical
+# size of the status-bar text instead of towering over it.
+GLYPH = 760      # icon box (width and height) in font units
+X_BEARING = 40   # side bearing; advance = GLYPH + 2 * X_BEARING
+Y_BOTTOM = -60   # slight descent so the icon centers on the text
 
 def svg_d(path):
     src = open(path, encoding='utf-8').read()
@@ -39,8 +44,8 @@ fb.setupGlyphOrder(order)
 fb.setupCharacterMap({cp: name for name, (cp, _) in glyphs.items()})
 
 # simple-icons viewBox is 24x24, y-down. Map to font units (y-up):
-# x' = x * s, y' = (24 - y) * s + DESCENT  -> glyph spans DESCENT..DESCENT+1000
-s = UPM / 24.0
+# x' = x * s + X_BEARING, y' = (24 - y) * s + Y_BOTTOM
+s = GLYPH / 24.0
 glyf = {}
 metrics = {}
 pen = TTGlyphPen(None)
@@ -51,10 +56,10 @@ metrics['.notdef'] = (UPM, 0)
 for name, (cp, d) in glyphs.items():
     gpen = TTGlyphPen(None)
     qpen = Cu2QuPen(gpen, max_err=1.0)
-    tpen = TransformPen(qpen, (s, 0, 0, -s, 0, 24 * s + DESCENT))
+    tpen = TransformPen(qpen, (s, 0, 0, -s, X_BEARING, GLYPH + Y_BOTTOM))
     parse_path(d, tpen)
     glyf[name] = gpen.glyph()
-    metrics[name] = (UPM, 0)
+    metrics[name] = (GLYPH + 2 * X_BEARING, X_BEARING)
 
 fb.setupGlyf(glyf)
 fb.setupHorizontalMetrics(metrics)
