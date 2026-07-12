@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState } from '../alert';
+import { applyCodexOptimizeToml, normalizeCodexTokenLimit, removeCodexOptimizeToml } from '../codexOptimize';
 import { RtkView, clipboardText, formatCost, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
@@ -387,6 +388,100 @@ suite('limit alert', () => {
     });
 });
 
+suite('codex optimize', () => {
+    const values = { contextWindow: 250000, autoCompactLimit: 230000 };
+
+    test('normalizes token limits to positive integers', () => {
+        assert.strictEqual(normalizeCodexTokenLimit(undefined, 272000), 272000);
+        assert.strictEqual(normalizeCodexTokenLimit(0, 272000), 272000);
+        assert.strictEqual(normalizeCodexTokenLimit(-5, 272000), 272000);
+        assert.strictEqual(normalizeCodexTokenLimit(Number.NaN, 272000), 272000);
+        assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
+    });
+
+    test('rewrites existing keys in place and preserves the rest of the file', () => {
+        const input = [
+            'model = "gpt-5.6-sol"',
+            '# comment above the context window',
+            'model_context_window = 320000',
+            'model_auto_compact_token_limit = 300000',
+            'model_reasoning_effort = "medium"',
+            '',
+            '[features]',
+            'fast_mode = true',
+        ].join('\n');
+        const out = applyCodexOptimizeToml(input, values);
+        assert.ok(out.includes('model_context_window = 250000'));
+        assert.ok(out.includes('model_auto_compact_token_limit = 230000'));
+        assert.ok(!out.includes('320000'));
+        assert.ok(!out.includes('300000'));
+        // Untouched lines and ordering are preserved.
+        assert.ok(out.includes('# comment above the context window'));
+        assert.ok(out.includes('model = "gpt-5.6-sol"'));
+        assert.ok(out.includes('[features]\nfast_mode = true'));
+        // No duplicate keys were introduced.
+        assert.strictEqual(out.match(/^model_context_window\s*=/gm)?.length, 1);
+    });
+
+    test('inserts the keys when the file lacks them', () => {
+        const input = 'model = "gpt-5.6-sol"\n\n[features]\nfast_mode = true\n';
+        const out = applyCodexOptimizeToml(input, values);
+        assert.ok(out.startsWith('model_context_window = 250000\nmodel_auto_compact_token_limit = 230000\n'));
+        assert.ok(out.includes('[features]'));
+    });
+
+    test('does not touch keys that live inside a table section', () => {
+        const input = [
+            'model = "x"',
+            '',
+            '[some_table]',
+            'model_context_window = 999',
+        ].join('\n');
+        const out = applyCodexOptimizeToml(input, values);
+        // The table value is left alone; the managed keys are inserted in the preamble.
+        assert.ok(out.includes('[some_table]\nmodel_context_window = 999'));
+        assert.ok(out.startsWith('model_context_window = 250000\n'));
+    });
+
+    test('creates a config body from empty text', () => {
+        const out = applyCodexOptimizeToml('', values);
+        assert.ok(out.includes('model_context_window = 250000'));
+        assert.ok(out.includes('model_auto_compact_token_limit = 230000'));
+    });
+
+    test('remove strips exactly the two managed keys and nothing else', () => {
+        const input = [
+            'model = "gpt-5.6-sol"',
+            'model_context_window = 272000',
+            'model_auto_compact_token_limit = 240000',
+            'model_reasoning_effort = "medium"',
+            '[features]',
+            'fast_mode = true',
+        ].join('\n');
+        const out = removeCodexOptimizeToml(input);
+        assert.ok(!out.includes('model_context_window'));
+        assert.ok(!out.includes('model_auto_compact_token_limit'));
+        assert.ok(out.includes('model = "gpt-5.6-sol"'));
+        assert.ok(out.includes('model_reasoning_effort = "medium"'));
+        assert.ok(out.includes('[features]'));
+    });
+
+    test('apply then remove is a clean round-trip for inserted keys', () => {
+        const original = 'model = "x"\nmodel_reasoning_effort = "high"\n\n[features]\nfast_mode = true\n';
+        const applied = applyCodexOptimizeToml(original, values);
+        const removed = removeCodexOptimizeToml(applied);
+        assert.strictEqual(removed, original);
+    });
+
+    test('preserves CRLF line endings', () => {
+        const input = 'model = "x"\r\nmodel_context_window = 320000\r\n';
+        const out = applyCodexOptimizeToml(input, values);
+        assert.ok(out.includes('\r\n'));
+        assert.ok(!out.includes('320000'));
+        assert.ok(out.includes('model_context_window = 250000'));
+    });
+});
+
 suite('i18n', () => {
     test('resolves supported and regional locales', () => {
         assert.strictEqual(resolveSupportedLocale('en-US'), 'en');
@@ -601,6 +696,10 @@ suite('formatter', () => {
         assert.ok(md.includes('(command:otak-usage.copyUsage'));
         assert.ok(md.includes('Updated 09:05'));
         assert.ok(!md.includes('RTK'));
+        // Settings opens all otakUsage settings; Optimize jumps to the toggle.
+        assert.ok(md.includes(`openSettings?${encodeURIComponent(JSON.stringify(['otakUsage']))}`));
+        assert.ok(md.includes(`openSettings?${encodeURIComponent(JSON.stringify(['otakUsage.optimizeCodexContext']))}`));
+        assert.ok(md.includes('Optimize'));
     });
 
     test('tooltip includes the RTK savings table when stats exist', () => {

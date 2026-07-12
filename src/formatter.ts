@@ -149,9 +149,11 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     const periodLabel = period === 'today' ? i18n.t('tooltip.today') : i18n.t('tooltip.thisMonth');
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
     const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage']));
+    const optimizeArg = encodeURIComponent(JSON.stringify(['otakUsage.optimizeCodexContext']));
     parts.push(
         `[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")` +
-        ` · [$(gear) ${i18n.t('tooltip.settings')}](command:workbench.action.openSettings?${settingsArg} "${i18n.t('tooltip.settingsTitle')}")`,
+        ` · [$(gear) ${i18n.t('tooltip.settings')}](command:workbench.action.openSettings?${settingsArg} "${i18n.t('tooltip.settingsTitle')}")` +
+        ` · [$(rocket) ${i18n.t('tooltip.optimize')}](command:workbench.action.openSettings?${optimizeArg} "${i18n.t('tooltip.optimizeTitle')}")`,
     );
     return parts.join('\n');
 }
