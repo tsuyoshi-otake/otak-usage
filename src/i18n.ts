@@ -22,6 +22,7 @@ export type SupportedLocale = typeof SUPPORTED_LOCALES[number];
 type TranslationKey =
     'action.openSettings' |
     'alert.dailyCostExceeded' |
+    'alert.limitExceeded' |
     'message.summaryCopied' |
     'tooltip.allTime' |
     'tooltip.clickToTogglePeriod' |
@@ -54,6 +55,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     en: {
         'action.openSettings': 'Open Settings',
         'alert.dailyCostExceeded': "otak-usage daily cost alert: today's total is {total}, above your daily alert threshold of {threshold}.",
+        'alert.limitExceeded': 'otak-usage limit alert: {provider} {window} usage is at {pct}%, above your {threshold}% alert threshold.',
         'message.summaryCopied': 'otak-usage: summary copied to clipboard',
         'tooltip.allTime': 'All Time',
         'tooltip.clickToTogglePeriod': 'Click to switch view',
@@ -73,7 +75,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Token Savings',
         'tooltip.saved': 'Saved',
         'tooltip.settings': 'Settings',
-        'tooltip.settingsTitle': 'Open otak-usage settings (telemetry)',
+        'tooltip.settingsTitle': 'Open otak-usage settings',
         'tooltip.thisMonth': 'This Month',
         'tooltip.title': 'otak-usage — API-equivalent cost',
         'tooltip.today': 'Today',
@@ -83,6 +85,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     ar: {
         'action.openSettings': 'فتح الإعدادات',
         'alert.dailyCostExceeded': 'تنبيه تكلفة otak-usage اليومية: إجمالي اليوم هو {total}، وقد تجاوز حد التنبيه اليومي {threshold}.',
+        'alert.limitExceeded': 'تنبيه حد otak-usage: استخدام {provider} {window} عند {pct}%، وهو أعلى من حد التنبيه البالغ {threshold}%.',
         'message.summaryCopied': 'otak-usage: تم نسخ الملخص إلى الحافظة',
         'tooltip.allTime': 'كل الأوقات',
         'tooltip.clickToTogglePeriod': 'انقر لتبديل العرض',
@@ -102,7 +105,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — توفير الرموز',
         'tooltip.saved': 'المحفوظ',
         'tooltip.settings': 'الإعدادات',
-        'tooltip.settingsTitle': 'فتح إعدادات otak-usage (القياس عن بُعد)',
+        'tooltip.settingsTitle': 'فتح إعدادات otak-usage',
         'tooltip.thisMonth': 'هذا الشهر',
         'tooltip.title': 'otak-usage — تكلفة مكافئة لواجهة API',
         'tooltip.today': 'اليوم',
@@ -112,6 +115,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     de: {
         'action.openSettings': 'Einstellungen öffnen',
         'alert.dailyCostExceeded': 'otak-usage Tageskostenalarm: Die heutige Summe beträgt {total} und liegt über dem täglichen Grenzwert von {threshold}.',
+        'alert.limitExceeded': 'otak-usage-Limit-Alarm: Die Auslastung von {provider} {window} liegt bei {pct}% und damit über Ihrem Alarmschwellenwert von {threshold}%.',
         'message.summaryCopied': 'otak-usage: Zusammenfassung in die Zwischenablage kopiert',
         'tooltip.allTime': 'Gesamtzeit',
         'tooltip.clickToTogglePeriod': 'Klicken, um die Ansicht zu wechseln',
@@ -131,7 +135,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Token-Ersparnis',
         'tooltip.saved': 'Gespart',
         'tooltip.settings': 'Einstellungen',
-        'tooltip.settingsTitle': 'otak-usage-Einstellungen öffnen (Telemetrie)',
+        'tooltip.settingsTitle': 'otak-usage-Einstellungen öffnen',
         'tooltip.thisMonth': 'Dieser Monat',
         'tooltip.title': 'otak-usage — API-äquivalente Kosten',
         'tooltip.today': 'Heute',
@@ -141,6 +145,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     es: {
         'action.openSettings': 'Abrir configuración',
         'alert.dailyCostExceeded': 'Alerta de coste diario de otak-usage: el total de hoy es {total}, por encima del umbral diario de {threshold}.',
+        'alert.limitExceeded': 'Alerta de límite de otak-usage: el uso de {provider} {window} está en {pct}%, por encima de tu umbral de alerta del {threshold}%.',
         'message.summaryCopied': 'otak-usage: resumen copiado al portapapeles',
         'tooltip.allTime': 'Todo el tiempo',
         'tooltip.clickToTogglePeriod': 'Haz clic para cambiar la vista',
@@ -160,7 +165,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Ahorro de tokens',
         'tooltip.saved': 'Ahorrado',
         'tooltip.settings': 'Configuración',
-        'tooltip.settingsTitle': 'Abrir la configuración de otak-usage (telemetría)',
+        'tooltip.settingsTitle': 'Abrir la configuración de otak-usage',
         'tooltip.thisMonth': 'Este mes',
         'tooltip.title': 'otak-usage — coste equivalente de API',
         'tooltip.today': 'Hoy',
@@ -170,6 +175,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     fr: {
         'action.openSettings': 'Ouvrir les paramètres',
         'alert.dailyCostExceeded': "Alerte de coût quotidien otak-usage : le total d'aujourd'hui est de {total}, au-dessus du seuil quotidien de {threshold}.",
+        'alert.limitExceeded': "Alerte de limite otak-usage : l'utilisation de {provider} {window} est à {pct}%, au-dessus de votre seuil d'alerte de {threshold}%.",
         'message.summaryCopied': 'otak-usage : résumé copié dans le presse-papiers',
         'tooltip.allTime': 'Depuis toujours',
         'tooltip.clickToTogglePeriod': 'Cliquez pour changer de vue',
@@ -189,7 +195,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Économies de tokens',
         'tooltip.saved': 'Économisé',
         'tooltip.settings': 'Paramètres',
-        'tooltip.settingsTitle': 'Ouvrir les paramètres otak-usage (télémétrie)',
+        'tooltip.settingsTitle': 'Ouvrir les paramètres otak-usage',
         'tooltip.thisMonth': 'Ce mois-ci',
         'tooltip.title': 'otak-usage — coût équivalent API',
         'tooltip.today': "Aujourd'hui",
@@ -199,6 +205,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     hi: {
         'action.openSettings': 'सेटिंग खोलें',
         'alert.dailyCostExceeded': 'otak-usage दैनिक लागत अलर्ट: आज का कुल {total} है, जो आपके दैनिक अलर्ट सीमा {threshold} से अधिक है।',
+        'alert.limitExceeded': 'otak-usage सीमा अलर्ट: {provider} {window} उपयोग {pct}% है, जो आपकी {threshold}% अलर्ट सीमा से अधिक है।',
         'message.summaryCopied': 'otak-usage: सारांश क्लिपबोर्ड पर कॉपी किया गया',
         'tooltip.allTime': 'अब तक',
         'tooltip.clickToTogglePeriod': 'दृश्य बदलने के लिए क्लिक करें',
@@ -218,7 +225,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — टोकन बचत',
         'tooltip.saved': 'बचत',
         'tooltip.settings': 'सेटिंग',
-        'tooltip.settingsTitle': 'otak-usage सेटिंग खोलें (टेलीमेट्री)',
+        'tooltip.settingsTitle': 'otak-usage सेटिंग खोलें',
         'tooltip.thisMonth': 'इस महीने',
         'tooltip.title': 'otak-usage — API-समतुल्य लागत',
         'tooltip.today': 'आज',
@@ -228,6 +235,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     id: {
         'action.openSettings': 'Buka Pengaturan',
         'alert.dailyCostExceeded': 'Peringatan biaya harian otak-usage: total hari ini {total}, melebihi ambang peringatan harian {threshold}.',
+        'alert.limitExceeded': 'Peringatan batas otak-usage: penggunaan {provider} {window} berada di {pct}%, melebihi ambang peringatan {threshold}% Anda.',
         'message.summaryCopied': 'otak-usage: ringkasan disalin ke clipboard',
         'tooltip.allTime': 'Sepanjang Waktu',
         'tooltip.clickToTogglePeriod': 'Klik untuk mengganti tampilan',
@@ -247,7 +255,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Penghematan Token',
         'tooltip.saved': 'Dihemat',
         'tooltip.settings': 'Pengaturan',
-        'tooltip.settingsTitle': 'Buka pengaturan otak-usage (telemetri)',
+        'tooltip.settingsTitle': 'Buka pengaturan otak-usage',
         'tooltip.thisMonth': 'Bulan Ini',
         'tooltip.title': 'otak-usage — biaya setara API',
         'tooltip.today': 'Hari Ini',
@@ -257,6 +265,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     it: {
         'action.openSettings': 'Apri impostazioni',
         'alert.dailyCostExceeded': 'Avviso costo giornaliero di otak-usage: il totale di oggi è {total}, sopra la soglia giornaliera di {threshold}.',
+        'alert.limitExceeded': "Avviso limite di otak-usage: l'utilizzo di {provider} {window} è al {pct}%, sopra la soglia di avviso del {threshold}%.",
         'message.summaryCopied': 'otak-usage: riepilogo copiato negli appunti',
         'tooltip.allTime': 'Da sempre',
         'tooltip.clickToTogglePeriod': 'Fai clic per cambiare vista',
@@ -276,7 +285,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Risparmio token',
         'tooltip.saved': 'Risparmiati',
         'tooltip.settings': 'Impostazioni',
-        'tooltip.settingsTitle': 'Apri le impostazioni di otak-usage (telemetria)',
+        'tooltip.settingsTitle': 'Apri le impostazioni di otak-usage',
         'tooltip.thisMonth': 'Questo mese',
         'tooltip.title': 'otak-usage — costo equivalente API',
         'tooltip.today': 'Oggi',
@@ -286,6 +295,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     ja: {
         'action.openSettings': '設定を開く',
         'alert.dailyCostExceeded': 'otak-usage の本日合計が {total} になり、1日あたりのアラートしきい値 {threshold} を超えました。',
+        'alert.limitExceeded': 'otak-usage の {provider} {window} 使用率が {pct}% になり、アラートしきい値 {threshold}% を超えました。',
         'message.summaryCopied': 'otak-usage: サマリーをクリップボードにコピーしました',
         'tooltip.allTime': '全期間',
         'tooltip.clickToTogglePeriod': 'クリックして表示を切り替え',
@@ -305,7 +315,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — トークン節約量',
         'tooltip.saved': '節約',
         'tooltip.settings': '設定',
-        'tooltip.settingsTitle': 'otak-usage の設定を開く（テレメトリー）',
+        'tooltip.settingsTitle': 'otak-usage の設定を開く',
         'tooltip.thisMonth': '今月',
         'tooltip.title': 'otak-usage — API 相当コスト',
         'tooltip.today': '本日',
@@ -315,6 +325,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     ko: {
         'action.openSettings': '설정 열기',
         'alert.dailyCostExceeded': 'otak-usage 일일 비용 알림: 오늘 합계가 {total}이며 일일 알림 기준 {threshold}를 초과했습니다.',
+        'alert.limitExceeded': 'otak-usage 한도 알림: {provider} {window} 사용량이 {pct}%로 알림 기준 {threshold}%를 초과했습니다.',
         'message.summaryCopied': 'otak-usage: 요약을 클립보드에 복사했습니다',
         'tooltip.allTime': '전체 기간',
         'tooltip.clickToTogglePeriod': '클릭하여 보기 전환',
@@ -334,7 +345,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — 토큰 절약',
         'tooltip.saved': '절약',
         'tooltip.settings': '설정',
-        'tooltip.settingsTitle': 'otak-usage 설정 열기 (텔레메트리)',
+        'tooltip.settingsTitle': 'otak-usage 설정 열기',
         'tooltip.thisMonth': '이번 달',
         'tooltip.title': 'otak-usage — API 상당 비용',
         'tooltip.today': '오늘',
@@ -344,6 +355,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     'pt-br': {
         'action.openSettings': 'Abrir configurações',
         'alert.dailyCostExceeded': 'Alerta de custo diário do otak-usage: o total de hoje é {total}, acima do limite diário de {threshold}.',
+        'alert.limitExceeded': 'Alerta de limite do otak-usage: o uso de {provider} {window} está em {pct}%, acima do seu limite de alerta de {threshold}%.',
         'message.summaryCopied': 'otak-usage: resumo copiado para a área de transferência',
         'tooltip.allTime': 'Todo o período',
         'tooltip.clickToTogglePeriod': 'Clique para alternar a visualização',
@@ -363,7 +375,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Economia de tokens',
         'tooltip.saved': 'Economizado',
         'tooltip.settings': 'Configurações',
-        'tooltip.settingsTitle': 'Abrir as configurações do otak-usage (telemetria)',
+        'tooltip.settingsTitle': 'Abrir as configurações do otak-usage',
         'tooltip.thisMonth': 'Este mês',
         'tooltip.title': 'otak-usage — custo equivalente de API',
         'tooltip.today': 'Hoje',
@@ -373,6 +385,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     ru: {
         'action.openSettings': 'Открыть настройки',
         'alert.dailyCostExceeded': 'Ежедневное предупреждение otak-usage: сумма за сегодня {total}, что выше дневного порога {threshold}.',
+        'alert.limitExceeded': 'Предупреждение о лимите otak-usage: использование {provider} {window} составляет {pct}%, что выше вашего порога предупреждения {threshold}%.',
         'message.summaryCopied': 'otak-usage: сводка скопирована в буфер обмена',
         'tooltip.allTime': 'За все время',
         'tooltip.clickToTogglePeriod': 'Нажмите, чтобы переключить вид',
@@ -392,7 +405,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Экономия токенов',
         'tooltip.saved': 'Сэкономлено',
         'tooltip.settings': 'Настройки',
-        'tooltip.settingsTitle': 'Открыть настройки otak-usage (телеметрия)',
+        'tooltip.settingsTitle': 'Открыть настройки otak-usage',
         'tooltip.thisMonth': 'Этот месяц',
         'tooltip.title': 'otak-usage — стоимость, эквивалентная API',
         'tooltip.today': 'Сегодня',
@@ -402,6 +415,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     tr: {
         'action.openSettings': 'Ayarları Aç',
         'alert.dailyCostExceeded': 'otak-usage günlük maliyet uyarısı: bugünün toplamı {total}; günlük uyarı eşiği {threshold} üzerinde.',
+        'alert.limitExceeded': 'otak-usage limit uyarısı: {provider} {window} kullanımı {pct}%, uyarı eşiğiniz olan {threshold}% üzerinde.',
         'message.summaryCopied': 'otak-usage: özet panoya kopyalandı',
         'tooltip.allTime': 'Tüm Zamanlar',
         'tooltip.clickToTogglePeriod': 'Görünümü değiştirmek için tıklayın',
@@ -421,7 +435,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Token Tasarrufu',
         'tooltip.saved': 'Tasarruf',
         'tooltip.settings': 'Ayarlar',
-        'tooltip.settingsTitle': 'otak-usage ayarlarını aç (telemetri)',
+        'tooltip.settingsTitle': 'otak-usage ayarlarını aç',
         'tooltip.thisMonth': 'Bu Ay',
         'tooltip.title': 'otak-usage — API eşdeğeri maliyet',
         'tooltip.today': 'Bugün',
@@ -431,6 +445,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     vi: {
         'action.openSettings': 'Mở cài đặt',
         'alert.dailyCostExceeded': 'Cảnh báo chi phí hằng ngày của otak-usage: tổng hôm nay là {total}, vượt ngưỡng cảnh báo hằng ngày {threshold}.',
+        'alert.limitExceeded': 'Cảnh báo giới hạn otak-usage: mức sử dụng {provider} {window} đang ở {pct}%, vượt ngưỡng cảnh báo {threshold}% của bạn.',
         'message.summaryCopied': 'otak-usage: đã sao chép tóm tắt vào clipboard',
         'tooltip.allTime': 'Từ trước đến nay',
         'tooltip.clickToTogglePeriod': 'Nhấp để đổi chế độ xem',
@@ -450,7 +465,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Tiết kiệm token',
         'tooltip.saved': 'Đã tiết kiệm',
         'tooltip.settings': 'Cài đặt',
-        'tooltip.settingsTitle': 'Mở cài đặt otak-usage (đo từ xa)',
+        'tooltip.settingsTitle': 'Mở cài đặt otak-usage',
         'tooltip.thisMonth': 'Tháng này',
         'tooltip.title': 'otak-usage — chi phí tương đương API',
         'tooltip.today': 'Hôm nay',
@@ -460,6 +475,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     'zh-cn': {
         'action.openSettings': '打开设置',
         'alert.dailyCostExceeded': 'otak-usage 每日费用提醒：今天合计为 {total}，已超过每日提醒阈值 {threshold}。',
+        'alert.limitExceeded': 'otak-usage 限额提醒：{provider} {window} 使用率为 {pct}%，已超过提醒阈值 {threshold}%。',
         'message.summaryCopied': 'otak-usage：摘要已复制到剪贴板',
         'tooltip.allTime': '全部时间',
         'tooltip.clickToTogglePeriod': '点击切换视图',
@@ -479,7 +495,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Token 节省',
         'tooltip.saved': '节省',
         'tooltip.settings': '设置',
-        'tooltip.settingsTitle': '打开 otak-usage 设置（遥测）',
+        'tooltip.settingsTitle': '打开 otak-usage 设置',
         'tooltip.thisMonth': '本月',
         'tooltip.title': 'otak-usage — API 等效费用',
         'tooltip.today': '今天',
@@ -489,6 +505,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     'zh-tw': {
         'action.openSettings': '開啟設定',
         'alert.dailyCostExceeded': 'otak-usage 每日費用提醒：今天合計為 {total}，已超過每日提醒門檻 {threshold}。',
+        'alert.limitExceeded': 'otak-usage 額度提醒：{provider} {window} 使用率為 {pct}%，已超過提醒門檻 {threshold}%。',
         'message.summaryCopied': 'otak-usage：摘要已複製到剪貼簿',
         'tooltip.allTime': '全部時間',
         'tooltip.clickToTogglePeriod': '點擊切換檢視',
@@ -508,7 +525,7 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.rtkTitle': 'RTK — Token 節省',
         'tooltip.saved': '節省',
         'tooltip.settings': '設定',
-        'tooltip.settingsTitle': '開啟 otak-usage 設定（遙測）',
+        'tooltip.settingsTitle': '開啟 otak-usage 設定',
         'tooltip.thisMonth': '本月',
         'tooltip.title': 'otak-usage — API 等效費用',
         'tooltip.today': '今天',

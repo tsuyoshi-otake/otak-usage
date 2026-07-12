@@ -73,7 +73,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses. Optionally mirrored in the status bar.
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
-- **Daily cost alert**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured threshold.
+- **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
 - **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts.
@@ -108,7 +108,9 @@ If a provider directory is missing, that provider is skipped without blocking th
 | --- | --- | --- |
 | `otakUsage.period` | `today` | Aggregation period shown in the status bar: `today` or `month`. |
 | `otakUsage.updateIntervalSeconds` | `60` | How often to rescan usage logs, in seconds. Minimum: `10`. |
-| `otakUsage.dailyAlertThresholdUsd` | `10` | Daily combined Claude + Codex cost threshold in USD. Set to `0` to disable alerts. |
+| `otakUsage.alertMode` | `both` | What triggers desktop notifications: `off`, `cost` (the daily USD total), `limit` (a rate-limit window percentage), or `both`. |
+| `otakUsage.dailyAlertThresholdUsd` | `10` | Daily combined Claude + Codex cost threshold in USD. Set to `0` to disable the cost alert. |
+| `otakUsage.limitAlertThresholdPercent` | `80` | Subscription rate-limit alert threshold, as a percentage (0–100). Fires when any shown Claude or Codex 5-hour or weekly window reaches this utilization. Set to `0` to disable the limit alert. |
 | `otakUsage.showClaude` | `true` | Include Claude Code usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showCodex` | `true` | Include Codex CLI usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showRateLimits` | `true` | Show subscription rate-limit usage (5-hour and weekly windows) in the tooltip. See [Subscription Rate Limits](#subscription-rate-limits). |

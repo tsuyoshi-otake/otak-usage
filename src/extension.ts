@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { ProviderSummary, summarize } from './aggregator';
-import { DailyAlertState, evaluateDailyAlert, isValidDailyAlertState, normalizeDailyAlertThresholdUsd, sameDailyAlertState } from './alert';
+import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { ScanTargets, scanAll } from './engine';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, statusBarText, tooltipMarkdown } from './formatter';
@@ -17,6 +17,7 @@ import { Provider } from './types';
 
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
+const LIMIT_ALERT_STATE_KEY = 'otakUsage.limitAlertState';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 
@@ -43,6 +44,7 @@ class UsageController implements vscode.Disposable {
     private lastViews: { claude: ProviderView; codex: ProviderView; rtk: RtkView } | undefined;
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
+    private limitAlertState: LimitAlertState | undefined;
     private readonly i18n = new I18n(vscode.env.language);
 
     constructor(private readonly context: vscode.ExtensionContext) { }
@@ -52,6 +54,7 @@ class UsageController implements vscode.Disposable {
         this.context.subscriptions.push(this.statusBarItem);
         this.loadCache();
         this.loadDailyAlertState();
+        this.loadLimitAlertState();
         this.statusBarItem.text = '$(loading~spin) usage';
         this.statusBarItem.show();
         this.context.subscriptions.push(
@@ -337,12 +340,23 @@ class UsageController implements vscode.Disposable {
     private async renderAndCheckAlert(): Promise<void> {
         const snapshot = this.render();
         if (snapshot) {
-            await this.checkDailyAlert(snapshot.day, snapshot.todayTotalCost);
+            await this.checkAlerts(snapshot.day, snapshot.todayTotalCost);
         }
     }
 
-    private async checkDailyAlert(day: string, todayTotalCost: number): Promise<void> {
-        const threshold = normalizeDailyAlertThresholdUsd(this.config().get<unknown>('dailyAlertThresholdUsd'));
+    private async checkAlerts(day: string, todayTotalCost: number): Promise<void> {
+        const config = this.config();
+        const mode: AlertMode = normalizeAlertMode(config.get<unknown>('alertMode'));
+        if (alertModeIncludesCost(mode)) {
+            await this.checkDailyAlert(config, day, todayTotalCost);
+        }
+        if (alertModeIncludesLimit(mode)) {
+            await this.checkLimitAlert(config);
+        }
+    }
+
+    private async checkDailyAlert(config: vscode.WorkspaceConfiguration, day: string, todayTotalCost: number): Promise<void> {
+        const threshold = normalizeDailyAlertThresholdUsd(config.get<unknown>('dailyAlertThresholdUsd'));
         const decision = evaluateDailyAlert(todayTotalCost, threshold, day, this.dailyAlertState);
         if (!sameDailyAlertState(this.dailyAlertState, decision.nextState)) {
             this.dailyAlertState = decision.nextState;
@@ -352,20 +366,72 @@ class UsageController implements vscode.Disposable {
             return;
         }
 
-        const openSettings = this.i18n.t('action.openSettings');
         const message = this.i18n.t('alert.dailyCostExceeded', {
             total: formatCost(todayTotalCost),
             threshold: formatCost(threshold),
         });
-        void this.showDailyAlertNotification(message, openSettings).catch((err) => {
+        void this.showAlertNotification(message, 'otakUsage.dailyAlertThresholdUsd').catch((err) => {
             console.error('otak-usage: daily alert notification failed', err);
         });
     }
 
-    private async showDailyAlertNotification(message: string, openSettings: string): Promise<void> {
+    private async checkLimitAlert(config: vscode.WorkspaceConfiguration): Promise<void> {
+        const threshold = normalizeLimitAlertThresholdPercent(config.get<unknown>('limitAlertThresholdPercent'));
+        const windows = this.buildLimitAlertWindows();
+        const decision = evaluateLimitAlert(windows, threshold, this.limitAlertState);
+        if (!sameLimitAlertState(this.limitAlertState, decision.nextState)) {
+            this.limitAlertState = decision.nextState;
+            await this.context.globalState.update(LIMIT_ALERT_STATE_KEY, decision.nextState);
+        }
+        for (const w of decision.triggered) {
+            const message = this.i18n.t('alert.limitExceeded', {
+                provider: w.provider,
+                window: w.window,
+                pct: String(Math.round(w.usedPercent)),
+                threshold: String(Math.round(threshold)),
+            });
+            void this.showAlertNotification(message, 'otakUsage.limitAlertThresholdPercent').catch((err) => {
+                console.error('otak-usage: limit alert notification failed', err);
+            });
+        }
+    }
+
+    /** Rate-limit windows the user currently sees, as alert candidates. */
+    private buildLimitAlertWindows(): LimitAlertWindow[] {
+        const views = this.lastViews;
+        if (!views) {
+            return [];
+        }
+        const windows: LimitAlertWindow[] = [];
+        const add = (provider: string, prefix: string, view: ProviderView): void => {
+            if (!view.show || !view.limits) {
+                return;
+            }
+            for (const [key, label, window] of [
+                ['primary', '5h', view.limits.primary],
+                ['secondary', '7d', view.limits.secondary],
+            ] as const) {
+                if (window) {
+                    windows.push({
+                        id: `${prefix}:${key}`,
+                        provider,
+                        window: label,
+                        usedPercent: window.usedPercent,
+                        resetsAtMs: window.resetsAtMs,
+                    });
+                }
+            }
+        };
+        add('Claude', 'claude', views.claude);
+        add('Codex', 'codex', views.codex);
+        return windows;
+    }
+
+    private async showAlertNotification(message: string, settingKey: string): Promise<void> {
+        const openSettings = this.i18n.t('action.openSettings');
         const selected = await vscode.window.showWarningMessage(message, openSettings);
         if (selected === openSettings) {
-            await vscode.commands.executeCommand('workbench.action.openSettings', 'otakUsage.dailyAlertThresholdUsd');
+            await vscode.commands.executeCommand('workbench.action.openSettings', settingKey);
         }
     }
 
@@ -423,6 +489,11 @@ class UsageController implements vscode.Disposable {
     private loadDailyAlertState(): void {
         const raw = this.context.globalState.get<unknown>(DAILY_ALERT_STATE_KEY);
         this.dailyAlertState = isValidDailyAlertState(raw) ? raw : undefined;
+    }
+
+    private loadLimitAlertState(): void {
+        const raw = this.context.globalState.get<unknown>(LIMIT_ALERT_STATE_KEY);
+        this.limitAlertState = isValidLimitAlertState(raw) ? raw : undefined;
     }
 
     private async saveCache(): Promise<void> {

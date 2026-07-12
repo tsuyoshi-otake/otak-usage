@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.9.0] - 2026-07-11
+
+### Added
+
+- Subscription rate-limit alerts: a notification now appears when a shown Claude or Codex rate-limit window (5-hour or weekly) reaches a configurable utilization, set by `otakUsage.limitAlertThresholdPercent` (default 80%). It fires once per window instance and re-arms when the window resets.
+- New `otakUsage.alertMode` setting chooses what triggers desktop notifications: `off`, `cost` (the daily USD total), `limit` (the rate-limit percentage), or `both` (default).
+
+### Fixed
+
+- The tooltip **Settings** link now opens all `otakUsage` settings instead of filtering to just the telemetry group.
+
 ## [1.8.5] - 2026-07-11
 
 ### Added
