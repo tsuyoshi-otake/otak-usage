@@ -74,6 +74,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
+- **Codex context optimization**: on by default, this optimizes Codex's maximum context size to save tokens and ease subscription rate limits by pinning `model_context_window` and `model_auto_compact_token_limit` in your Codex `config.toml` (toggle `otakUsage.optimizeCodexContext`). Turning it off removes the two keys again; while it stays off, your Codex config is left untouched.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
 - **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts.
@@ -120,6 +121,9 @@ If a provider directory is missing, that provider is skipped without blocking th
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, for example `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}`. |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config directory. Empty means `$CLAUDE_CONFIG_DIR` or `~/.claude`. |
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
+| `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove those two keys. While off, the file is left untouched. |
+| `otakUsage.codexContextWindow` | `250000` | Value written for `model_context_window` when the optimization is on. |
+| `otakUsage.codexAutoCompactLimit` | `230000` | Value written for `model_auto_compact_token_limit` when the optimization is on. Keep it below the effective context ceiling (~95% of the window, ≈237.5k at the default) or auto-compaction never triggers. |
 | `otakUsage.telemetry.enabled` | `false` | Send usage telemetry to an OpenTelemetry OTLP/HTTP endpoint. Off by default. |
 | `otakUsage.telemetry.includeTokenUsage` | `true` | Include per-model token usage (`gen_ai.client.token.usage`) in telemetry. |
 | `otakUsage.telemetry.includeCost` | `true` | Include per-model USD cost (`otak_usage.cost.usd`) in telemetry. |

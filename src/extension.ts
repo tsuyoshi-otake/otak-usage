@@ -5,6 +5,7 @@ import * as fsp from 'fs/promises';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
+import { DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, normalizeCodexTokenLimit, removeCodexOptimizeToml } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
@@ -18,6 +19,7 @@ import { Provider } from './types';
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
 const LIMIT_ALERT_STATE_KEY = 'otakUsage.limitAlertState';
+const CODEX_OPTIMIZE_APPLIED_KEY = 'otakUsage.codexOptimizeApplied';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 
@@ -67,6 +69,12 @@ class UsageController implements vscode.Disposable {
                     this.restartTimer();
                     void this.renderAndCheckAlert();
                 }
+                if (e.affectsConfiguration('otakUsage.optimizeCodexContext') ||
+                    e.affectsConfiguration('otakUsage.codexContextWindow') ||
+                    e.affectsConfiguration('otakUsage.codexAutoCompactLimit') ||
+                    e.affectsConfiguration('otakUsage.codexHome')) {
+                    void this.syncCodexOptimize();
+                }
             }),
             vscode.window.onDidChangeWindowState((state) => {
                 if (state.focused !== this.focused) {
@@ -80,6 +88,7 @@ class UsageController implements vscode.Disposable {
         );
         void this.tick();
         this.restartTimer();
+        void this.syncCodexOptimize();
     }
 
     dispose(): void {
@@ -123,6 +132,73 @@ class UsageController implements vscode.Disposable {
             claudeAvailable,
             codexAvailable,
         };
+    }
+
+    private codexHomeDir(): string {
+        return firstNonEmpty(this.config().get<string>('codexHome'), process.env.CODEX_HOME)
+            ?? path.join(os.homedir(), '.codex');
+    }
+
+    /**
+     * Reconcile `~/.codex/config.toml` with the optimize toggle. When enabled,
+     * pin the two managed keys to the configured values; when it is turned off
+     * (a previously-applied → off transition), remove them again. Leaves the
+     * file untouched while the toggle is and stays off, so a user's own manual
+     * values are never removed unless they opted in first.
+     */
+    private async syncCodexOptimize(): Promise<void> {
+        const config = this.config();
+        const desired = config.get<boolean>('optimizeCodexContext', false);
+        const applied = this.context.globalState.get<boolean>(CODEX_OPTIMIZE_APPLIED_KEY, false);
+        if (!desired && !applied) {
+            return;
+        }
+        const configPath = path.join(this.codexHomeDir(), 'config.toml');
+        try {
+            if (desired) {
+                const values = {
+                    contextWindow: normalizeCodexTokenLimit(config.get<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
+                    autoCompactLimit: normalizeCodexTokenLimit(config.get<unknown>('codexAutoCompactLimit'), DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
+                };
+                const changed = await this.rewriteCodexConfig(configPath, (text) => applyCodexOptimizeToml(text, values), true);
+                await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, true);
+                if (changed) {
+                    vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeApplied'), 4000);
+                }
+            } else {
+                const changed = await this.rewriteCodexConfig(configPath, (text) => removeCodexOptimizeToml(text), false);
+                await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, false);
+                if (changed) {
+                    vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeRemoved'), 4000);
+                }
+            }
+        } catch (err) {
+            console.error('otak-usage: codex optimize sync failed', err);
+        }
+    }
+
+    /**
+     * Read the config, transform it, and write it back only when the content
+     * actually changes. When `createIfMissing` is false a missing file is a
+     * no-op (nothing to remove).
+     */
+    private async rewriteCodexConfig(configPath: string, transform: (text: string) => string, createIfMissing: boolean): Promise<boolean> {
+        let current: string | undefined;
+        try {
+            current = await fsp.readFile(configPath, 'utf8');
+        } catch {
+            current = undefined;
+        }
+        if (current === undefined && !createIfMissing) {
+            return false;
+        }
+        const next = transform(current ?? '');
+        if (next === current) {
+            return false;
+        }
+        await fsp.mkdir(path.dirname(configPath), { recursive: true });
+        await fsp.writeFile(configPath, next, 'utf8');
+        return true;
     }
 
     private async tick(): Promise<void> {

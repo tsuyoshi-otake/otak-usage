@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -173,6 +173,23 @@
           "type": "string",
           "default": "",
           "description": "%config.codexHome%"
+        },
+        "otakUsage.optimizeCodexContext": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.optimizeCodexContext%"
+        },
+        "otakUsage.codexContextWindow": {
+          "type": "number",
+          "default": 250000,
+          "minimum": 1,
+          "description": "%config.codexContextWindow%"
+        },
+        "otakUsage.codexAutoCompactLimit": {
+          "type": "number",
+          "default": 230000,
+          "minimum": 1,
+          "description": "%config.codexAutoCompactLimit%"
         },
         "otakUsage.telemetry.enabled": {
           "type": "boolean",

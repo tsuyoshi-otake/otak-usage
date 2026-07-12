@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.10.0] - 2026-07-12
+
+### Added
+
+- Codex context optimization (on by default): `otakUsage.optimizeCodexContext` optimizes Codex's maximum context size to save tokens and ease subscription rate limits by writing `model_context_window` and `model_auto_compact_token_limit` into your Codex `config.toml` (values from `otakUsage.codexContextWindow` / `otakUsage.codexAutoCompactLimit`, defaults 250000 / 230000), rewriting them in place if present. Turning it off removes the two keys again. While the toggle stays off, your existing Codex config is left untouched.
+- Tooltip **Optimize** link next to **Settings** that jumps straight to the `otakUsage.optimizeCodexContext` toggle.
+
 ## [1.9.0] - 2026-07-11
 
 ### Added
