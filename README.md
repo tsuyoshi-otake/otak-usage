@@ -122,8 +122,8 @@ If a provider directory is missing, that provider is skipped without blocking th
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config directory. Empty means `$CLAUDE_CONFIG_DIR` or `~/.claude`. |
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
 | `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove those two keys. While off, the file is left untouched. |
-| `otakUsage.codexContextWindow` | `250000` | Value written for `model_context_window` when the optimization is on. |
-| `otakUsage.codexAutoCompactLimit` | `230000` | Value written for `model_auto_compact_token_limit` when the optimization is on. Keep it below the effective context ceiling (~95% of the window, ≈237.5k at the default) or auto-compaction never triggers. |
+| `otakUsage.codexContextWindow` | `272000` | Value written for `model_context_window` when the optimization is on. The default matches OpenAI's long-context pricing threshold: requests above 272k input tokens are billed at the higher long-context rate. |
+| `otakUsage.codexAutoCompactLimit` | `250000` | Value written for `model_auto_compact_token_limit` when the optimization is on. Keep it below the effective context ceiling (~95% of the window, ≈258.4k at the default) or auto-compaction never triggers. |
 | `otakUsage.telemetry.enabled` | `false` | Send usage telemetry to an OpenTelemetry OTLP/HTTP endpoint. Off by default. |
 | `otakUsage.telemetry.includeTokenUsage` | `true` | Include per-model token usage (`gen_ai.client.token.usage`) in telemetry. |
 | `otakUsage.telemetry.includeCost` | `true` | Include per-model USD cost (`otak_usage.cost.usd`) in telemetry. |

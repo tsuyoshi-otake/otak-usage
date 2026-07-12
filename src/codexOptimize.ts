@@ -13,8 +13,11 @@
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 250000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 230000;
+// OpenAI charges the long-context rate once a request exceeds 272k input
+// tokens, so the window is pinned to that threshold and compaction fires
+// with enough headroom to stay under it.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 250000;
 
 export interface CodexOptimizeValues {
     contextWindow: number;

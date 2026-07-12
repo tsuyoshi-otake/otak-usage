@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.10.1] - 2026-07-12
+
+### Changed
+
+- Codex context optimization defaults now track OpenAI's long-context pricing threshold: `otakUsage.codexContextWindow` default is 272000 (requests above 272k input tokens are billed at the long-context rate — 2x input / 1.5x output on GPT-5.5) and `otakUsage.codexAutoCompactLimit` default is 250000, so auto-compaction keeps sessions inside the standard-rate band while using more of it. Users who kept the old defaults get the new values automatically; explicit overrides are respected as before.
+
 ## [1.10.0] - 2026-07-12
 
 ### Added
