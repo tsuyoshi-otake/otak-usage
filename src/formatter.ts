@@ -119,12 +119,32 @@ export function detectSubscriptionMode(claude: ProviderLimits | undefined, codex
 }
 
 /**
- * The 5-hour (primary) window's used percentage, so both providers show the
- * same window side by side; falls back to the weekly window when a snapshot
+ * The primary window's used percentage, so both providers show the same
+ * window side by side; falls back to the weekly window when a snapshot
  * lacks primary data. The tooltip still shows both windows in full.
  */
 function statusBarUsedPercent(limits: ProviderLimits | undefined): number | undefined {
     return limits?.primary?.usedPercent ?? limits?.secondary?.usedPercent;
+}
+
+/**
+ * Display label for a rate-limit window, derived from its reported length
+ * (300 min → "5h", 10080 min → "7d"). Codex plans without a session limit
+ * report the weekly window in the primary slot, so the positional fallback
+ * ("5h"/"7d") only applies when the provider did not report a length.
+ */
+export function limitWindowLabel(window: LimitWindow, fallback: string): string {
+    const minutes = window.windowMinutes;
+    if (minutes === undefined || minutes <= 0) {
+        return fallback;
+    }
+    if (minutes % 1440 === 0) {
+        return `${minutes / 1440}d`;
+    }
+    if (minutes % 60 === 0) {
+        return `${minutes / 60}h`;
+    }
+    return `${minutes}m`;
 }
 
 function periodCost(view: ProviderView, period: Period): number {
@@ -182,10 +202,10 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
         const limits = view.limits;
         if (limits) {
             const rows: string[] = [];
-            for (const [label, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
+            for (const [fallback, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
                 if (window) {
                     const reset = window.resetsAtMs === undefined ? '' : ` (resets ${formatResetTime(window.resetsAtMs, now)})`;
-                    rows.push(`    ${label} ${Math.round(window.usedPercent)}% used${reset}`);
+                    rows.push(`    ${limitWindowLabel(window, fallback)} ${Math.round(window.usedPercent)}% used${reset}`);
                 }
             }
             if (rows.length > 0) {
@@ -287,12 +307,12 @@ export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n 
         return undefined;
     }
     const rows: string[] = [];
-    for (const [label, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
+    for (const [fallback, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
         if (!window) {
             continue;
         }
         const used = i18n.t('tooltip.limitUsed', { pct: String(Math.round(window.usedPercent)) });
-        rows.push(`${label} · **${used}**${resetSuffix(window, now, i18n)}`);
+        rows.push(`${limitWindowLabel(window, fallback)} · **${used}**${resetSuffix(window, now, i18n)}`);
     }
     if (rows.length === 0) {
         return undefined;

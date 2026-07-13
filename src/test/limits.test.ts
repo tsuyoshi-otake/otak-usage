@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { ProviderSummary } from '../aggregator';
-import { ProviderView, cycleStatusBarView, detectSubscriptionMode, limitsLines, statusBarText } from '../formatter';
+import { ProviderView, cycleStatusBarView, detectSubscriptionMode, limitWindowLabel, limitsLines, statusBarText } from '../formatter';
 import { I18n } from '../i18n';
 import { ProviderLimits, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine } from '../limits';
 
@@ -28,9 +28,32 @@ suite('limits: codex rollout parsing', () => {
         assert.ok(limits);
         assert.strictEqual(limits.primary?.usedPercent, 11);
         assert.strictEqual(limits.primary?.resetsAtMs, 1783745711000);
+        assert.strictEqual(limits.primary?.windowMinutes, 300);
         assert.strictEqual(limits.secondary?.usedPercent, 2);
+        assert.strictEqual(limits.secondary?.windowMinutes, 10080);
         assert.strictEqual(limits.planType, 'pro');
         assert.strictEqual(limits.asOfMs, Date.parse('2026-07-11T04:17:29.134Z'));
+    });
+
+    test('a weekly-only snapshot (no session window) keeps its window length', () => {
+        // Plans without a 5h session limit report only the weekly window, in primary.
+        const weeklyOnly = JSON.stringify({
+            timestamp: '2026-07-13T00:49:09.949Z',
+            type: 'event_msg',
+            payload: {
+                type: 'token_count',
+                rate_limits: {
+                    limit_id: 'codex',
+                    primary: { used_percent: 2.0, window_minutes: 10080, resets_at: 1784499943 },
+                    secondary: null,
+                    plan_type: 'pro',
+                },
+            },
+        });
+        const limits = parseCodexRateLimitLine(weeklyOnly);
+        assert.ok(limits);
+        assert.strictEqual(limits.primary?.windowMinutes, 10080);
+        assert.strictEqual(limits.secondary, undefined);
     });
 
     test('ignores lines without payload.rate_limits and invalid JSON', () => {
@@ -54,7 +77,9 @@ suite('limits: claude usage response parsing', () => {
         assert.ok(limits);
         assert.strictEqual(limits.primary?.usedPercent, 5);
         assert.strictEqual(limits.primary?.resetsAtMs, Date.parse('2026-07-11T07:40:00.407275+00:00'));
+        assert.strictEqual(limits.primary?.windowMinutes, 300);
         assert.strictEqual(limits.secondary?.usedPercent, 8);
+        assert.strictEqual(limits.secondary?.windowMinutes, 10080);
         assert.strictEqual(limits.planType, 'max');
         assert.strictEqual(limits.asOfMs, NOW_MS);
     });
@@ -69,13 +94,14 @@ suite('limits: claude usage response parsing', () => {
 suite('limits: staleness clamp', () => {
     test('a window past its reset time reads as 0% used', () => {
         const stale: ProviderLimits = {
-            primary: { usedPercent: 100, resetsAtMs: NOW_MS - 1000 },
+            primary: { usedPercent: 100, resetsAtMs: NOW_MS - 1000, windowMinutes: 10080 },
             secondary: { usedPercent: 19, resetsAtMs: NOW_MS + 1000 },
             asOfMs: NOW_MS - 6 * 3600_000,
         };
         const effective = effectiveLimits(stale, NOW_MS);
         assert.strictEqual(effective?.primary?.usedPercent, 0);
         assert.strictEqual(effective?.primary?.resetsAtMs, undefined);
+        assert.strictEqual(effective?.primary?.windowMinutes, 10080);
         assert.strictEqual(effective?.secondary?.usedPercent, 19);
     });
 
@@ -87,6 +113,20 @@ suite('limits: staleness clamp', () => {
         };
         assert.deepStrictEqual(effectiveLimits(fresh, NOW_MS), fresh);
         assert.strictEqual(effectiveLimits(undefined, NOW_MS), undefined);
+    });
+});
+
+suite('limits: window labels', () => {
+    test('derives the label from the reported window length', () => {
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 300 }, '7d'), '5h');
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 10080 }, '5h'), '7d');
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 1440 }, '5h'), '1d');
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 90 }, '5h'), '90m');
+    });
+
+    test('falls back to the positional label when no length is reported', () => {
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0 }, '5h'), '5h');
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 0 }, '7d'), '7d');
     });
 });
 
@@ -126,6 +166,20 @@ suite('limits: formatting', () => {
         const out = limitsLines(limits, NOW, undefined, '<br>');
         assert.strictEqual(out?.split('<br>').length, 3);
         assert.ok(!out?.includes('  \n'));
+    });
+
+    test('limitsLines labels windows by their reported length, not their slot', () => {
+        // Codex plans without a session limit put the weekly window in primary.
+        const weeklyPrimary: ProviderLimits = {
+            primary: { usedPercent: 2, resetsAtMs: new Date(2026, 6, 20, 9, 0).getTime(), windowMinutes: 10080 },
+            planType: 'pro',
+            asOfMs: NOW_MS,
+        };
+        const out = limitsLines(weeklyPrimary, NOW);
+        assert.strictEqual(out, [
+            '$(dashboard) **Limits** (pro)',
+            '7d · **2% used** · resets 07-20 09:00',
+        ].join('  \n'));
     });
 
     suite('statusBarText modes', () => {

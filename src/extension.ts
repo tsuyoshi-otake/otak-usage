@@ -7,7 +7,7 @@ import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertMod
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
 import { DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, normalizeCodexTokenLimit, removeCodexOptimizeToml } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
 import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
@@ -483,7 +483,7 @@ class UsageController implements vscode.Disposable {
             if (!view.show || !view.limits) {
                 return;
             }
-            for (const [key, label, window] of [
+            for (const [key, fallback, window] of [
                 ['primary', '5h', view.limits.primary],
                 ['secondary', '7d', view.limits.secondary],
             ] as const) {
@@ -491,7 +491,7 @@ class UsageController implements vscode.Disposable {
                     windows.push({
                         id: `${prefix}:${key}`,
                         provider,
-                        window: label,
+                        window: limitWindowLabel(window, fallback),
                         usedPercent: window.usedPercent,
                         resetsAtMs: window.resetsAtMs,
                     });

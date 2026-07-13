@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",

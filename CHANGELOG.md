@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.10.2] - 2026-07-13
+
+### Fixed
+
+- Rate-limit windows are now labeled by their reported length instead of their slot position. Codex plans whose subscription limit is weekly only report that window in the primary slot (`window_minutes: 10080`), which previously showed up as "5h" in the tooltip, clipboard summary, and limit alerts — it now correctly reads "7d". (#13)
+
 ## [1.10.1] - 2026-07-12
 
 ### Changed

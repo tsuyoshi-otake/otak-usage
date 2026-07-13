@@ -8,11 +8,17 @@ export interface LimitWindow {
     usedPercent: number;
     /** epoch milliseconds; undefined when the provider did not report it */
     resetsAtMs?: number;
+    /** window length in minutes (300 = 5h, 10080 = 7d); undefined when unreported */
+    windowMinutes?: number;
 }
 
 /** Subscription rate-limit snapshot for one provider. */
 export interface ProviderLimits {
-    /** short window (Claude "5-hour", Codex primary / 300 min) */
+    /**
+     * The provider's first reported window. Usually the short session window
+     * (Claude "5-hour"), but Codex plans without a session limit report their
+     * weekly window here — check windowMinutes rather than assuming 5h.
+     */
     primary?: LimitWindow;
     /** long window (Claude "7-day", Codex secondary / 10080 min) */
     secondary?: LimitWindow;
@@ -45,7 +51,7 @@ function effectiveWindow(window: LimitWindow | undefined, nowMs: number): LimitW
         return undefined;
     }
     if (window.resetsAtMs !== undefined && window.resetsAtMs <= nowMs) {
-        return { usedPercent: 0 };
+        return { usedPercent: 0, windowMinutes: window.windowMinutes };
     }
     return window;
 }
@@ -116,15 +122,15 @@ async function readClaudeCredentials(claudeDir: string): Promise<ClaudeCredentia
 /** Parse the /api/oauth/usage response body ({ five_hour, seven_day, ... }). */
 export function parseClaudeUsageResponse(body: unknown, nowMs: number, planType?: string): ProviderLimits | undefined {
     const b = body as any;
-    const primary = windowFromClaude(b?.five_hour);
-    const secondary = windowFromClaude(b?.seven_day);
+    const primary = windowFromClaude(b?.five_hour, 300);
+    const secondary = windowFromClaude(b?.seven_day, 10080);
     if (!primary && !secondary) {
         return undefined;
     }
     return { primary, secondary, planType, asOfMs: nowMs };
 }
 
-function windowFromClaude(w: any): LimitWindow | undefined {
+function windowFromClaude(w: any, windowMinutes: number): LimitWindow | undefined {
     if (typeof w?.utilization !== 'number') {
         return undefined;
     }
@@ -132,6 +138,7 @@ function windowFromClaude(w: any): LimitWindow | undefined {
     return {
         usedPercent: w.utilization,
         resetsAtMs: Number.isNaN(resets) ? undefined : resets,
+        windowMinutes,
     };
 }
 
@@ -235,5 +242,6 @@ function windowFromCodex(w: any): LimitWindow | undefined {
         usedPercent: w.used_percent,
         // rollout logs store resets_at as epoch seconds
         resetsAtMs: typeof w.resets_at === 'number' ? w.resets_at * 1000 : undefined,
+        windowMinutes: typeof w.window_minutes === 'number' ? w.window_minutes : undefined,
     };
 }
