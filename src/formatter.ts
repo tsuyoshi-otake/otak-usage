@@ -56,10 +56,15 @@ export function formatTokenLimit(n: number): string {
     return n % 1000 === 0 ? `${n / 1000}k` : n.toLocaleString('en-US');
 }
 
-export interface CodexOptimizeView {
+export interface ProviderOptimizeView {
     enabled: boolean;
     contextWindow: number;
     autoCompactLimit: number;
+}
+
+export interface ContextOptimizeView {
+    claude: ProviderOptimizeView;
+    codex: ProviderOptimizeView;
 }
 
 /**
@@ -163,7 +168,7 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: CodexOptimizeView): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: ContextOptimizeView): string {
     const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
     const combined = combinedCostSection(claude, codex, i18n);
     if (combined) {
@@ -181,8 +186,9 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     const periodLabel = period === 'today' ? i18n.t('tooltip.today') : i18n.t('tooltip.thisMonth');
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
     const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage']));
-    const optimizeValue = optimize?.enabled
-        ? ` (${formatTokenLimit(optimize.contextWindow)} → ${formatTokenLimit(optimize.autoCompactLimit)})`
+    const optimizeValue = optimize
+        ? ` (Claude ${optimize.claude.enabled ? `${formatTokenLimit(optimize.claude.contextWindow)} → ${formatTokenLimit(optimize.claude.autoCompactLimit)}` : 'off'}` +
+          ` · Codex ${optimize.codex.enabled ? `${formatTokenLimit(optimize.codex.contextWindow)} → ${formatTokenLimit(optimize.codex.autoCompactLimit)}` : 'off'})`
         : '';
     parts.push(
         `[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")` +

@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState } from '../alert';
+import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
@@ -500,6 +501,91 @@ suite('codex optimize', () => {
     });
 });
 
+suite('claude optimize', () => {
+    const values = { contextWindow: 200000, autoCompactPercent: 92 };
+
+    test('offers a 200k preset and calculates its effective compact limit', () => {
+        assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
+            { id: '200k', contextWindow: 200000, autoCompactPercent: 92 },
+        ]);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '200k');
+        assert.strictEqual(matchingClaudeOptimizePreset({ contextWindow: 200000, autoCompactPercent: 90 }), undefined);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 184000);
+    });
+
+    test('normalizes token limits and percentages', () => {
+        assert.strictEqual(normalizeClaudeTokenLimit(undefined, 200000), 200000);
+        assert.strictEqual(normalizeClaudeTokenLimit(180000.9, 200000), 180000);
+        assert.strictEqual(normalizeClaudeAutoCompactPercent(0, 92), 92);
+        assert.strictEqual(normalizeClaudeAutoCompactPercent(101, 92), 92);
+        assert.strictEqual(normalizeClaudeAutoCompactPercent(85.8, 92), 85);
+        assert.strictEqual(parseClaudeTokenLimit('200,000'), 200000);
+        assert.strictEqual(parseClaudeTokenLimit('0'), undefined);
+        assert.strictEqual(parseClaudeAutoCompactPercent('70'), 70);
+        assert.strictEqual(parseClaudeAutoCompactPercent('0'), undefined);
+        assert.strictEqual(parseClaudeAutoCompactPercent('101'), undefined);
+    });
+
+    test('applies string environment values and preserves unrelated settings', () => {
+        const original = JSON.stringify({
+            permissions: { allow: ['Bash(npm test)'] },
+            env: { EXISTING: 'keep-me' },
+            autoCompactEnabled: true,
+        }, null, 4) + '\n';
+        const backup = captureClaudeOptimizeBackup(original);
+        const applied = applyClaudeOptimizeJson(original, values);
+        const parsed = JSON.parse(applied);
+
+        assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
+        assert.strictEqual(parsed.autoCompactEnabled, true);
+        assert.strictEqual(parsed.env.EXISTING, 'keep-me');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '200000');
+        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '92');
+        assert.ok(applied.includes('\n    "permissions"'));
+
+        const restored = JSON.parse(restoreClaudeOptimizeJson(applied, backup));
+        assert.deepStrictEqual(restored, JSON.parse(original));
+    });
+
+    test('restores pre-existing optimizer values exactly', () => {
+        const original = JSON.stringify({
+            env: {
+                CLAUDE_CODE_AUTO_COMPACT_WINDOW: '500000',
+                CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '70',
+                OTHER: 'value',
+            },
+        });
+        const backup = captureClaudeOptimizeBackup(original);
+        const applied = applyClaudeOptimizeJson(original, values);
+        const restored = restoreClaudeOptimizeJson(applied, backup);
+        assert.deepStrictEqual(JSON.parse(restored), JSON.parse(original));
+    });
+
+    test('removes an env object created solely for optimization on restore', () => {
+        const original = '{"model":"opus"}\r\n';
+        const backup = captureClaudeOptimizeBackup(original);
+        const applied = applyClaudeOptimizeJson(original, values);
+        assert.ok(applied.includes('\r\n'));
+        const restored = JSON.parse(restoreClaudeOptimizeJson(applied, backup));
+        assert.deepStrictEqual(restored, { model: 'opus' });
+    });
+
+    test('keeps unrelated environment values added while optimization is active', () => {
+        const original = '{}\n';
+        const backup = captureClaudeOptimizeBackup(original);
+        const applied = JSON.parse(applyClaudeOptimizeJson(original, values));
+        applied.env.ADDED_LATER = 'keep-me';
+        const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), backup));
+        assert.deepStrictEqual(restored, { env: { ADDED_LATER: 'keep-me' } });
+    });
+
+    test('rejects malformed settings and a non-object env without rewriting', () => {
+        assert.throws(() => captureClaudeOptimizeBackup('{ invalid'));
+        assert.throws(() => applyClaudeOptimizeJson('{"env":"bad"}', values), /env/);
+        assert.throws(() => applyClaudeOptimizeJson('[]', values), /JSON object/);
+    });
+});
+
 suite('i18n', () => {
     test('resolves supported and regional locales', () => {
         assert.strictEqual(resolveSupportedLocale('en-US'), 'en');
@@ -797,9 +883,12 @@ suite('formatter', () => {
             new Date(2026, 5, 10, 9, 5),
             new I18n('en'),
             undefined,
-            { enabled: true, contextWindow: 272000, autoCompactLimit: 250000 },
+            {
+                claude: { enabled: true, contextWindow: 200000, autoCompactLimit: 184000 },
+                codex: { enabled: true, contextWindow: 272000, autoCompactLimit: 250000 },
+            },
         );
-        assert.ok(md.includes('Optimize (272k → 250k)'));
+        assert.ok(md.includes('Optimize (Claude 200k → 184k · Codex 272k → 250k)'));
     });
 
     test('tooltip includes the RTK savings table when stats exist', () => {

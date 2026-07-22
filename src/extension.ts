@@ -5,6 +5,7 @@ import * as fsp from 'fs/promises';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
@@ -20,6 +21,7 @@ const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
 const LIMIT_ALERT_STATE_KEY = 'otakUsage.limitAlertState';
 const CODEX_OPTIMIZE_APPLIED_KEY = 'otakUsage.codexOptimizeApplied';
+const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 
@@ -28,9 +30,23 @@ interface ResolvedTargets extends ScanTargets {
     codexAvailable: boolean;
 }
 
-interface OptimizeQuickPickItem extends vscode.QuickPickItem {
+interface CodexOptimizeQuickPickItem extends vscode.QuickPickItem {
     values?: CodexOptimizeValues;
     custom?: boolean;
+    disable?: boolean;
+}
+
+interface ClaudeOptimizeQuickPickItem extends vscode.QuickPickItem {
+    values?: ClaudeOptimizeValues;
+    custom?: boolean;
+    disable?: boolean;
+}
+
+interface ClaudeOptimizeOwnership {
+    version: 1;
+    phase: 'applying' | 'applied' | 'removing';
+    filePresent: boolean;
+    backup: ClaudeOptimizeBackup;
 }
 
 class UsageController implements vscode.Disposable {
@@ -52,7 +68,9 @@ class UsageController implements vscode.Disposable {
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
     private limitAlertState: LimitAlertState | undefined;
+    private updatingClaudeOptimizeConfiguration = false;
     private updatingCodexOptimizeConfiguration = false;
+    private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private codexOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
 
@@ -71,7 +89,7 @@ class UsageController implements vscode.Disposable {
             vscode.commands.registerCommand('otak-usage.cycleStatusBarView', () => this.cycleStatusBarView()),
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
             vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
-            vscode.commands.registerCommand('otak-usage.configureCodexOptimization', () => this.configureCodexOptimization()),
+            vscode.commands.registerCommand('otak-usage.configureCodexOptimization', () => this.configureContextOptimization()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
                     this.restartTimer();
@@ -83,6 +101,14 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.codexHome')) {
                     if (!this.updatingCodexOptimizeConfiguration) {
                         void this.syncCodexOptimize();
+                    }
+                }
+                if (e.affectsConfiguration('otakUsage.optimizeClaudeContext') ||
+                    e.affectsConfiguration('otakUsage.claudeContextWindow') ||
+                    e.affectsConfiguration('otakUsage.claudeAutoCompactPercent') ||
+                    e.affectsConfiguration('otakUsage.claudeConfigDir')) {
+                    if (!this.updatingClaudeOptimizeConfiguration) {
+                        void this.syncClaudeOptimize();
                     }
                 }
             }),
@@ -98,6 +124,7 @@ class UsageController implements vscode.Disposable {
         );
         void this.tick();
         this.restartTimer();
+        void this.syncClaudeOptimize();
         void this.syncCodexOptimize();
     }
 
@@ -149,6 +176,163 @@ class UsageController implements vscode.Disposable {
             ?? path.join(os.homedir(), '.codex');
     }
 
+    private claudeConfigDir(): string {
+        return firstNonEmpty(this.config().get<string>('claudeConfigDir'), process.env.CLAUDE_CONFIG_DIR)
+            ?? path.join(os.homedir(), '.claude');
+    }
+
+    private currentClaudeOptimizeValues(config = this.config()): ClaudeOptimizeValues {
+        return {
+            contextWindow: normalizeClaudeTokenLimit(config.get<unknown>('claudeContextWindow'), DEFAULT_CLAUDE_CONTEXT_WINDOW),
+            autoCompactPercent: normalizeClaudeAutoCompactPercent(config.get<unknown>('claudeAutoCompactPercent'), DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT),
+        };
+    }
+
+    private async configureContextOptimization(): Promise<void> {
+        const config = this.config();
+        const claudeValues = this.currentClaudeOptimizeValues(config);
+        const codexValues = this.currentCodexOptimizeValues(config);
+        const selected = await vscode.window.showQuickPick([
+            {
+                label: '$(otak-claude) Claude Code',
+                description: config.get<boolean>('optimizeClaudeContext', true)
+                    ? `On · ${formatTokenLimit(claudeValues.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(claudeValues))}`
+                    : 'Off',
+                detail: 'Configure the effective auto-compaction window and trigger percentage.',
+                provider: 'claude' as const,
+            },
+            {
+                label: '$(otak-openai) Codex CLI',
+                description: config.get<boolean>('optimizeCodexContext', true)
+                    ? `On · ${formatTokenLimit(codexValues.contextWindow)} → ${formatTokenLimit(codexValues.autoCompactLimit)}`
+                    : 'Off',
+                detail: 'Configure model_context_window and model_auto_compact_token_limit.',
+                provider: 'codex' as const,
+            },
+        ], {
+            title: this.i18n.t('tooltip.optimize'),
+            placeHolder: 'Choose a provider to configure, customize, or turn off.',
+            matchOnDescription: true,
+            matchOnDetail: true,
+        });
+        if (selected?.provider === 'claude') {
+            await this.configureClaudeOptimization();
+        } else if (selected?.provider === 'codex') {
+            await this.configureCodexOptimization();
+        }
+    }
+
+    private async configureClaudeOptimization(): Promise<void> {
+        const config = this.config();
+        const current = this.currentClaudeOptimizeValues(config);
+        const optimizeEnabled = config.get<boolean>('optimizeClaudeContext', true);
+        const currentPreset = optimizeEnabled ? matchingClaudeOptimizePreset(current) : undefined;
+        const items: ClaudeOptimizeQuickPickItem[] = CLAUDE_OPTIMIZE_PRESETS.map((preset) => ({
+            label: `${currentPreset?.id === preset.id ? '$(check) ' : ''}${preset.id}`,
+            description: `${formatTokenLimit(preset.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(preset))} (${preset.autoCompactPercent}%)`,
+            detail: `CLAUDE_CODE_AUTO_COMPACT_WINDOW ${preset.contextWindow.toLocaleString('en-US')} · CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ${preset.autoCompactPercent}`,
+            values: preset,
+        }));
+        items.push(
+            {
+                label: `${optimizeEnabled && !currentPreset ? '$(check) ' : ''}$(edit) Custom…`,
+                description: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(current))} (${current.autoCompactPercent}%)`,
+                detail: 'Enter any positive context window and an auto-compaction percentage from 1 to 100.',
+                custom: true,
+            },
+            {
+                label: `${!optimizeEnabled ? '$(check) ' : ''}$(circle-slash) Turn Off`,
+                description: 'Restore the values that existed before otak-usage enabled optimization.',
+                disable: true,
+            },
+        );
+
+        const selected = await vscode.window.showQuickPick(items, {
+            title: 'Claude Code Context Optimization',
+            placeHolder: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(current))} (${current.autoCompactPercent}%)`,
+            matchOnDescription: true,
+            matchOnDetail: true,
+        });
+        if (!selected) {
+            return;
+        }
+        if (selected.disable) {
+            this.updatingClaudeOptimizeConfiguration = true;
+            try {
+                await config.update('optimizeClaudeContext', false, vscode.ConfigurationTarget.Global);
+            } finally {
+                this.updatingClaudeOptimizeConfiguration = false;
+            }
+            const removed = await this.syncClaudeOptimize(false);
+            if (removed) {
+                vscode.window.setStatusBarMessage('otak-usage: turned off Claude Code context optimization and restored its previous settings', 5000);
+                void this.renderAndCheckAlert();
+            } else {
+                void vscode.window.showErrorMessage('otak-usage: failed to turn off Claude Code context optimization. See Developer Tools for details.');
+            }
+            return;
+        }
+
+        let values = selected.values;
+        if (selected.custom) {
+            const contextInput = await vscode.window.showInputBox({
+                title: 'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+                prompt: 'Effective context window in tokens (> 0)',
+                value: String(current.contextWindow),
+                validateInput: (value) => parseClaudeTokenLimit(value) === undefined ? 'Enter a positive integer.' : undefined,
+            });
+            if (contextInput === undefined) {
+                return;
+            }
+            const contextWindow = parseClaudeTokenLimit(contextInput);
+            if (contextWindow === undefined) {
+                return;
+            }
+            const percentInput = await vscode.window.showInputBox({
+                title: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
+                prompt: 'Auto-compaction trigger percentage (1–100)',
+                value: String(current.autoCompactPercent),
+                validateInput: (value) => parseClaudeAutoCompactPercent(value) === undefined ? 'Enter an integer from 1 to 100.' : undefined,
+            });
+            if (percentInput === undefined) {
+                return;
+            }
+            const autoCompactPercent = parseClaudeAutoCompactPercent(percentInput);
+            if (autoCompactPercent === undefined) {
+                return;
+            }
+            values = { contextWindow, autoCompactPercent };
+        }
+        if (!values) {
+            return;
+        }
+
+        this.updatingClaudeOptimizeConfiguration = true;
+        try {
+            await config.update('claudeContextWindow', values.contextWindow, vscode.ConfigurationTarget.Global);
+            await config.update('claudeAutoCompactPercent', values.autoCompactPercent, vscode.ConfigurationTarget.Global);
+            await config.update('optimizeClaudeContext', true, vscode.ConfigurationTarget.Global);
+        } catch (err) {
+            console.error('otak-usage: failed to save Claude optimize settings', err);
+            await this.syncClaudeOptimize(false);
+            void vscode.window.showErrorMessage('otak-usage: failed to save Claude Code context optimization settings. See Developer Tools for details.');
+            return;
+        } finally {
+            this.updatingClaudeOptimizeConfiguration = false;
+        }
+
+        const applied = await this.syncClaudeOptimize(false);
+        if (applied) {
+            vscode.window.setStatusBarMessage(
+                `otak-usage: applied Claude Code context optimization: ${formatTokenLimit(values.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(values))} (${values.autoCompactPercent}%)`,
+                5000,
+            );
+            void this.renderAndCheckAlert();
+        } else {
+            void vscode.window.showErrorMessage('otak-usage: failed to apply Claude Code context optimization. See Developer Tools for details.');
+        }
+    }
+
     private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {
         return {
             contextWindow: normalizeCodexTokenLimit(config.get<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
@@ -159,22 +343,29 @@ class UsageController implements vscode.Disposable {
     private async configureCodexOptimization(): Promise<void> {
         const config = this.config();
         const current = this.currentCodexOptimizeValues(config);
-        const optimizeEnabled = config.get<boolean>('optimizeCodexContext', false);
+        const optimizeEnabled = config.get<boolean>('optimizeCodexContext', true);
         const currentPreset = optimizeEnabled
             ? matchingCodexOptimizePreset(current.contextWindow, current.autoCompactLimit)
             : undefined;
-        const items: OptimizeQuickPickItem[] = CODEX_OPTIMIZE_PRESETS.map((preset) => ({
+        const items: CodexOptimizeQuickPickItem[] = CODEX_OPTIMIZE_PRESETS.map((preset) => ({
             label: `${currentPreset?.id === preset.id ? '$(check) ' : ''}${preset.id}`,
             description: `${formatTokenLimit(preset.contextWindow)} → ${formatTokenLimit(preset.autoCompactLimit)}`,
             detail: `model_context_window ${preset.contextWindow.toLocaleString('en-US')} · model_auto_compact_token_limit ${preset.autoCompactLimit.toLocaleString('en-US')}`,
             values: preset,
         }));
-        items.push({
-            label: `${optimizeEnabled && !currentPreset ? '$(check) ' : ''}$(edit) Custom…`,
-            description: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(current.autoCompactLimit)}`,
-            detail: 'Enter model_context_window and model_auto_compact_token_limit',
-            custom: true,
-        });
+        items.push(
+            {
+                label: `${optimizeEnabled && !currentPreset ? '$(check) ' : ''}$(edit) Custom…`,
+                description: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(current.autoCompactLimit)}`,
+                detail: 'Enter model_context_window and model_auto_compact_token_limit',
+                custom: true,
+            },
+            {
+                label: `${!optimizeEnabled ? '$(check) ' : ''}$(circle-slash) Turn Off`,
+                description: 'Remove the two context optimization keys from Codex config.toml.',
+                disable: true,
+            },
+        );
 
         const selected = await vscode.window.showQuickPick(items, {
             title: this.i18n.t('tooltip.optimize'),
@@ -183,6 +374,22 @@ class UsageController implements vscode.Disposable {
             matchOnDetail: true,
         });
         if (!selected) {
+            return;
+        }
+        if (selected.disable) {
+            this.updatingCodexOptimizeConfiguration = true;
+            try {
+                await config.update('optimizeCodexContext', false, vscode.ConfigurationTarget.Global);
+            } finally {
+                this.updatingCodexOptimizeConfiguration = false;
+            }
+            const removed = await this.syncCodexOptimize(false);
+            if (removed) {
+                vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeRemoved'), 5000);
+                void this.renderAndCheckAlert();
+            } else {
+                void vscode.window.showErrorMessage('otak-usage: failed to turn off Codex context optimization. See Developer Tools for details.');
+            }
             return;
         }
 
@@ -257,6 +464,91 @@ class UsageController implements vscode.Disposable {
         }
     }
 
+    /** Queue Claude settings writes so activation and VS Code configuration
+     * events cannot race each other. Every branch either reaches an applied/off
+     * terminal state or leaves an ownership phase that the next sync can retry.
+     */
+    private syncClaudeOptimize(showStatus = true): Promise<boolean> {
+        const task = this.claudeOptimizeSyncQueue.then(() => this.performClaudeOptimizeSync(showStatus));
+        this.claudeOptimizeSyncQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private async performClaudeOptimizeSync(showStatus: boolean): Promise<boolean> {
+        const config = this.config();
+        const desired = config.get<boolean>('optimizeClaudeContext', true);
+        const rawOwnership = this.context.globalState.get<unknown>(CLAUDE_OPTIMIZE_OWNERSHIP_KEY);
+        if (rawOwnership !== undefined && !isClaudeOptimizeOwnership(rawOwnership)) {
+            console.error('otak-usage: invalid Claude optimize ownership state; refusing to modify settings.json');
+            if (showStatus) {
+                void vscode.window.showErrorMessage('otak-usage: Claude Code context optimization state is invalid. settings.json was not modified.');
+            }
+            return false;
+        }
+        let ownership = rawOwnership as ClaudeOptimizeOwnership | undefined;
+        if (!desired && !ownership) {
+            return true;
+        }
+
+        const configPath = path.join(this.claudeConfigDir(), 'settings.json');
+        try {
+            if (desired) {
+                const current = await readOptionalTextFile(configPath);
+                if (!ownership) {
+                    ownership = {
+                        version: 1,
+                        phase: 'applying',
+                        filePresent: current !== undefined,
+                        backup: captureClaudeOptimizeBackup(current ?? ''),
+                    };
+                } else {
+                    ownership = { ...ownership, phase: 'applying' };
+                }
+                // Persist ownership before touching settings.json. If the host
+                // stops after the file write, the original values remain known.
+                await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
+                const values = this.currentClaudeOptimizeValues(config);
+                const changed = await writeTransformedTextFile(
+                    configPath,
+                    current,
+                    applyClaudeOptimizeJson(current ?? '', values),
+                );
+                ownership = { ...ownership, phase: 'applied' };
+                await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
+                if (changed && showStatus) {
+                    vscode.window.setStatusBarMessage('otak-usage: applied Claude Code context optimization to settings.json', 4000);
+                }
+            } else {
+                ownership = { ...ownership!, phase: 'removing' };
+                await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
+                const current = await readOptionalTextFile(configPath);
+                if (current !== undefined) {
+                    const restored = restoreClaudeOptimizeJson(current, ownership.backup);
+                    if (!ownership.filePresent && jsonObjectIsEmpty(restored)) {
+                        await fsp.unlink(configPath).catch((err: unknown) => {
+                            if (!isNodeError(err, 'ENOENT')) {
+                                throw err;
+                            }
+                        });
+                    } else {
+                        await writeTransformedTextFile(configPath, current, restored);
+                    }
+                }
+                await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, undefined);
+                if (showStatus) {
+                    vscode.window.setStatusBarMessage('otak-usage: removed Claude Code context optimization and restored previous settings', 4000);
+                }
+            }
+            return true;
+        } catch (err) {
+            console.error('otak-usage: Claude optimize sync failed', err);
+            if (showStatus) {
+                void vscode.window.showErrorMessage('otak-usage: failed to update Claude Code settings.json; the file was left unchanged when validation failed. See Developer Tools for details.');
+            }
+            return false;
+        }
+    }
+
     /**
      * Reconcile `~/.codex/config.toml` with the optimize toggle. When enabled,
      * pin the two managed keys to the configured values; when it is turned off
@@ -272,7 +564,7 @@ class UsageController implements vscode.Disposable {
 
     private async performCodexOptimizeSync(showStatus: boolean): Promise<boolean> {
         const config = this.config();
-        const desired = config.get<boolean>('optimizeCodexContext', false);
+        const desired = config.get<boolean>('optimizeCodexContext', true);
         const applied = this.context.globalState.get<boolean>(CODEX_OPTIMIZE_APPLIED_KEY, false);
         if (!desired && !applied) {
             return true;
@@ -526,7 +818,8 @@ class UsageController implements vscode.Disposable {
         this.lastViews = { claude, codex, rtk };
         const statusBarMode = showLimits ? config.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
         this.statusBarItem.text = statusBarText(claude, codex, period, false, statusBarMode);
-        const optimizeValues = this.currentCodexOptimizeValues(config);
+        const claudeOptimizeValues = this.currentClaudeOptimizeValues(config);
+        const codexOptimizeValues = this.currentCodexOptimizeValues(config);
         const tooltip = new vscode.MarkdownString(tooltipMarkdown(
             claude,
             codex,
@@ -536,8 +829,15 @@ class UsageController implements vscode.Disposable {
             this.i18n,
             tooltipIconColor(),
             {
-                enabled: config.get<boolean>('optimizeCodexContext', false),
-                ...optimizeValues,
+                claude: {
+                    enabled: config.get<boolean>('optimizeClaudeContext', true),
+                    contextWindow: claudeOptimizeValues.contextWindow,
+                    autoCompactLimit: claudeAutoCompactTokenLimit(claudeOptimizeValues),
+                },
+                codex: {
+                    enabled: config.get<boolean>('optimizeCodexContext', true),
+                    ...codexOptimizeValues,
+                },
             },
         ));
         tooltip.supportThemeIcons = true;
@@ -743,6 +1043,50 @@ async function dirExists(p: string): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isClaudeOptimizeOwnership(value: unknown): value is ClaudeOptimizeOwnership {
+    if (!isRecord(value) || value.version !== 1 || typeof value.filePresent !== 'boolean' ||
+        !['applying', 'applied', 'removing'].includes(String(value.phase)) || !isRecord(value.backup)) {
+        return false;
+    }
+    const backup = value.backup;
+    return backup.version === 1 && typeof backup.envPresent === 'boolean' &&
+        isRecord(backup.contextWindow) && typeof backup.contextWindow.present === 'boolean' &&
+        isRecord(backup.autoCompactPercent) && typeof backup.autoCompactPercent.present === 'boolean';
+}
+
+function isNodeError(err: unknown, code: string): err is NodeJS.ErrnoException {
+    return err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === code;
+}
+
+async function readOptionalTextFile(filePath: string): Promise<string | undefined> {
+    try {
+        return await fsp.readFile(filePath, 'utf8');
+    } catch (err) {
+        if (isNodeError(err, 'ENOENT')) {
+            return undefined;
+        }
+        throw err;
+    }
+}
+
+async function writeTransformedTextFile(filePath: string, current: string | undefined, next: string): Promise<boolean> {
+    if (next === current) {
+        return false;
+    }
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, next, 'utf8');
+    return true;
+}
+
+function jsonObjectIsEmpty(text: string): boolean {
+    const value: unknown = JSON.parse(text);
+    return isRecord(value) && Object.keys(value).length === 0;
 }
 
 export function activate(context: vscode.ExtensionContext): void {

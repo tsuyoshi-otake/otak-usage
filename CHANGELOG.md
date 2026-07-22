@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.12.0] - 2026-07-22
+
+### Added
+
+- Claude Code context optimization is now enabled by default alongside Codex. otak-usage writes the official `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` settings under `env` in Claude Code `settings.json`, defaulting to a 200k effective window and a 92% trigger (about 184k tokens). Existing values are captured and restored when the feature is turned off. (#15)
+- The tooltip **Optimize** action now starts with a Claude Code / Codex CLI provider picker. Both providers support validated custom values and an explicit **Turn Off** action, and the tooltip shows the active pair for each provider. (#15)
+
+### Changed
+
+- README documentation now highlights near the top that context optimization is on by default for both providers and documents presets, custom values, config files, restoration behavior, precedence, and troubleshooting. (#15)
+
 ## [1.11.0] - 2026-07-22
 
 ### Added
