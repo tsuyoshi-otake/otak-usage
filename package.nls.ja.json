@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "ステータスバー表示を切り替え（本日 / 今月 / 制限）",
   "command.refresh": "使用量を更新（キャッシュをクリアして再スキャン）",
   "command.copyUsage": "使用量サマリーをコピー",
+  "command.configureCodexOptimization": "Codex コンテキスト最適化を設定",
   "config.period": "ステータスバーに表示する集計期間。",
   "config.updateIntervalSeconds": "使用量ログを再スキャンする間隔（秒）。",
   "config.dailyAlertThresholdUsd": "1日あたりの合計コストアラートしきい値（USD）。今日の Claude + Codex の API 相当コストがこの金額に達すると通知します。0 にすると無効化します。",

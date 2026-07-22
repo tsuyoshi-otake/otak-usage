@@ -1,8 +1,8 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState } from '../alert';
-import { applyCodexOptimizeToml, normalizeCodexTokenLimit, removeCodexOptimizeToml } from '../codexOptimize';
-import { RtkView, clipboardText, formatCost, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
+import { CODEX_OPTIMIZE_PRESETS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
 import { calcCost, resolvePricing } from '../pricing';
@@ -399,6 +399,24 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
+    test('offers stable 200k and 272k preset pairs', () => {
+        assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
+            { id: '272k', contextWindow: 272000, autoCompactLimit: 250000 },
+            { id: '200k', contextWindow: 200000, autoCompactLimit: 184000 },
+        ]);
+        assert.strictEqual(matchingCodexOptimizePreset(200000, 184000)?.id, '200k');
+        assert.strictEqual(matchingCodexOptimizePreset(200000, 180000), undefined);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(200000), 184000);
+    });
+
+    test('parses custom token limits without accepting partial or unsafe values', () => {
+        assert.strictEqual(parseCodexTokenLimit('272,000'), 272000);
+        assert.strictEqual(parseCodexTokenLimit('200_000'), 200000);
+        assert.strictEqual(parseCodexTokenLimit('12.5k'), undefined);
+        assert.strictEqual(parseCodexTokenLimit('0'), undefined);
+        assert.strictEqual(parseCodexTokenLimit('-1'), undefined);
+    });
+
     test('rewrites existing keys in place and preserves the rest of the file', () => {
         const input = [
             'model = "gpt-5.6-sol"',
@@ -537,6 +555,11 @@ suite('formatter', () => {
         assert.strictEqual(formatCost(1234.5), '$1,234.50');
     });
 
+    test('formatTokenLimit keeps Optimize targets compact and exact', () => {
+        assert.strictEqual(formatTokenLimit(272000), '272k');
+        assert.strictEqual(formatTokenLimit(250500), '250,500');
+    });
+
     test('status bar shows the selected-period total for visible available providers', () => {
         const summary = (cost: number) => ({
             provider: 'claude' as const, todayCost: cost, monthCost: cost * 2, hasUnknownModel: false, models: [],
@@ -594,6 +617,27 @@ suite('formatter', () => {
             new Date(2026, 5, 10, 9, 5),
         );
         assert.ok(md.includes('$(zap) **RTK — Token Savings**'));
+    });
+
+    test('status bar prefers the longer provider limit window', () => {
+        const summary = { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] };
+        const text = statusBarText(
+            {
+                summary,
+                available: true,
+                show: true,
+                limits: {
+                    asOfMs: Date.now(),
+                    primary: { usedPercent: 17, windowMinutes: 300 },
+                    secondary: { usedPercent: 35, windowMinutes: 10080 },
+                },
+            },
+            { summary: { ...summary, provider: 'codex' as const }, available: false, show: false },
+            'month',
+            false,
+            'limits',
+        );
+        assert.strictEqual(text, '$(otak-claude) 35%');
     });
 
     test('tooltip includes the combined OpenAI and Claude total', () => {
@@ -686,6 +730,43 @@ suite('formatter', () => {
         assert.ok(md.includes('| 全期間 | 107.3M | 17.6M | 89.7M | 83.6% |'));
     });
 
+    test('tooltip keeps unequal provider rows and totals aligned', () => {
+        const model = (name: string, cost: number) => ({
+            model: name,
+            todayUsage: emptyUsage(),
+            monthUsage: emptyUsage(),
+            todayCost: cost,
+            monthCost: cost * 2,
+        });
+        const claude = {
+            summary: {
+                provider: 'claude' as const,
+                todayCost: 3,
+                monthCost: 6,
+                hasUnknownModel: false,
+                models: [model('claude-one', 1), model('claude-two', 2)],
+            },
+            available: true,
+            show: true,
+        };
+        const codex = {
+            summary: {
+                provider: 'codex' as const,
+                todayCost: 4,
+                monthCost: 8,
+                hasUnknownModel: false,
+                models: [model('gpt-one', 4)],
+            },
+            available: true,
+            show: true,
+        };
+        const md = tooltipMarkdown(claude, codex, noRtk, 'month', new Date(2026, 5, 10, 9, 5));
+        assert.ok(md.includes('| claude-one: $1.00 / $2.00 | │ | gpt-one: $4.00 / $8.00 |'));
+        assert.ok(md.includes('| claude-two: $2.00 / $4.00 | │ | &nbsp; |'));
+        assert.ok(md.includes('| **Total: $3.00 / $6.00** | │ | **Total: $4.00 / $8.00** |'));
+        assert.ok(!md.includes('<br>'));
+    });
+
     test('tooltip contains the copy command link', () => {
         const view = {
             summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
@@ -696,10 +777,29 @@ suite('formatter', () => {
         assert.ok(md.includes('(command:otak-usage.copyUsage'));
         assert.ok(md.includes('Updated 09:05'));
         assert.ok(!md.includes('RTK'));
-        // Settings opens all otakUsage settings; Optimize jumps to the toggle.
+        // Settings opens all otakUsage settings; Optimize opens the preset picker.
         assert.ok(md.includes(`openSettings?${encodeURIComponent(JSON.stringify(['otakUsage']))}`));
-        assert.ok(md.includes(`openSettings?${encodeURIComponent(JSON.stringify(['otakUsage.optimizeCodexContext']))}`));
+        assert.ok(md.includes('(command:otak-usage.configureCodexOptimization'));
         assert.ok(md.includes('Optimize'));
+    });
+
+    test('tooltip shows the active Optimize token pair', () => {
+        const view = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const md = tooltipMarkdown(
+            view,
+            { ...view, show: false },
+            noRtk,
+            'month',
+            new Date(2026, 5, 10, 9, 5),
+            new I18n('en'),
+            undefined,
+            { enabled: true, contextWindow: 272000, autoCompactLimit: 250000 },
+        );
+        assert.ok(md.includes('Optimize (272k → 250k)'));
     });
 
     test('tooltip includes the RTK savings table when stats exist', () => {

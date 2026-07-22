@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.11.0] - 2026-07-22
+
+### Added
+
+- The tooltip **Optimize** action now opens a context-size picker with 200k (`200000 / 184000`), 272k (`272000 / 250000`, default), and validated custom presets. The current context / auto-compact pair is visible in both the tooltip and picker, and a selection is applied to Codex `config.toml` immediately. (#14)
+
+### Changed
+
+- Status-bar rate-limit percentages now prefer each provider's longer reported window, so Claude and Codex show comparable long-window usage; weekly-only Codex plans still fall back to their primary slot. (#14)
+- The provider tooltip grid now renders limits, model costs, and totals as aligned semantic rows. Unequal provider row counts no longer shift totals or break the centre divider. (#14)
+
 ## [1.10.2] - 2026-07-13
 
 ### Fixed

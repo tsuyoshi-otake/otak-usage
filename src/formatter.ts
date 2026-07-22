@@ -51,6 +51,17 @@ export interface RtkView {
     show: boolean;
 }
 
+/** Compact exact token limit for the Optimize action, e.g. 272000 -> 272k. */
+export function formatTokenLimit(n: number): string {
+    return n % 1000 === 0 ? `${n / 1000}k` : n.toLocaleString('en-US');
+}
+
+export interface CodexOptimizeView {
+    enabled: boolean;
+    contextWindow: number;
+    autoCompactLimit: number;
+}
+
 /**
  * What the status-bar item displays:
  * - `cost`: API-equivalent cost only (default, unchanged behaviour).
@@ -119,12 +130,13 @@ export function detectSubscriptionMode(claude: ProviderLimits | undefined, codex
 }
 
 /**
- * The primary window's used percentage, so both providers show the same
- * window side by side; falls back to the weekly window when a snapshot
- * lacks primary data. The tooltip still shows both windows in full.
+ * Prefer the provider's longer subscription window for a comparable status-bar
+ * view. Providers conventionally place it in `secondary`; weekly-only Codex
+ * plans report that same long window in `primary`, which remains the fallback.
+ * The tooltip still shows every available window in full.
  */
 function statusBarUsedPercent(limits: ProviderLimits | undefined): number | undefined {
-    return limits?.primary?.usedPercent ?? limits?.secondary?.usedPercent;
+    return limits?.secondary?.usedPercent ?? limits?.primary?.usedPercent;
 }
 
 /**
@@ -151,7 +163,7 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: CodexOptimizeView): string {
     const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
     const combined = combinedCostSection(claude, codex, i18n);
     if (combined) {
@@ -169,11 +181,13 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     const periodLabel = period === 'today' ? i18n.t('tooltip.today') : i18n.t('tooltip.thisMonth');
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
     const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage']));
-    const optimizeArg = encodeURIComponent(JSON.stringify(['otakUsage.optimizeCodexContext']));
+    const optimizeValue = optimize?.enabled
+        ? ` (${formatTokenLimit(optimize.contextWindow)} → ${formatTokenLimit(optimize.autoCompactLimit)})`
+        : '';
     parts.push(
         `[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")` +
         ` · [$(gear) ${i18n.t('tooltip.settings')}](command:workbench.action.openSettings?${settingsArg} "${i18n.t('tooltip.settingsTitle')}")` +
-        ` · [$(rocket) ${i18n.t('tooltip.optimize')}](command:workbench.action.openSettings?${optimizeArg} "${i18n.t('tooltip.optimizeTitle')}")`,
+        ` · [$(rocket) ${i18n.t('tooltip.optimize')}${optimizeValue}](command:otak-usage.configureCodexOptimization "${i18n.t('tooltip.optimizeTitle')}")`,
     );
     return parts.join('\n');
 }
@@ -228,14 +242,16 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
 
 interface ProviderColumn {
     header: string;
-    limits: string | undefined;
-    usage: string;
+    limits: string[];
+    usage: string[];
+    total: string | undefined;
 }
 
 /**
  * Providers rendered side by side as columns of one table (Claude Code left,
- * Codex right), each cell stacking its lines with `<br>` — the caller must
- * enable `supportHtml` on the MarkdownString. Costs read `today / month`.
+ * Codex right). Every semantic line gets its own table row and shorter groups
+ * are padded, so limits, model rows, totals, and the centre divider stay aligned
+ * even when the providers expose different amounts of content.
  */
 function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, updatedAt: Date, iconColor?: string): string | undefined {
     // With a theme colour available, render the brand marks as independently
@@ -255,41 +271,43 @@ function providerGrid(claude: ProviderView, codex: ProviderView, i18n: I18n, upd
     const lines: string[] = [];
     lines.push(`| ${row(columns.map((c) => c.header))} |`);
     lines.push(`|${columns.map(() => ' :--- ').join('| :---: |')}|`);
-    if (columns.some((c) => c.limits)) {
-        lines.push(`| ${row(columns.map((c) => c.limits ?? '—'))} |`);
+    appendAlignedRows(lines, columns.map((column) => column.limits));
+    appendAlignedRows(lines, columns.map((column) => column.usage));
+    if (columns.some((column) => column.total)) {
+        lines.push(`| ${row(columns.map((column) => column.total ?? '&nbsp;'))} |`);
     }
-    lines.push(`| ${row(columns.map((c) => c.usage))} |`);
     lines.push('');
     return lines.join('\n');
 }
 
-/**
- * Join a row's cells with a separator column of `│` glyphs, one per rendered
- * line of the row's tallest cell, so the divider spans the cells' full height.
- */
 function row(cells: string[]): string {
-    const height = Math.max(...cells.map((c) => c.split('<br>').length));
-    const divider = Array(height).fill('│').join('<br>');
-    return cells.join(` | ${divider} | `);
+    return cells.join(' | │ | ');
+}
+
+function appendAlignedRows(lines: string[], groups: string[][]): void {
+    const height = Math.max(0, ...groups.map((group) => group.length));
+    for (let index = 0; index < height; index++) {
+        lines.push(`| ${row(groups.map((group) => group[index] ?? '&nbsp;'))} |`);
+    }
 }
 
 function providerColumn(title: string, icon: string, view: ProviderView, i18n: I18n, updatedAt: Date): ProviderColumn {
     const header = `${icon} **${title}**`;
     if (!view.available) {
-        return { header, limits: undefined, usage: `_${i18n.t('tooltip.logDirectoryNotFound')}_` };
+        return { header, limits: [], usage: [`_${i18n.t('tooltip.logDirectoryNotFound')}_`], total: undefined };
     }
-    const limits = limitsLines(view.limits, updatedAt, i18n, '<br>');
+    const limits = limitRows(view.limits, updatedAt, i18n);
     const models = view.summary.models;
     if (models.length === 0) {
-        return { header, limits, usage: `_${i18n.t('tooltip.noUsageThisMonth')}_` };
+        return { header, limits, usage: [`_${i18n.t('tooltip.noUsageThisMonth')}_`], total: undefined };
     }
     const usageLines = models.map((row) => {
         const today = row.todayCost === undefined ? 'n/a' : formatCost(row.todayCost);
         const month = row.monthCost === undefined ? 'n/a' : formatCost(row.monthCost);
         return `${row.model}: ${today} / ${month}`;
     });
-    usageLines.push(`**${i18n.t('tooltip.total')}: ${formatCost(view.summary.todayCost)} / ${formatCost(view.summary.monthCost)}**`);
-    return { header, limits, usage: usageLines.join('<br>') };
+    const total = `**${i18n.t('tooltip.total')}: ${formatCost(view.summary.todayCost)} / ${formatCost(view.summary.monthCost)}**`;
+    return { header, limits, usage: usageLines, total };
 }
 
 /**
@@ -303,8 +321,13 @@ function providerColumn(title: string, icon: string, view: ProviderView, i18n: I
  * standalone use, or `<br>` when embedded inside a table cell.
  */
 export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N, separator = '  \n'): string | undefined {
+    const rows = limitRows(limits, now, i18n);
+    return rows.length === 0 ? undefined : rows.join(separator);
+}
+
+function limitRows(limits: ProviderLimits | undefined, now: Date, i18n: I18n): string[] {
     if (!limits) {
-        return undefined;
+        return [];
     }
     const rows: string[] = [];
     for (const [fallback, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
@@ -315,10 +338,10 @@ export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n 
         rows.push(`${limitWindowLabel(window, fallback)} · **${used}**${resetSuffix(window, now, i18n)}`);
     }
     if (rows.length === 0) {
-        return undefined;
+        return [];
     }
     const plan = limits.planType ? ` (${limits.planType})` : '';
-    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows].join(separator);
+    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows];
 }
 
 function resetSuffix(window: LimitWindow, now: Date, i18n: I18n): string {

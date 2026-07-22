@@ -198,12 +198,12 @@ suite('limits: formatting', () => {
             assert.strictEqual(statusBarText(claude, codex, 'today', false, 'cost'), '$0.00');
         });
 
-        test('limits mode shows the 5-hour window percentage per provider', () => {
-            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'limits'), '$(otak-claude) 5% $(otak-openai) 100%');
+        test('limits mode shows the longer window percentage per provider', () => {
+            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'limits'), '$(otak-claude) 8% $(otak-openai) 19%');
         });
 
         test('costAndLimits mode shows cost then percentages', () => {
-            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-claude) 5% $(otak-openai) 100%');
+            assert.strictEqual(statusBarText(claude, codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-claude) 8% $(otak-openai) 19%');
         });
 
         test('falls back to the weekly window when a snapshot has no 5-hour data', () => {
@@ -216,7 +216,7 @@ suite('limits: formatting', () => {
         });
 
         test('a provider without a snapshot contributes no segment', () => {
-            assert.strictEqual(statusBarText(view(undefined), codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-openai) 100%');
+            assert.strictEqual(statusBarText(view(undefined), codex, 'today', false, 'costAndLimits'), '$0.00  $(otak-openai) 19%');
         });
     });
 

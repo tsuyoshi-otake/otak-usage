@@ -5,9 +5,9 @@ import * as fsp from 'fs/promises';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
 import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
-import { DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, normalizeCodexTokenLimit, removeCodexOptimizeToml } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
-import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
+import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
 import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
@@ -26,6 +26,11 @@ const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
     codexAvailable: boolean;
+}
+
+interface OptimizeQuickPickItem extends vscode.QuickPickItem {
+    values?: CodexOptimizeValues;
+    custom?: boolean;
 }
 
 class UsageController implements vscode.Disposable {
@@ -47,6 +52,8 @@ class UsageController implements vscode.Disposable {
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
     private limitAlertState: LimitAlertState | undefined;
+    private updatingCodexOptimizeConfiguration = false;
+    private codexOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
 
     constructor(private readonly context: vscode.ExtensionContext) { }
@@ -64,6 +71,7 @@ class UsageController implements vscode.Disposable {
             vscode.commands.registerCommand('otak-usage.cycleStatusBarView', () => this.cycleStatusBarView()),
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
             vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
+            vscode.commands.registerCommand('otak-usage.configureCodexOptimization', () => this.configureCodexOptimization()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
                     this.restartTimer();
@@ -73,7 +81,9 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.codexContextWindow') ||
                     e.affectsConfiguration('otakUsage.codexAutoCompactLimit') ||
                     e.affectsConfiguration('otakUsage.codexHome')) {
-                    void this.syncCodexOptimize();
+                    if (!this.updatingCodexOptimizeConfiguration) {
+                        void this.syncCodexOptimize();
+                    }
                 }
             }),
             vscode.window.onDidChangeWindowState((state) => {
@@ -139,6 +149,114 @@ class UsageController implements vscode.Disposable {
             ?? path.join(os.homedir(), '.codex');
     }
 
+    private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {
+        return {
+            contextWindow: normalizeCodexTokenLimit(config.get<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
+            autoCompactLimit: normalizeCodexTokenLimit(config.get<unknown>('codexAutoCompactLimit'), DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
+        };
+    }
+
+    private async configureCodexOptimization(): Promise<void> {
+        const config = this.config();
+        const current = this.currentCodexOptimizeValues(config);
+        const optimizeEnabled = config.get<boolean>('optimizeCodexContext', false);
+        const currentPreset = optimizeEnabled
+            ? matchingCodexOptimizePreset(current.contextWindow, current.autoCompactLimit)
+            : undefined;
+        const items: OptimizeQuickPickItem[] = CODEX_OPTIMIZE_PRESETS.map((preset) => ({
+            label: `${currentPreset?.id === preset.id ? '$(check) ' : ''}${preset.id}`,
+            description: `${formatTokenLimit(preset.contextWindow)} → ${formatTokenLimit(preset.autoCompactLimit)}`,
+            detail: `model_context_window ${preset.contextWindow.toLocaleString('en-US')} · model_auto_compact_token_limit ${preset.autoCompactLimit.toLocaleString('en-US')}`,
+            values: preset,
+        }));
+        items.push({
+            label: `${optimizeEnabled && !currentPreset ? '$(check) ' : ''}$(edit) Custom…`,
+            description: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(current.autoCompactLimit)}`,
+            detail: 'Enter model_context_window and model_auto_compact_token_limit',
+            custom: true,
+        });
+
+        const selected = await vscode.window.showQuickPick(items, {
+            title: this.i18n.t('tooltip.optimize'),
+            placeHolder: `${this.i18n.t('tooltip.optimizeTitle')} · ${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(current.autoCompactLimit)}`,
+            matchOnDescription: true,
+            matchOnDetail: true,
+        });
+        if (!selected) {
+            return;
+        }
+
+        let values = selected.values;
+        if (selected.custom) {
+            const contextInput = await vscode.window.showInputBox({
+                title: 'model_context_window',
+                prompt: 'Token limit (> 0)',
+                value: String(current.contextWindow),
+                validateInput: (value) => parseCodexTokenLimit(value) === undefined ? 'Enter a positive integer.' : undefined,
+            });
+            if (contextInput === undefined) {
+                return;
+            }
+            const contextWindow = parseCodexTokenLimit(contextInput);
+            if (contextWindow === undefined) {
+                return;
+            }
+            const suggested = current.autoCompactLimit < contextWindow
+                ? current.autoCompactLimit
+                : suggestedCodexAutoCompactLimit(contextWindow);
+            const compactInput = await vscode.window.showInputBox({
+                title: 'model_auto_compact_token_limit',
+                prompt: `Token limit (1–${(contextWindow - 1).toLocaleString('en-US')})`,
+                value: String(suggested),
+                validateInput: (value) => {
+                    const parsed = parseCodexTokenLimit(value);
+                    return parsed === undefined || parsed >= contextWindow
+                        ? `Enter a positive integer below ${contextWindow.toLocaleString('en-US')}.`
+                        : undefined;
+                },
+            });
+            if (compactInput === undefined) {
+                return;
+            }
+            const autoCompactLimit = parseCodexTokenLimit(compactInput);
+            if (autoCompactLimit === undefined || autoCompactLimit >= contextWindow) {
+                return;
+            }
+            values = { contextWindow, autoCompactLimit };
+        }
+        if (!values) {
+            return;
+        }
+
+        this.updatingCodexOptimizeConfiguration = true;
+        try {
+            await config.update('codexContextWindow', values.contextWindow, vscode.ConfigurationTarget.Global);
+            await config.update('codexAutoCompactLimit', values.autoCompactLimit, vscode.ConfigurationTarget.Global);
+            await config.update('optimizeCodexContext', true, vscode.ConfigurationTarget.Global);
+        } catch (err) {
+            console.error('otak-usage: failed to save Codex optimize settings', err);
+            // Reconcile whatever configuration state VS Code did persist, so a
+            // partially failed multi-key update cannot leave config.toml owned
+            // by an older in-flight write.
+            await this.syncCodexOptimize(false);
+            void vscode.window.showErrorMessage('otak-usage: failed to save Codex context optimization settings. See Developer Tools for details.');
+            return;
+        } finally {
+            this.updatingCodexOptimizeConfiguration = false;
+        }
+
+        const applied = await this.syncCodexOptimize(false);
+        if (applied) {
+            vscode.window.setStatusBarMessage(
+                `${this.i18n.t('message.codexOptimizeApplied')}: ${formatTokenLimit(values.contextWindow)} → ${formatTokenLimit(values.autoCompactLimit)}`,
+                5000,
+            );
+            void this.renderAndCheckAlert();
+        } else {
+            void vscode.window.showErrorMessage('otak-usage: failed to apply Codex context optimization. See Developer Tools for details.');
+        }
+    }
+
     /**
      * Reconcile `~/.codex/config.toml` with the optimize toggle. When enabled,
      * pin the two managed keys to the configured values; when it is turned off
@@ -146,34 +264,39 @@ class UsageController implements vscode.Disposable {
      * file untouched while the toggle is and stays off, so a user's own manual
      * values are never removed unless they opted in first.
      */
-    private async syncCodexOptimize(): Promise<void> {
+    private syncCodexOptimize(showStatus = true): Promise<boolean> {
+        const task = this.codexOptimizeSyncQueue.then(() => this.performCodexOptimizeSync(showStatus));
+        this.codexOptimizeSyncQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private async performCodexOptimizeSync(showStatus: boolean): Promise<boolean> {
         const config = this.config();
         const desired = config.get<boolean>('optimizeCodexContext', false);
         const applied = this.context.globalState.get<boolean>(CODEX_OPTIMIZE_APPLIED_KEY, false);
         if (!desired && !applied) {
-            return;
+            return true;
         }
         const configPath = path.join(this.codexHomeDir(), 'config.toml');
         try {
             if (desired) {
-                const values = {
-                    contextWindow: normalizeCodexTokenLimit(config.get<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
-                    autoCompactLimit: normalizeCodexTokenLimit(config.get<unknown>('codexAutoCompactLimit'), DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
-                };
+                const values = this.currentCodexOptimizeValues(config);
                 const changed = await this.rewriteCodexConfig(configPath, (text) => applyCodexOptimizeToml(text, values), true);
                 await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, true);
-                if (changed) {
+                if (changed && showStatus) {
                     vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeApplied'), 4000);
                 }
             } else {
                 const changed = await this.rewriteCodexConfig(configPath, (text) => removeCodexOptimizeToml(text), false);
                 await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, false);
-                if (changed) {
+                if (changed && showStatus) {
                     vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeRemoved'), 4000);
                 }
             }
+            return true;
         } catch (err) {
             console.error('otak-usage: codex optimize sync failed', err);
+            return false;
         }
     }
 
@@ -403,11 +526,24 @@ class UsageController implements vscode.Disposable {
         this.lastViews = { claude, codex, rtk };
         const statusBarMode = showLimits ? config.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
         this.statusBarItem.text = statusBarText(claude, codex, period, false, statusBarMode);
-        const tooltip = new vscode.MarkdownString(tooltipMarkdown(claude, codex, rtk, period, new Date(now), this.i18n, tooltipIconColor()));
+        const optimizeValues = this.currentCodexOptimizeValues(config);
+        const tooltip = new vscode.MarkdownString(tooltipMarkdown(
+            claude,
+            codex,
+            rtk,
+            period,
+            new Date(now),
+            this.i18n,
+            tooltipIconColor(),
+            {
+                enabled: config.get<boolean>('optimizeCodexContext', false),
+                ...optimizeValues,
+            },
+        ));
         tooltip.supportThemeIcons = true;
-        tooltip.supportHtml = true; // provider grid cells stack lines with <br>
+        tooltip.supportHtml = true; // provider icons use inline data-URI images
 
-        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'workbench.action.openSettings'] };
+        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
         return { day: today, todayTotalCost: summaries.claude.todayCost + summaries.codex.todayCost };

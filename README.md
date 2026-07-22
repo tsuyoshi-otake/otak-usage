@@ -70,11 +70,11 @@ Period: This Month · Updated 16:09 · Click to switch view
 
 - **Two providers, one glance**: Claude Code (`~/.claude/projects/**/*.jsonl`) and OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`) roll up into one status-bar total. Either provider can be used on its own.
 - **Per-model cost breakdowns**: the tooltip and copied summary show token usage and API-equivalent USD by provider, model, and period. In the tooltip, Claude Code and Codex sit side by side (with their brand logos) and RTK savings follow below.
-- **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses. Optionally mirrored in the status bar.
+- **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses. The status bar uses each provider's longer window for an apples-to-apples view, falling back to the shorter window when necessary.
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
-- **Codex context optimization**: on by default, this optimizes Codex's maximum context size to save tokens and ease subscription rate limits by pinning `model_context_window` and `model_auto_compact_token_limit` in your Codex `config.toml` (toggle `otakUsage.optimizeCodexContext`). Turning it off removes the two keys again; while it stays off, your Codex config is left untouched.
+- **Codex context optimization**: on by default, this optimizes Codex's maximum context size to save tokens and ease subscription rate limits by pinning `model_context_window` and `model_auto_compact_token_limit` in your Codex `config.toml`. Click **Optimize** in the tooltip for a preset picker: **200k** (`200000 / 184000`), **272k** (`272000 / 250000`, default), or **Custom**. The active pair is shown directly in the tooltip. Turning the setting off removes the two keys again; while it stays off, your Codex config is left untouched.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
 - **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts.
@@ -102,6 +102,7 @@ If a provider directory is missing, that provider is skipped without blocking th
 | `Otak Usage: Toggle Period (Today / This Month)` | Switch the status bar between today's and this month's cost without entering the limits view. |
 | `Otak Usage: Refresh Usage (Clear Cache and Rescan)` | Drop the incremental scan cache and rebuild the usage summary from local logs. |
 | `Otak Usage: Copy Usage Summary` | Copy a plain-text per-model breakdown to the clipboard. The tooltip also exposes this action. |
+| `Otak Usage: Configure Codex Context Optimization` | Choose the 200k or 272k context preset, or enter custom context and auto-compact token limits. The tooltip's **Optimize** action runs this command. |
 
 ## Settings
 
@@ -115,15 +116,15 @@ If a provider directory is missing, that provider is skipped without blocking th
 | `otakUsage.showClaude` | `true` | Include Claude Code usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showCodex` | `true` | Include Codex CLI usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showRateLimits` | `true` | Show subscription rate-limit usage (5-hour and weekly windows) in the tooltip. See [Subscription Rate Limits](#subscription-rate-limits). |
-| `otakUsage.statusBarMode` | `cost` | What the status-bar item shows: `cost` (API-equivalent cost only), `limits` (each provider's 5-hour window percentage only, falling back to cost until a snapshot is available), or `costAndLimits` (both). Requires `showRateLimits` for the limit modes. On first run, if a subscription plan is detected (Claude Pro/Max or a Codex plan), otak-usage sets this to `limits` once; any choice you make afterwards is final. |
+| `otakUsage.statusBarMode` | `cost` | What the status-bar item shows: `cost` (API-equivalent cost only), `limits` (each provider's longer available rate-limit window percentage, falling back to cost until a snapshot is available), or `costAndLimits` (both). Requires `showRateLimits` for the limit modes. On first run, if a subscription plan is detected (Claude Pro/Max or a Codex plan), otak-usage sets this to `limits` once; any choice you make afterwards is final. |
 | `otakUsage.showRtk` | `true` | Show the RTK token-savings tooltip table. It is hidden automatically when `rtk` is unavailable. |
 | `otakUsage.rtkPath` | `""` | Path to the `rtk` executable. Empty means `rtk` on `PATH`. |
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, for example `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}`. |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config directory. Empty means `$CLAUDE_CONFIG_DIR` or `~/.claude`. |
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
 | `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove those two keys. While off, the file is left untouched. |
-| `otakUsage.codexContextWindow` | `272000` | Value written for `model_context_window` when the optimization is on. The default matches OpenAI's long-context pricing threshold: requests above 272k input tokens are billed at the higher long-context rate. |
-| `otakUsage.codexAutoCompactLimit` | `250000` | Value written for `model_auto_compact_token_limit` when the optimization is on. Keep it below the effective context ceiling (~95% of the window, ≈258.4k at the default) or auto-compaction never triggers. |
+| `otakUsage.codexContextWindow` | `272000` | Value written for `model_context_window` when the optimization is on. The default matches OpenAI's long-context pricing threshold. The Optimize picker can set this to the 200k or 272k preset, or a custom positive integer. |
+| `otakUsage.codexAutoCompactLimit` | `250000` | Value written for `model_auto_compact_token_limit` when the optimization is on. The Optimize picker pairs 200k with 184k and 272k with 250k; custom values must remain below the context window. |
 | `otakUsage.telemetry.enabled` | `false` | Send usage telemetry to an OpenTelemetry OTLP/HTTP endpoint. Off by default. |
 | `otakUsage.telemetry.includeTokenUsage` | `true` | Include per-model token usage (`gen_ai.client.token.usage`) in telemetry. |
 | `otakUsage.telemetry.includeCost` | `true` | Include per-model USD cost (`otak_usage.cost.usd`) in telemetry. |

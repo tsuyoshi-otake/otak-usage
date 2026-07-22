@@ -19,6 +19,41 @@ export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 export const DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
 export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 250000;
 
+export interface CodexOptimizePreset {
+    id: '200k' | '272k';
+    contextWindow: number;
+    autoCompactLimit: number;
+}
+
+/**
+ * Curated context-size pairs exposed by the Optimize quick pick. The compact
+ * limits stay at roughly 92% of the context ceiling so compaction has room to
+ * start before the hard limit is reached.
+ */
+export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
+    { id: '272k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
+    { id: '200k', contextWindow: 200000, autoCompactLimit: 184000 },
+];
+
+export function matchingCodexOptimizePreset(contextWindow: number, autoCompactLimit: number): CodexOptimizePreset | undefined {
+    return CODEX_OPTIMIZE_PRESETS.find((preset) =>
+        preset.contextWindow === contextWindow && preset.autoCompactLimit === autoCompactLimit,
+    );
+}
+
+export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
+    return Math.max(1, Math.floor(contextWindow * 0.92));
+}
+
+export function parseCodexTokenLimit(value: string): number | undefined {
+    const normalized = value.replace(/[,_\s]/g, '');
+    if (!/^\d+$/.test(normalized)) {
+        return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export interface CodexOptimizeValues {
     contextWindow: number;
     autoCompactLimit: number;
