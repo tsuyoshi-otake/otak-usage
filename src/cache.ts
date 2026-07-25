@@ -8,9 +8,28 @@ import { DayBuckets, TokenUsage } from './types';
  * stale file offsets while cost rendering was blocked by RTK stats refresh.
  * v5: capture per-turn long-context pricing and skip replayed Codex usage that
  * appears before the first model-bearing turn_context in forked sessions.
+ * v6: the month-wide dedupe map (50k records, ~10 MB of persisted state) is
+ * replaced by the per-file `seen`/`pend` windows below.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 5;
+export const CACHE_VERSION = 6;
+
+/**
+ * A record that may still be superseded. Claude logs a streaming partial
+ * snapshot and then a final one under the same message.id:requestId, so the
+ * partial's contribution has to be subtracted before the final one is added —
+ * which needs the day and bucket it landed in plus the usage it contributed.
+ */
+export interface PendRecord {
+    /** hashKey() of the dedupe key. */
+    h: number;
+    /** Day bucket (YYYY-MM-DD) the usage was added to. */
+    d: string;
+    /** provider/model bucket key the usage was added to. */
+    b: string;
+    /** The usage already accumulated for this key. */
+    u: TokenUsage;
+}
 
 export interface FileState {
     size: number;
@@ -19,40 +38,78 @@ export interface FileState {
     offset: number;
     /** Codex only: model announced by the last turn_context seen in this file. */
     lastModel?: string;
-}
-
-/**
- * What a dedupe key already contributed to the day buckets. Kept so that when
- * the same Claude request is logged again (a streaming partial then the final
- * record, which share input/cache but grow output_tokens), the earlier
- * contribution can be subtracted and replaced by the final one.
- */
-export interface DedupeEntry {
-    /** Day bucket (YYYY-MM-DD) the usage was added to. */
-    day: string;
-    /** provider/model bucket key the usage was added to. */
-    bucket: string;
-    /** The usage already accumulated for this key. */
-    usage: TokenUsage;
-}
-
-/** Persisted dedupe record: a DedupeEntry plus its key, FIFO-ordered. */
-export interface DedupeRecord extends DedupeEntry {
-    k: string;
+    /**
+     * hashKey() of the dedupe keys most recently ingested from this file,
+     * oldest first. A duplicate key never appears in two different files
+     * (measured: 0 of 410k keys), so presence only has to be remembered per
+     * file, and only as deep as the largest in-file gap between duplicates.
+     */
+    seen?: number[];
+    /** The tail of `seen` that still carries supersede state (Claude only). */
+    pend?: PendRecord[];
 }
 
 export interface ScanCacheData {
     version: number;
     files: Record<string, FileState>;
     days: DayBuckets;
-    /** Dedupe records (Claude message.id:requestId / Codex timestamp+tokens), insertion-ordered, FIFO-capped. */
-    dedupe: DedupeRecord[];
+    /**
+     * Month (YYYY-MM) the retained day buckets belong to. Days and file states
+     * can only fall out of retention when this rolls over, so the O(files)
+     * prune runs on that tick alone instead of on every tick.
+     */
+    month?: string;
 }
 
-export const DEDUPE_CAP = 50_000;
+/**
+ * Window depth for Claude transcripts. The deepest measured gap between two
+ * occurrences of one message.id:requestId is 467 records — resumed sessions
+ * replay their history verbatim — so 512 covers the observed worst case.
+ */
+export const SEEN_CAP_CLAUDE = 512;
+
+/**
+ * Window depth for Codex rollouts. Their dedupe key embeds the timestamp, so
+ * duplicates are adjacent: the deepest measured gap is 2 records.
+ */
+export const SEEN_CAP_CODEX = 32;
+
+/**
+ * How many trailing records keep their supersede state. Every measured Claude
+ * partial/final pair sits within 24 records of itself; deeper repeats are
+ * history replays that never grow (0 of 1,281 observed), so presence alone is
+ * the right answer for them.
+ */
+export const PEND_CAP = 32;
+
+/**
+ * Drop supersede state for files idle longer than this. A partial and its
+ * final are written within one streamed response (13.2 min at the measured
+ * worst case), and the partial itself refreshes mtime, so a file cannot go
+ * this quiet while a pair is still open.
+ */
+export const PEND_RETENTION_MS = 30 * 60_000;
+
+/**
+ * 53-bit digest of a dedupe key. Keys run 40-90 characters, so retaining them
+ * verbatim would cost more than the map this replaces, while a 53-bit value
+ * still fits a plain JSON number. Collisions only matter within one file's
+ * window (<= 512 keys), where the birthday probability is ~1.5e-11.
+ */
+export function hashKey(key: string): number {
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+    for (let i = 0; i < key.length; i++) {
+        const c = key.charCodeAt(i);
+        h1 = Math.imul(h1 ^ c, 0x01000193);
+        h2 = Math.imul(h2 + c, 0x85ebca6b) ^ (h1 >>> 13);
+    }
+    // 21 high bits from h2 + 32 bits from h1 = 53 bits, the exact integer range.
+    return (h2 >>> 11) * 0x1_0000_0000 + (h1 >>> 0);
+}
 
 export function emptyCache(): ScanCacheData {
-    return { version: CACHE_VERSION, files: {}, days: {}, dedupe: [] };
+    return { version: CACHE_VERSION, files: {}, days: {} };
 }
 
 export function isValidCache(raw: unknown): raw is ScanCacheData {
@@ -60,29 +117,5 @@ export function isValidCache(raw: unknown): raw is ScanCacheData {
     return !!c &&
         c.version === CACHE_VERSION &&
         typeof c.files === 'object' && c.files !== null &&
-        typeof c.days === 'object' && c.days !== null &&
-        Array.isArray(c.dedupe);
-}
-
-/** Record (or update) a dedupe key, evicting the oldest entry past the cap. */
-export function setDedupe(dedupe: Map<string, DedupeEntry>, key: string, entry: DedupeEntry): void {
-    dedupe.set(key, entry);
-    if (dedupe.size > DEDUPE_CAP) {
-        const oldest = dedupe.keys().next().value;
-        if (oldest !== undefined && oldest !== key) {
-            dedupe.delete(oldest);
-        }
-    }
-}
-
-/** Drop dedupe entries that can no longer affect retained day buckets. */
-export function pruneDedupeBefore(dedupe: Map<string, DedupeEntry>, minDay: string): boolean {
-    let pruned = false;
-    for (const [key, entry] of dedupe) {
-        if (entry.day < minDay) {
-            dedupe.delete(key);
-            pruned = true;
-        }
-    }
-    return pruned;
+        typeof c.days === 'object' && c.days !== null;
 }

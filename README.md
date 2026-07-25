@@ -52,7 +52,7 @@ OpenAI + Claude Total: $9.80 / $297.45
 Claude Code — Limits (max)        │ Codex CLI — Limits (pro)
 5h · 28% used · resets 16:39      │ 5h · 5% used · resets 18:59
 7d · 13% used · resets 07-15      │ 7d · 21% used · resets 07-18
-claude-opus-4-8:  $6.20 / $142.30 │ gpt-5.5:      $2.14 / $88.60
+claude-opus-5:    $6.20 / $142.30 │ gpt-5.5:      $2.14 / $88.60
 claude-sonnet-5:  $1.05 / $58.40  │ gpt-5.4-mini: $0.41 / $6.05
 claude-haiku-4-5: $0.00 / $2.10   │
 Total:            $7.25 / $202.80 │ Total:        $2.55 / $94.65
@@ -97,6 +97,27 @@ On each refresh, otak-usage:
 7. Optionally reads RTK aggregate savings and exports OpenTelemetry metrics.
 
 If a provider directory is missing, that provider is skipped without blocking the other one. Unknown-priced models are counted as usage but shown as `n/a` for cost until you add an override.
+
+### Incremental scanning
+
+A refresh never re-reads a transcript it has already accounted for. Every file is
+tracked by size, mtime, and a byte offset, so a tick reads only the bytes appended
+since the last one, and an incomplete trailing line is left for the next pass.
+
+Discovery is just as incremental. Directory listings are cached and only re-read
+when the directory's own mtime moves — which happens when a session file is
+created, renamed, or deleted, but not when an existing one is appended to. Entries
+are then re-checked on a backoff proportional to how long they have been idle, so
+the session you are working in is looked at every tick while a transcript last
+touched a week ago is not. Directories are never left unchecked for more than a
+minute, so a brand-new session still shows up on the next refresh, and a full
+re-listing runs every 30 minutes as a backstop against a filesystem whose
+directory mtimes cannot be trusted.
+
+On a real 1,809-file history this makes a steady-state tick about **5x cheaper**
+than a full walk (mean 449 vs ~2,228 filesystem calls, 24 ms vs 131 ms), and the
+persisted dedupe state is **8x smaller** (1.2 MB vs 10.4 MB), cutting the
+serialization the extension does on every save.
 
 ## Commands
 

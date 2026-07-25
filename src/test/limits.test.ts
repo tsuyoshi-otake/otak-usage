@@ -1,11 +1,42 @@
 import * as assert from 'assert';
+import * as os from 'os';
+import * as path from 'path';
 import { ProviderSummary } from '../aggregator';
 import { ProviderView, cycleStatusBarView, detectSubscriptionMode, limitWindowLabel, limitsLines, statusBarText } from '../formatter';
 import { I18n } from '../i18n';
-import { ProviderLimits, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine } from '../limits';
+import { ProviderLimits, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine, recentCodexFiles } from '../limits';
 
 const NOW = new Date(2026, 6, 11, 12, 0, 0); // 2026-07-11 12:00 local
 const NOW_MS = NOW.getTime();
+
+suite('limits: codex candidate selection', () => {
+    const codexHome = path.join(os.tmpdir(), 'otak-usage-codex-home');
+    const rollout = (day: string, name: string) =>
+        path.join(codexHome, 'sessions', '2026', '07', day, name);
+
+    test('takes the newest session files out of what the scan already stat()ed', () => {
+        const files = {
+            [rollout('09', 'rollout-c.jsonl')]: { size: 3, mtimeMs: NOW_MS - 3_000 },
+            [rollout('11', 'rollout-a.jsonl')]: { size: 1, mtimeMs: NOW_MS - 1_000 },
+            [rollout('10', 'rollout-b.jsonl')]: { size: 2, mtimeMs: NOW_MS - 2_000 },
+        };
+        assert.deepStrictEqual(recentCodexFiles(files, codexHome, NOW_MS, 2).map((f) => f.size), [1, 2]);
+    });
+
+    test('ignores other providers and snapshots older than the weekly window', () => {
+        const files = {
+            [rollout('01', 'rollout-old.jsonl')]: { size: 1, mtimeMs: NOW_MS - 8 * 24 * 3600_000 },
+            [path.join(os.tmpdir(), 'claude', 'projects', 'p', 's.jsonl')]: { size: 2, mtimeMs: NOW_MS },
+            // A path that merely starts with the same characters is not inside it.
+            [path.join(codexHome + '-other', 'sessions', 'x.jsonl')]: { size: 3, mtimeMs: NOW_MS },
+        };
+        assert.deepStrictEqual(recentCodexFiles(files, codexHome, NOW_MS), []);
+    });
+
+    test('reports nothing when the cache is empty, so the caller can walk instead', () => {
+        assert.deepStrictEqual(recentCodexFiles({}, codexHome, NOW_MS), []);
+    });
+});
 
 suite('limits: codex rollout parsing', () => {
     const line = JSON.stringify({

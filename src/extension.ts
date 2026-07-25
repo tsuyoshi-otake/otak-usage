@@ -4,13 +4,14 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
-import { DedupeEntry, ScanCacheData, emptyCache, isValidCache } from './cache';
+import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
+import { ScanIndex } from './scanner/scanIndex';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
-import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits } from './limits';
+import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits, recentCodexFiles } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
@@ -53,7 +54,8 @@ class UsageController implements vscode.Disposable {
     private readonly statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     private timer: NodeJS.Timeout | undefined;
     private cache: ScanCacheData = emptyCache();
-    private dedupe = new Map<string, DedupeEntry>();
+    /** Directory listings and stat backoff, kept across ticks; see scanIndex.ts. */
+    private scanIndex = new ScanIndex();
     private scanning = false;
     private rtkFetching = false;
     private initialScanDone = false;
@@ -625,7 +627,7 @@ class UsageController implements vscode.Disposable {
             const now = Date.now();
             const targets = await this.resolveTargets();
             this.lastTargets = targets;
-            const changed = await scanAll(this.cache, this.dedupe, targets, now);
+            const changed = await scanAll(this.cache, targets, now, this.scanIndex);
             this.initialScanDone = true;
             if (changed) {
                 await this.saveCache();
@@ -698,7 +700,9 @@ class UsageController implements vscode.Disposable {
             }
             const [claude, codex] = await Promise.all([
                 fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs) : Promise.resolve(undefined),
-                codexHome ? readCodexLimits(codexHome, nowMs) : Promise.resolve(undefined),
+                codexHome
+                    ? readCodexLimits(codexHome, nowMs, recentCodexFiles(this.cache.files, codexHome, nowMs))
+                    : Promise.resolve(undefined),
             ]);
             // A failed fetch keeps the previous snapshot; effectiveLimits()
             // neutralizes windows whose reset time has since passed.
@@ -983,7 +987,7 @@ class UsageController implements vscode.Disposable {
 
     private async refresh(): Promise<void> {
         this.cache = emptyCache();
-        this.dedupe.clear();
+        this.scanIndex.reset();
         this.initialScanDone = false;
         await this.context.globalState.update(CACHE_KEY, undefined);
         this.statusBarItem.text = '$(loading~spin) usage';
@@ -994,7 +998,6 @@ class UsageController implements vscode.Disposable {
         const raw = this.context.globalState.get<unknown>(CACHE_KEY);
         if (isValidCache(raw)) {
             this.cache = raw;
-            this.dedupe = new Map(raw.dedupe.map((r) => [r.k, { day: r.day, bucket: r.bucket, usage: r.usage }]));
         }
     }
 
@@ -1009,11 +1012,6 @@ class UsageController implements vscode.Disposable {
     }
 
     private async saveCache(): Promise<void> {
-        const dedupeRecords: ScanCacheData['dedupe'] = [];
-        for (const [k, e] of this.dedupe) {
-            dedupeRecords.push({ k, day: e.day, bucket: e.bucket, usage: e.usage });
-        }
-        this.cache.dedupe = dedupeRecords;
         await this.context.globalState.update(CACHE_KEY, this.cache);
     }
 }

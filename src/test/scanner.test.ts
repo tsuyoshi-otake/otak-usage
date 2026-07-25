@@ -2,7 +2,16 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { DedupeEntry, emptyCache } from '../cache';
+import {
+    FileState,
+    PEND_CAP,
+    PEND_RETENTION_MS,
+    SEEN_CAP_CODEX,
+    emptyCache,
+    hashKey,
+    isValidCache,
+} from '../cache';
+import { closeWindow, hasSeen, openWindow, pendingFor, remember } from '../dedupe';
 import { scanAll } from '../engine';
 import { parseClaudeLine } from '../scanner/claudeScanner';
 import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
@@ -46,6 +55,15 @@ function codexTokenCount(iso: string, input: number, cached: number, output: num
             },
         },
     });
+}
+
+/** An empty <root>/claude/projects/p1/s1.jsonl transcript tree. */
+function claudeFixture(): { root: string; claudeDir: string; claudeFile: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-eng-'));
+    const claudeDir = path.join(root, 'claude');
+    const projectDir = path.join(claudeDir, 'projects', 'p1');
+    fs.mkdirSync(projectDir, { recursive: true });
+    return { root, claudeDir, claudeFile: path.join(projectDir, 's1.jsonl') };
 }
 
 suite('parseClaudeLine', () => {
@@ -218,8 +236,7 @@ suite('engine.scanAll', () => {
             codexTokenCount(iso, 1000, 600, 50) + '\n');
 
         const cache = emptyCache();
-        const dedupe = new Map<string, DedupeEntry>();
-        const changed = await scanAll(cache, dedupe, { claudeDir, codexHome }, nowMs);
+        const changed = await scanAll(cache, { claudeDir, codexHome }, nowMs);
         assert.strictEqual(changed, true);
 
         const day = Object.keys(cache.days)[0];
@@ -232,35 +249,330 @@ suite('engine.scanAll', () => {
         assert.strictEqual(codexUsage.output, 50);
 
         // No changes -> no work
-        assert.strictEqual(await scanAll(cache, dedupe, { claudeDir, codexHome }, nowMs), false);
+        assert.strictEqual(await scanAll(cache, { claudeDir, codexHome }, nowMs), false);
 
         // Append one more codex turn; the cached lastModel must survive the incremental read
         fs.appendFileSync(codexFile, codexTokenCount(iso, 100, 0, 10) + '\n');
-        assert.strictEqual(await scanAll(cache, dedupe, { claudeDir, codexHome }, nowMs), true);
+        assert.strictEqual(await scanAll(cache, { claudeDir, codexHome }, nowMs), true);
         assert.strictEqual(cache.days[day]['codex/gpt-5.5'].output, 60);
 
         fs.rmSync(root, { recursive: true, force: true });
     });
 
-    test('prunes dedupe entries older than the retained month', async () => {
+    test('supersedes a partial snapshot when the final record lands on a later tick', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        fs.writeFileSync(claudeFile, claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1 }) + '\n');
+
         const cache = emptyCache();
-        const dedupe = new Map<string, DedupeEntry>([
-            ['old', {
-                day: '2026-05-31',
-                bucket: 'codex/gpt-5.5',
-                usage: { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 },
-            }],
-            ['current', {
-                day: '2026-06-01',
-                bucket: 'codex/gpt-5.5',
-                usage: { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 },
-            }],
-        ]);
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 1);
 
-        const changed = await scanAll(cache, dedupe, {}, new Date(2026, 5, 10).getTime());
+        // The supersede state has to survive the tick boundary, so it must be on
+        // the file state rather than in a scan-local map.
+        assert.strictEqual(cache.files[claudeFile].pend?.length, 1);
 
-        assert.strictEqual(changed, true);
-        assert.strictEqual(dedupe.has('old'), false);
-        assert.strictEqual(dedupe.has('current'), true);
+        fs.appendFileSync(claudeFile, claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1000 }) + '\n');
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 1000);
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].input, 100);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('suppresses a replayed record that has aged past the supersede window', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        // Resumed sessions replay their history verbatim, hundreds of records
+        // after the original. Presence has to outlive the supersede state.
+        const total = PEND_CAP + 3;
+        const lines: string[] = [];
+        for (let i = 0; i < total; i++) {
+            lines.push(claudeLine({ id: `msg_${i}`, requestId: `req_${i}`, iso, output: 10 }));
+        }
+        fs.writeFileSync(claudeFile, lines.join('\n') + '\n');
+
+        const cache = emptyCache();
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        const day = Object.keys(cache.days)[0];
+        const bucket = cache.days[day]['claude/claude-opus-4-8'];
+        assert.strictEqual(bucket.output, 10 * total);
+
+        const state = cache.files[claudeFile];
+        assert.strictEqual(state.seen?.length, total);
+        assert.strictEqual(state.pend?.length, PEND_CAP); // the oldest record aged out
+
+        // msg_0 is remembered but no longer superseding: replaying it must not add.
+        fs.appendFileSync(claudeFile, lines[0] + '\n');
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        assert.strictEqual(bucket.output, 10 * total);
+        assert.strictEqual(bucket.input, 100 * total);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('prunes days and file states only when the month rolls over', async () => {
+        const cache = emptyCache();
+        cache.month = '2026-05';
+        const usage = { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 0 };
+        cache.days['2026-05-31'] = { 'codex/gpt-5.5': { ...usage } };
+        cache.days['2026-06-01'] = { 'codex/gpt-5.5': { ...usage } };
+        cache.files['/gone.jsonl'] = { size: 1, mtimeMs: new Date(2026, 4, 20).getTime(), offset: 1 };
+        cache.files['/kept.jsonl'] = { size: 1, mtimeMs: new Date(2026, 5, 5).getTime(), offset: 1 };
+        const nowMs = new Date(2026, 5, 10).getTime();
+
+        assert.strictEqual(await scanAll(cache, {}, nowMs), true);
+        assert.strictEqual(cache.month, '2026-06');
+        assert.strictEqual(cache.days['2026-05-31'], undefined);
+        assert.ok(cache.days['2026-06-01']);
+        assert.strictEqual(cache.files['/gone.jsonl'], undefined);
+        assert.ok(cache.files['/kept.jsonl']);
+
+        // Nothing can age out again until the next rollover, so later ticks in
+        // the same month must not report a change (and so must not re-persist).
+        assert.strictEqual(await scanAll(cache, {}, nowMs + 60_000), false);
+    });
+
+    test('restarts a truncated file without recounting the records it kept', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        const line = (i: number) => claudeLine({ id: `msg_${i}`, requestId: `req_${i}`, iso, output: 10 });
+        fs.writeFileSync(claudeFile, [line(1), line(2), line(3)].join('\n') + '\n');
+
+        const cache = emptyCache();
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 30);
+
+        // Rewritten shorter: offset now points past EOF, so the file is re-read
+        // from the start. The retained record must not be billed twice.
+        fs.writeFileSync(claudeFile, line(1) + '\n');
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 30);
+        assert.strictEqual(cache.files[claudeFile].offset, fs.statSync(claudeFile).size);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('leaves an incomplete trailing line uncounted and reports no change', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        const first = claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 10 });
+        const second = claudeLine({ id: 'msg_2', requestId: 'req_2', iso, output: 10 });
+        fs.writeFileSync(claudeFile, first + '\n' + second); // no terminating newline
+
+        const cache = emptyCache();
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 10);
+        assert.strictEqual(cache.files[claudeFile].offset, Buffer.byteLength(first) + 1);
+
+        // The half-written line is re-read every tick; that must not be reported
+        // as a change, or an actively written log would re-persist the cache
+        // on every single tick.
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), false);
+
+        fs.appendFileSync(claudeFile, '\n');
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 20);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('skips unparsable lines and keeps ingesting the rest of the file', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        fs.writeFileSync(claudeFile, [
+            '{ not json',
+            claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 10 }),
+            '',
+            'null',
+            '{"type":"assistant"}',
+            claudeLine({ id: 'msg_2', requestId: 'req_2', iso, output: 10 }),
+        ].join('\n') + '\n');
+
+        const cache = emptyCache();
+        assert.strictEqual(await scanAll(cache, { claudeDir }, nowMs), true);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 20);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('reports no change when neither provider directory exists', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-eng-'));
+        const targets = { claudeDir: path.join(root, 'no-claude'), codexHome: path.join(root, 'no-codex') };
+        const cache = emptyCache();
+
+        // First tick only stamps the retained month onto a fresh cache.
+        assert.strictEqual(await scanAll(cache, targets, Date.now()), true);
+        assert.strictEqual(await scanAll(cache, targets, Date.now()), false);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('ignores codex usage replayed before the first turn_context', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-eng-'));
+        const nowMs = Date.now();
+        const now = new Date(nowMs);
+        const iso = now.toISOString();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const codexHome = path.join(root, 'codex');
+        const dayDir = path.join(codexHome, 'sessions', String(now.getFullYear()), pad(now.getMonth() + 1), pad(now.getDate()));
+        fs.mkdirSync(dayDir, { recursive: true });
+        // A forked rollout replays the parent's turns before announcing a model.
+        fs.writeFileSync(path.join(dayDir, 'rollout-forked.jsonl'),
+            codexTokenCount(iso, 5000, 0, 500) + '\n' +
+            JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }) + '\n' +
+            codexTokenCount(iso, 1000, 600, 50) + '\n');
+
+        const cache = emptyCache();
+        await scanAll(cache, { codexHome }, nowMs);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['codex/gpt-5.5'].output, 50); // not 550
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('survives the globalState JSON round trip between ticks', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        fs.writeFileSync(claudeFile, claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1 }) + '\n');
+
+        const cache = emptyCache();
+        await scanAll(cache, { claudeDir }, nowMs);
+
+        // globalState stores the cache as JSON, so every field the next tick
+        // depends on has to be JSON-representable.
+        const restored = JSON.parse(JSON.stringify(cache));
+        assert.ok(isValidCache(restored));
+        assert.strictEqual('dedupe' in restored, false);
+
+        fs.appendFileSync(claudeFile, claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 1000 }) + '\n');
+        assert.strictEqual(await scanAll(restored, { claudeDir }, nowMs), true);
+        const day = Object.keys(restored.days)[0];
+        assert.strictEqual(restored.days[day]['claude/claude-opus-4-8'].output, 1000);
+        assert.strictEqual(restored.days[day]['claude/claude-opus-4-8'].input, 100);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('drops supersede state once a file has gone quiet', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        fs.writeFileSync(claudeFile, claudeLine({ id: 'msg_1', requestId: 'req_1', iso, output: 10 }) + '\n');
+
+        const cache = emptyCache();
+        await scanAll(cache, { claudeDir }, nowMs);
+        assert.strictEqual(cache.files[claudeFile].pend?.length, 1);
+
+        // A later tick finds the file unchanged and long past the retention
+        // window; presence stays, the heavier supersede state goes.
+        const later = nowMs + PEND_RETENTION_MS + 60_000;
+        assert.strictEqual(await scanAll(cache, { claudeDir }, later), true);
+        assert.strictEqual(cache.files[claudeFile].pend, undefined);
+        assert.strictEqual(cache.files[claudeFile].seen?.length, 1);
+        assert.strictEqual(await scanAll(cache, { claudeDir }, later), false);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+});
+
+suite('cache.hashKey', () => {
+    test('is stable and stays inside the safe-integer range', () => {
+        const key = 'msg_01ABCdefGHIjklMNOpqrSTU:req_9f3c1b27-0d4e-4a51-9c2b-77aa1e5b6d80';
+        assert.strictEqual(hashKey(key), hashKey(key));
+        assert.ok(Number.isSafeInteger(hashKey(key)));
+        assert.ok(hashKey(key) >= 0);
+    });
+
+    test('separates the near-identical keys the scanners actually produce', () => {
+        const seen = new Set<number>();
+        for (let i = 0; i < 20_000; i++) {
+            seen.add(hashKey(`msg_01ABCdefGHIjklMNOpqrST${i}:req_9f3c1b27-0d4e-4a51-9c2b-77aa1e5b6d${i}`));
+            seen.add(hashKey(`codex:${1_780_000_000_000 + i}:${i}:${i * 3}:${i * 7}`));
+        }
+        assert.strictEqual(seen.size, 40_000);
+    });
+});
+
+suite('dedupe window', () => {
+    const pend = (h: number) => ({
+        h,
+        d: '2026-06-01',
+        b: 'claude/claude-opus-5',
+        u: { input: 1, cachedInput: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, output: 1 },
+    });
+
+    test('evicts the oldest key once the cap is exceeded', () => {
+        const window = openWindow(undefined, 3);
+        for (const h of [1, 2, 3, 4]) {
+            remember(window, h, undefined);
+        }
+        assert.strictEqual(hasSeen(window, 1), false);
+        assert.deepStrictEqual([...window.entries.keys()], [2, 3, 4]);
+    });
+
+    test('re-anchors a repeated key on its freshest occurrence', () => {
+        const window = openWindow(undefined, 3);
+        remember(window, 1, undefined);
+        remember(window, 2, undefined);
+        remember(window, 1, undefined); // repeat: must move to the back
+        remember(window, 3, undefined);
+        remember(window, 4, undefined);
+        assert.strictEqual(hasSeen(window, 2), false); // evicted instead of key 1
+        assert.strictEqual(hasSeen(window, 1), true);
+    });
+
+    test('keeps presence but drops supersede state when asked', () => {
+        const window = openWindow(undefined, 8);
+        remember(window, 11, pend(11));
+        remember(window, 12, pend(12));
+        const state: FileState = { size: 0, mtimeMs: 0, offset: 0 };
+
+        closeWindow(window, state, true);
+        assert.deepStrictEqual(state.seen, [11, 12]);
+        assert.strictEqual(state.pend?.length, 2);
+
+        closeWindow(window, state, false);
+        assert.deepStrictEqual(state.seen, [11, 12]);
+        assert.strictEqual(state.pend, undefined);
+    });
+
+    test('caps persisted supersede state at PEND_CAP regardless of window depth', () => {
+        const window = openWindow(undefined, PEND_CAP * 4);
+        for (let h = 1; h <= PEND_CAP * 2; h++) {
+            remember(window, h, pend(h));
+        }
+        const state: FileState = { size: 0, mtimeMs: 0, offset: 0 };
+        closeWindow(window, state, true);
+        assert.strictEqual(state.seen?.length, PEND_CAP * 2);
+        assert.strictEqual(state.pend?.length, PEND_CAP);
+        assert.strictEqual(state.pend?.[PEND_CAP - 1].h, PEND_CAP * 2); // newest retained
+    });
+
+    test('reopens a state that was persisted and restored as JSON', () => {
+        const window = openWindow(undefined, SEEN_CAP_CODEX);
+        remember(window, 101, pend(101));
+        remember(window, 102, undefined);
+        const state: FileState = { size: 0, mtimeMs: 0, offset: 0 };
+        closeWindow(window, state, true);
+
+        const restored: FileState = JSON.parse(JSON.stringify(state));
+        const reopened = openWindow(restored, SEEN_CAP_CODEX);
+        assert.strictEqual(hasSeen(reopened, 101), true);
+        assert.strictEqual(hasSeen(reopened, 102), true);
+        assert.strictEqual(pendingFor(reopened, 101)?.u.output, 1);
+        assert.strictEqual(pendingFor(reopened, 102), undefined);
+        // Order must survive so eviction still drops the oldest key first.
+        assert.deepStrictEqual([...reopened.entries.keys()], [101, 102]);
     });
 });

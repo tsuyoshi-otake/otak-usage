@@ -1,6 +1,7 @@
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { listCodexFiles } from './scanner/codexScanner';
+import { ScannedFile } from './scanner/scanIndex';
 
 /** One rate-limit window (e.g. the 5-hour session window or the weekly window). */
 export interface LimitWindow {
@@ -154,19 +155,48 @@ const CODEX_MAX_FILES = 5;
 const CODEX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * Pick the newest rollout files out of metadata the scan already collected.
+ * The scan stat()s every rollout file each tick, so walking the session tree a
+ * second time here would double a tick's syscall count to rediscover the same
+ * handful of paths. Returns an empty list when the cache knows of none, which
+ * lets the caller fall back to a real walk.
+ */
+export function recentCodexFiles(
+    files: Record<string, { size: number; mtimeMs: number }>,
+    codexHome: string,
+    nowMs: number,
+    limit = CODEX_MAX_FILES,
+): ScannedFile[] {
+    const prefix = path.join(codexHome, 'sessions') + path.sep;
+    const minMtimeMs = nowMs - CODEX_MAX_AGE_MS;
+    const out: ScannedFile[] = [];
+    for (const [p, state] of Object.entries(files)) {
+        if (state.mtimeMs >= minMtimeMs && p.startsWith(prefix)) {
+            out.push({ path: p, size: state.size, mtimeMs: state.mtimeMs });
+        }
+    }
+    out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return out.slice(0, limit);
+}
+
+/**
  * Codex token_count events carry the server-reported rate_limits, so the most
  * recent session log already contains the latest snapshot. Reads only the tail
- * of the newest few files.
+ * of the newest few files. `known` supplies pre-stat()ed candidates (see
+ * recentCodexFiles); the session tree is only walked when it is empty.
  */
-export async function readCodexLimits(codexHome: string, nowMs: number): Promise<ProviderLimits | undefined> {
-    let files;
-    try {
-        files = await listCodexFiles(codexHome, nowMs, nowMs - CODEX_MAX_AGE_MS);
-    } catch {
-        return undefined;
+export async function readCodexLimits(codexHome: string, nowMs: number, known?: ScannedFile[]): Promise<ProviderLimits | undefined> {
+    let files = known;
+    if (!files || files.length === 0) {
+        try {
+            files = await listCodexFiles(codexHome, nowMs, nowMs - CODEX_MAX_AGE_MS);
+        } catch {
+            return undefined;
+        }
+        files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        files = files.slice(0, CODEX_MAX_FILES);
     }
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    for (const file of files.slice(0, CODEX_MAX_FILES)) {
+    for (const file of files) {
         const found = await lastRateLimitsInFile(file.path, file.size);
         if (found) {
             return found;

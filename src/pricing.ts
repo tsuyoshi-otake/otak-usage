@@ -30,7 +30,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-07-02: https://platform.claude.com/docs/en/about-claude/pricing
+ * - Claude prices on 2026-07-25: https://platform.claude.com/docs/en/about-claude/pricing
  * - OpenAI prices on 2026-07-10: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
@@ -42,14 +42,19 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Anthropic (Claude Code)
     'claude-fable-5': { input: 10, output: 50 },
     'claude-mythos-5': { input: 10, output: 50 },
+    // Claude 4.6 and later bill their full 1M context window at standard rates,
+    // so no long-context premium applies.
+    'claude-opus-5': { input: 5, output: 25 },
     'claude-opus-4-8': { input: 5, output: 25 },
     'claude-opus-4-7': { input: 5, output: 25 },
     'claude-opus-4-6': { input: 5, output: 25 },
     'claude-opus-4-5': { input: 5, output: 25 },
     'claude-opus-4-1': { input: 15, output: 75 },
     'claude-opus-4': { input: 15, output: 75 },
-    // Fast mode (usage.speed === "fast"): premium prices; the cache-write/read
-    // multipliers stack on top of the fast input price.
+    // Fast mode (usage.speed === "fast"): premium prices that apply across the
+    // full context window; the cache-write/read multipliers stack on top of the
+    // fast input price.
+    'claude-opus-5-fast': { input: 10, output: 50 },
     'claude-opus-4-8-fast': { input: 10, output: 50 },
     'claude-opus-4-7-fast': { input: 30, output: 150 },
     'claude-opus-4-6-fast': { input: 30, output: 150 },

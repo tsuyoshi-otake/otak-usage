@@ -71,6 +71,28 @@ suite('pricing', () => {
         assert.ok(Math.abs((standard?.cacheRead ?? 0) - 0.3) < 1e-12);
     });
 
+    test('claude opus 5 resolves standard, variant and fast-mode prices', () => {
+        const p = resolvePricing('claude-opus-5');
+        assert.strictEqual(p?.input, 5);
+        assert.strictEqual(p?.output, 25);
+        assert.strictEqual(p?.cacheWrite, 6.25);
+        assert.strictEqual(p?.cacheWrite1h, 10);
+        assert.strictEqual(p?.cacheRead, 0.5);
+        // The full 1M context window is billed at standard rates.
+        assert.strictEqual(p?.longContextThreshold, undefined);
+        // Dated ids and the 1M-context variant resolve to the same entry, and
+        // never to the older (pricier) claude-opus-4 line.
+        assert.strictEqual(resolvePricing('claude-opus-5-20260724')?.input, 5);
+        assert.strictEqual(resolvePricing('claude-opus-5[1m]')?.output, 25);
+
+        const fast = resolvePricing('claude-opus-5-fast');
+        assert.strictEqual(fast?.input, 10);
+        assert.strictEqual(fast?.output, 50);
+        assert.strictEqual(fast?.cacheWrite, 12.5);
+        assert.strictEqual(fast?.cacheRead, 1);
+        assert.strictEqual(resolvePricing('claude-opus-5-20260724-fast')?.input, 10);
+    });
+
     test('unknown model returns undefined', () => {
         assert.strictEqual(resolvePricing('llama-99'), undefined);
         assert.strictEqual(calcCost('llama-99', emptyUsage()), undefined);
@@ -230,6 +252,7 @@ suite('aggregator', () => {
         addEvent(days, ev(10, 'claude-haiku-4-5', 1_000_000));
         addEvent(days, ev(10, 'claude-fable-5', 1));
         addEvent(days, ev(10, 'claude-opus-4-8', 1_000));
+        addEvent(days, ev(10, 'claude-opus-5', 1_000));
 
         const s = summarize(days, '2026-07-10');
         assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
@@ -241,6 +264,7 @@ suite('aggregator', () => {
         ]);
         assert.deepStrictEqual(s.claude.models.map((row) => row.model), [
             'claude-fable-5',
+            'claude-opus-5',
             'claude-opus-4-8',
             'claude-haiku-4-5',
         ]);

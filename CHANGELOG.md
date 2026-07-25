@@ -2,6 +2,21 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.13.0] - 2026-07-25
+
+### Added
+
+- Claude Opus 5 pricing (`claude-opus-5`, $5 / $25 per million input / output tokens) and its fast-mode rates (`claude-opus-5-fast`, $10 / $50). Opus 5 usage previously resolved to no price, so the model breakdown showed `n/a` and its tokens were left out of the today / month totals. Dated ids and the `[1m]` context variant resolve to the same entry, and the full 1M context window is billed at standard rates. (#16)
+
+### Changed
+
+- Cut the CPU and memory a refresh costs, without changing what it reports. (#17)
+  - **Directory listings are cached and invalidated by directory mtime.** A directory's mtime moves when a session file is created, renamed, or deleted, but not when an existing file is appended to — exactly the signal that governs discovery. Appends to known files are still caught by the per-file `stat`. A quiet tick now performs zero filesystem calls instead of re-listing every directory.
+  - **Re-checks back off with idle age.** Files and directories are re-examined on an interval proportional to how long they have been unchanged, capped at 10 minutes for files and one minute for directories, and spread by a key-derived jitter so thousands of entries do not fall due on the same tick. Directories keep the tight cap because a directory `stat` is what gates discovering a brand-new session; files carry the bulk of the cost and a stale one only delays an already-idle session being resumed. The session you are working in stays hot on every tick. A full re-listing every 30 minutes backstops the mtime heuristic, so correctness never depends on the granularity or clock skew of the underlying filesystem (network mounts included).
+  - **Dedupe state is stored per file instead of globally.** Only records that can still be superseded are retained, and the retained set is pruned when the month rolls over. On a real 1,809-file history the persisted blob dropped from 10,380 KB to 1,262 KB (8.2x) and `JSON.stringify` on save from 14.8 ms to 3.4 ms (4.4x).
+  - **Rate-limit reads reuse the scan's file index** instead of re-walking the Codex session tree to find recent rollouts.
+  - Measured over an hour of one-minute ticks against the same tree, interleaved with a full-walk baseline to hold the page cache equal: mean 449 filesystem calls and 24.1 ms per tick versus ~2,228 and 130.9 ms — a 5x reduction, with the worst tick (95.4 ms) still below the full walk's best (84.6 ms).
+
 ## [1.12.0] - 2026-07-22
 
 ### Added

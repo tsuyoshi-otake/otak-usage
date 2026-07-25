@@ -9,5 +9,16 @@
 		"sourceMap": true,
 		"rootDir": "src",
 		"strict": true
-	}
+	},
+	// Without an explicit include, tsc walks the whole project root; once
+	// vscode-test has downloaded a VS Code build into .vscode-test (6 GB, ~900
+	// .ts files) the compile exhausts the default heap.
+	"include": [
+		"src"
+	],
+	"exclude": [
+		"node_modules",
+		"out",
+		".vscode-test"
+	]
 }

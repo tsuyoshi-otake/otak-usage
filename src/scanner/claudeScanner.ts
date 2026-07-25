@@ -1,13 +1,10 @@
-import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { FAST_SUFFIX } from '../pricing';
 import { TokenUsage, UsageEvent } from '../types';
+import { ScanIndex } from './scanIndex';
 
-export interface ScannedFile {
-    path: string;
-    size: number;
-    mtimeMs: number;
-}
+export type { ScannedFile } from './scanIndex';
+import type { ScannedFile } from './scanIndex';
 
 /**
  * List Claude Code transcript files under <claudeDir>/projects modified at or
@@ -22,35 +19,32 @@ export async function listClaudeFiles(claudeDir: string, minMtimeMs: number): Pr
     return out;
 }
 
-export async function* iterClaudeFiles(claudeDir: string, minMtimeMs: number): AsyncGenerator<ScannedFile> {
-    yield* walk(path.join(claudeDir, 'projects'), minMtimeMs);
+/**
+ * A caller that keeps its ScanIndex across passes gets incremental listing and
+ * age-based stat backoff. The default is a throwaway index, i.e. a full walk.
+ */
+export async function* iterClaudeFiles(
+    claudeDir: string,
+    minMtimeMs: number,
+    index: ScanIndex = new ScanIndex(),
+    nowMs: number = Date.now(),
+): AsyncGenerator<ScannedFile> {
+    yield* walk(path.join(claudeDir, 'projects'), minMtimeMs, index, nowMs);
 }
 
-async function* walk(dir: string, minMtimeMs: number): AsyncGenerator<ScannedFile> {
-    let dirHandle: Awaited<ReturnType<typeof fsp.opendir>>;
-    try {
-        dirHandle = await fsp.opendir(dir);
-    } catch {
-        return; // directory missing is a normal case
+async function* walk(dir: string, minMtimeMs: number, index: ScanIndex, nowMs: number): AsyncGenerator<ScannedFile> {
+    const listing = await index.listDir(dir, nowMs);
+    if (!listing) {
+        return;
     }
-    try {
-        for await (const entry of dirHandle) {
-            const p = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                yield* walk(p, minMtimeMs);
-            } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-                try {
-                    const st = await fsp.stat(p);
-                    if (st.mtimeMs >= minMtimeMs) {
-                        yield { path: p, size: st.size, mtimeMs: st.mtimeMs };
-                    }
-                } catch {
-                    // file vanished between opendir and stat
-                }
-            }
+    for (const name of listing.dirs) {
+        yield* walk(path.join(dir, name), minMtimeMs, index, nowMs);
+    }
+    for (const name of listing.files) {
+        const file = await index.statFile(path.join(dir, name), nowMs);
+        if (file && file.mtimeMs >= minMtimeMs) {
+            yield file;
         }
-    } catch {
-        return; // directory changed while scanning
     }
 }
 
