@@ -2,6 +2,16 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Alerts now offer **Not Today** beside **Open Settings**, and a `Otak Usage: Silence Alerts for Today (Toggle)` command does the same from the palette. (#21)
+  - A weekly rate-limit window that sits above the threshold is over it for days, and until now the only way to stop being told about it was to edit `otakUsage.alertMode` or the threshold itself — a permanent change to answer a "yes, I know" moment. **Not Today** silences every cost and rate-limit notification until the next local midnight, after which the alert fires again, once.
+  - The deadline is written beside the leader lock in the extension's global storage rather than into the window's own state. Alerts are raised by whichever window holds the leader lock (#19), and that moves — on a window closing, on a refresh stealing the lock, or after a few missed heartbeats — while each window reads its own state once at activation and would never see another window's write. Silencing alerts in any window now silences them in all of them.
+  - It is stored as an absolute deadline rather than as a date, so a window on a remote host in another timezone cannot read it as "some other day" and start notifying again.
+  - The command toggles: running it while alerts are silenced lifts the silence early.
+
 ## [1.15.0] - 2026-07-26
 
 ### Changed

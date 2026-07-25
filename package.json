@@ -54,6 +54,11 @@
         "command": "otak-usage.configureCodexOptimization",
         "title": "%command.configureCodexOptimization%",
         "category": "Otak Usage"
+      },
+      {
+        "command": "otak-usage.snoozeAlertsToday",
+        "title": "%command.snoozeAlertsToday%",
+        "category": "Otak Usage"
       }
     ],
     "configuration": {

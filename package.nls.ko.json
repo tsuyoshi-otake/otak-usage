@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "상태 표시줄 보기 전환 (오늘 / 이번 달 / 한도)",
   "command.refresh": "사용량 새로 고침(캐시 지우기 및 다시 스캔)",
   "command.copyUsage": "사용량 요약 복사",
+  "command.snoozeAlertsToday": "오늘은 알림 표시 안 함(전환)",
   "config.period": "상태 표시줄에 표시할 집계 기간입니다.",
   "config.updateIntervalSeconds": "사용량 로그를 다시 스캔하는 간격(초)입니다.",
   "config.dailyAlertThresholdUsd": "일일 총 비용 알림 기준값(USD)입니다. 오늘의 Claude + Codex API 등가 비용이 이 금액에 도달하면 알림을 표시합니다. 0으로 설정하면 비활성화됩니다.",

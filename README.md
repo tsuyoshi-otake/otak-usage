@@ -155,6 +155,23 @@ it always did.
 | `Otak Usage: Refresh Usage (Clear Cache and Rescan)` | Drop the incremental scan cache and rebuild the usage summary from local logs. |
 | `Otak Usage: Copy Usage Summary` | Copy a plain-text per-model breakdown to the clipboard. The tooltip also exposes this action. |
 | `Otak Usage: Configure Context Optimization` | Choose Claude Code or Codex CLI, then select a preset, enter arbitrary custom values, or turn optimization off for that provider. The tooltip's **Optimize** action runs this command. |
+| `Otak Usage: Silence Alerts for Today (Toggle)` | Silence every cost and rate-limit notification until the next local midnight, or lift the silence again. See [Alerts](#alerts). |
+
+## Alerts
+
+Cost and rate-limit notifications carry two actions: **Open Settings**, which
+jumps to the threshold behind the alert, and **Not Today**, which silences every
+otak-usage notification until the next local midnight. A weekly window that sits
+above the threshold for days is the case **Not Today** exists for — you already
+know, and you would rather not turn the alerts off permanently to stop hearing
+about it. The next day the alert fires again, once.
+
+The deadline is stored beside the leader lock in the extension's global storage
+rather than in this window's state, because the window that raises alerts is
+whichever one holds the lock at that moment, and that moves between windows.
+Silencing them anywhere silences them everywhere, and the setting survives a
+reload. `Otak Usage: Silence Alerts for Today` sets and clears the same deadline
+from the command palette.
 
 ## Settings
 

@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "Durum çubuğu görünümünü değiştir (Bugün / Bu Ay / Limitler)",
   "command.refresh": "Kullanımı Yenile (önbelleği temizle ve yeniden tara)",
   "command.copyUsage": "Kullanım Özetini Kopyala",
+  "command.snoozeAlertsToday": "Uyarıları bugünlük sessize al (aç/kapat)",
   "config.period": "Durum çubuğunda gösterilen toplama dönemi.",
   "config.updateIntervalSeconds": "Kullanım günlüklerinin kaç saniyede bir yeniden taranacağı.",
   "config.dailyAlertThresholdUsd": "USD cinsinden günlük toplam maliyet uyarı eşiği. Bugünkü Claude + Codex API eşdeğeri maliyeti bu tutara ulaştığında bildirim gösterilir. Devre dışı bırakmak için 0 yapın.",

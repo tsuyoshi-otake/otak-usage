@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "Changer la vue de la barre d'état (Aujourd'hui / Ce mois-ci / Limites)",
   "command.refresh": "Actualiser l'utilisation (vider le cache et rescanner)",
   "command.copyUsage": "Copier le résumé d'utilisation",
+  "command.snoozeAlertsToday": "Désactiver les alertes pour aujourd'hui (bascule)",
   "config.period": "Période d'agrégation affichée dans la barre d'état.",
   "config.updateIntervalSeconds": "Fréquence de rescannage des journaux d'utilisation, en secondes.",
   "config.dailyAlertThresholdUsd": "Seuil d'alerte du coût total quotidien en USD. Une notification apparaît lorsque le coût équivalent API de Claude + Codex aujourd'hui atteint ce montant. Définir sur 0 pour désactiver.",

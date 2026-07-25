@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "Đổi chế độ xem thanh trạng thái (Hôm nay / Tháng này / Giới hạn)",
   "command.refresh": "Làm mới mức sử dụng (xóa cache và quét lại)",
   "command.copyUsage": "Sao chép tóm tắt sử dụng",
+  "command.snoozeAlertsToday": "Tắt cảnh báo cho hôm nay (bật/tắt)",
   "config.period": "Kỳ tổng hợp hiển thị trên thanh trạng thái.",
   "config.updateIntervalSeconds": "Tần suất quét lại nhật ký sử dụng, tính bằng giây.",
   "config.dailyAlertThresholdUsd": "Ngưỡng cảnh báo tổng chi phí hằng ngày bằng USD. Thông báo sẽ xuất hiện khi chi phí tương đương API của Claude + Codex hôm nay đạt mức này. Đặt 0 để tắt.",

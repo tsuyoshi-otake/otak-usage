@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { OtakUsageApi } from '../extension';
+import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from '../coordination/alertSnooze';
 import { readJsonFile, writeFileAtomic } from '../coordination/atomicFile';
 import { groupKey, lockPathFor, snapshotPathFor } from '../coordination/group';
 import { LEASE_MS, LeaderLock, isLockRecord, lockIsStale } from '../coordination/leaderLock';
@@ -243,6 +244,40 @@ suite('coordination: shared snapshot', () => {
         await writeFileAtomic(target, 'writer-2', '{"b":2}');
         assert.deepStrictEqual(await readJsonFile(target), { b: 2 });
         assert.deepStrictEqual(fs.readdirSync(dir), ['file.json']);
+    });
+});
+
+suite('coordination: alert snooze', () => {
+    test('one file per installation, not one per scan group', () => {
+        const dir = tempDir();
+        assert.strictEqual(alertSnoozePathFor(dir), path.join(dir, 'alert-snooze.json'));
+        // Silencing alerts in a window pointed at another provider directory
+        // must still silence them here — the user muted otak-usage, not a
+        // directory — so the group key deliberately stays out of the name.
+        assert.strictEqual(alertSnoozePathFor(dir), alertSnoozePathFor(dir));
+    });
+
+    test('a deadline set in one window is what the next leader reads', async () => {
+        const dir = tempDir();
+        const target = alertSnoozePathFor(dir);
+        await writeAlertSnooze(target, 'window-a', { untilMs: NOW });
+        assert.deepStrictEqual(await readAlertSnooze(target), { untilMs: NOW });
+        assert.deepStrictEqual(fs.readdirSync(dir), ['alert-snooze.json']);
+
+        await writeAlertSnooze(target, 'window-b', { untilMs: 0 });
+        assert.deepStrictEqual(await readAlertSnooze(target), { untilMs: 0 });
+    });
+
+    test('no file and a corrupt file both mean "not snoozed"', async () => {
+        const dir = tempDir();
+        assert.strictEqual(await readAlertSnooze(alertSnoozePathFor(dir)), undefined);
+
+        const target = alertSnoozePathFor(dir);
+        fs.writeFileSync(target, '{ truncated', 'utf8');
+        assert.strictEqual(await readAlertSnooze(target), undefined);
+
+        fs.writeFileSync(target, '{"untilMs":"tomorrow"}', 'utf8');
+        assert.strictEqual(await readAlertSnooze(target), undefined);
     });
 });
 
