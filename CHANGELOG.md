@@ -2,7 +2,7 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
-## [Unreleased]
+## [1.16.0] - 2026-07-26
 
 ### Added
 
