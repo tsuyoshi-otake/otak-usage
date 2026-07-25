@@ -27,6 +27,36 @@ export function normalizeLimitAlertThresholdPercent(value: unknown): number {
     return Math.min(100, Math.max(0, value));
 }
 
+// ---------------------------------------------------------------------------
+// Snooze — "not today" on the notification itself
+// ---------------------------------------------------------------------------
+
+/**
+ * How long alerts stay silent once the user asks for quiet. A deadline rather
+ * than a day key: the leader that reads it back may be a window on a remote
+ * host in another timezone, which would otherwise decide the recorded day is
+ * "some other day" and start notifying again.
+ */
+export interface AlertSnooze {
+    untilMs: number;
+}
+
+export function isValidAlertSnooze(raw: unknown): raw is AlertSnooze {
+    const s = raw as AlertSnooze | undefined;
+    return !!s && typeof s === 'object' && typeof s.untilMs === 'number' && Number.isFinite(s.untilMs);
+}
+
+/** Local midnight ahead of `nowMs`: "not today" ends when today does. */
+export function snoozeUntilEndOfDay(nowMs: number): number {
+    const d = new Date(nowMs);
+    d.setHours(24, 0, 0, 0);
+    return d.getTime();
+}
+
+export function isSnoozed(snooze: AlertSnooze | undefined, nowMs: number): boolean {
+    return !!snooze && snooze.untilMs > nowMs;
+}
+
 export interface DailyAlertState {
     day: string;
     thresholdUsd: number;

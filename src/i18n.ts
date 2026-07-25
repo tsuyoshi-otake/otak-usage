@@ -20,9 +20,12 @@ export const SUPPORTED_LOCALES = [
 export type SupportedLocale = typeof SUPPORTED_LOCALES[number];
 
 type TranslationKey =
+    'action.notToday' |
     'action.openSettings' |
     'alert.dailyCostExceeded' |
     'alert.limitExceeded' |
+    'message.alertsResumed' |
+    'message.alertsSnoozed' |
     'message.codexOptimizeApplied' |
     'message.codexOptimizeRemoved' |
     'message.summaryCopied' |
@@ -57,9 +60,12 @@ type TranslationMessages = Record<TranslationKey, string>;
 
 const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
     en: {
+        'action.notToday': 'Not Today',
         'action.openSettings': 'Open Settings',
         'alert.dailyCostExceeded': "otak-usage daily cost alert: today's total is {total}, above your daily alert threshold of {threshold}.",
         'alert.limitExceeded': 'otak-usage limit alert: {provider} {window} usage is at {pct}%, above your {threshold}% alert threshold.',
+        'message.alertsResumed': 'otak-usage: alerts resumed',
+        'message.alertsSnoozed': 'otak-usage: alerts silenced for the rest of today',
         'message.codexOptimizeApplied': 'otak-usage: applied Codex context optimization to config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: removed Codex context optimization from config.toml',
         'message.summaryCopied': 'otak-usage: summary copied to clipboard',
@@ -91,9 +97,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Updated',
     },
     ar: {
+        'action.notToday': 'ليس اليوم',
         'action.openSettings': 'فتح الإعدادات',
         'alert.dailyCostExceeded': 'تنبيه تكلفة otak-usage اليومية: إجمالي اليوم هو {total}، وقد تجاوز حد التنبيه اليومي {threshold}.',
         'alert.limitExceeded': 'تنبيه حد otak-usage: استخدام {provider} {window} عند {pct}%، وهو أعلى من حد التنبيه البالغ {threshold}%.',
+        'message.alertsResumed': 'otak-usage: تم استئناف التنبيهات',
+        'message.alertsSnoozed': 'otak-usage: تم كتم التنبيهات لبقية اليوم',
         'message.codexOptimizeApplied': 'otak-usage: تم تطبيق تحسين سياق Codex على config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: تمت إزالة تحسين سياق Codex من config.toml',
         'message.summaryCopied': 'otak-usage: تم نسخ الملخص إلى الحافظة',
@@ -125,9 +134,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'تم التحديث',
     },
     de: {
+        'action.notToday': 'Heute nicht mehr',
         'action.openSettings': 'Einstellungen öffnen',
         'alert.dailyCostExceeded': 'otak-usage Tageskostenalarm: Die heutige Summe beträgt {total} und liegt über dem täglichen Grenzwert von {threshold}.',
         'alert.limitExceeded': 'otak-usage-Limit-Alarm: Die Auslastung von {provider} {window} liegt bei {pct}% und damit über Ihrem Alarmschwellenwert von {threshold}%.',
+        'message.alertsResumed': 'otak-usage: Alarme wieder aktiviert',
+        'message.alertsSnoozed': 'otak-usage: Alarme für den Rest des Tages stummgeschaltet',
         'message.codexOptimizeApplied': 'otak-usage: Codex-Kontextoptimierung auf config.toml angewendet',
         'message.codexOptimizeRemoved': 'otak-usage: Codex-Kontextoptimierung aus config.toml entfernt',
         'message.summaryCopied': 'otak-usage: Zusammenfassung in die Zwischenablage kopiert',
@@ -159,9 +171,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Aktualisiert',
     },
     es: {
+        'action.notToday': 'Hoy no',
         'action.openSettings': 'Abrir configuración',
         'alert.dailyCostExceeded': 'Alerta de coste diario de otak-usage: el total de hoy es {total}, por encima del umbral diario de {threshold}.',
         'alert.limitExceeded': 'Alerta de límite de otak-usage: el uso de {provider} {window} está en {pct}%, por encima de tu umbral de alerta del {threshold}%.',
+        'message.alertsResumed': 'otak-usage: alertas reanudadas',
+        'message.alertsSnoozed': 'otak-usage: alertas silenciadas por el resto del día',
         'message.codexOptimizeApplied': 'otak-usage: optimización de contexto de Codex aplicada a config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: optimización de contexto de Codex eliminada de config.toml',
         'message.summaryCopied': 'otak-usage: resumen copiado al portapapeles',
@@ -193,9 +208,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Actualizado',
     },
     fr: {
+        'action.notToday': "Pas aujourd'hui",
         'action.openSettings': 'Ouvrir les paramètres',
         'alert.dailyCostExceeded': "Alerte de coût quotidien otak-usage : le total d'aujourd'hui est de {total}, au-dessus du seuil quotidien de {threshold}.",
         'alert.limitExceeded': "Alerte de limite otak-usage : l'utilisation de {provider} {window} est à {pct}%, au-dessus de votre seuil d'alerte de {threshold}%.",
+        'message.alertsResumed': 'otak-usage : alertes réactivées',
+        'message.alertsSnoozed': 'otak-usage : alertes désactivées pour le reste de la journée',
         'message.codexOptimizeApplied': 'otak-usage : optimisation du contexte Codex appliquée à config.toml',
         'message.codexOptimizeRemoved': 'otak-usage : optimisation du contexte Codex supprimée de config.toml',
         'message.summaryCopied': 'otak-usage : résumé copié dans le presse-papiers',
@@ -227,9 +245,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Mis à jour',
     },
     hi: {
+        'action.notToday': 'आज नहीं',
         'action.openSettings': 'सेटिंग खोलें',
         'alert.dailyCostExceeded': 'otak-usage दैनिक लागत अलर्ट: आज का कुल {total} है, जो आपके दैनिक अलर्ट सीमा {threshold} से अधिक है।',
         'alert.limitExceeded': 'otak-usage सीमा अलर्ट: {provider} {window} उपयोग {pct}% है, जो आपकी {threshold}% अलर्ट सीमा से अधिक है।',
+        'message.alertsResumed': 'otak-usage: alert फिर से चालू कर दिए गए',
+        'message.alertsSnoozed': 'otak-usage: आज के बाकी समय के लिए alert बंद कर दिए गए',
         'message.codexOptimizeApplied': 'otak-usage: Codex संदर्भ अनुकूलन config.toml में लागू किया गया',
         'message.codexOptimizeRemoved': 'otak-usage: Codex संदर्भ अनुकूलन config.toml से हटाया गया',
         'message.summaryCopied': 'otak-usage: सारांश क्लिपबोर्ड पर कॉपी किया गया',
@@ -261,9 +282,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'अपडेट',
     },
     id: {
+        'action.notToday': 'Jangan hari ini',
         'action.openSettings': 'Buka Pengaturan',
         'alert.dailyCostExceeded': 'Peringatan biaya harian otak-usage: total hari ini {total}, melebihi ambang peringatan harian {threshold}.',
         'alert.limitExceeded': 'Peringatan batas otak-usage: penggunaan {provider} {window} berada di {pct}%, melebihi ambang peringatan {threshold}% Anda.',
+        'message.alertsResumed': 'otak-usage: peringatan diaktifkan kembali',
+        'message.alertsSnoozed': 'otak-usage: peringatan dibisukan untuk sisa hari ini',
         'message.codexOptimizeApplied': 'otak-usage: pengoptimalan konteks Codex diterapkan ke config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: pengoptimalan konteks Codex dihapus dari config.toml',
         'message.summaryCopied': 'otak-usage: ringkasan disalin ke clipboard',
@@ -295,9 +319,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Diperbarui',
     },
     it: {
+        'action.notToday': 'Non oggi',
         'action.openSettings': 'Apri impostazioni',
         'alert.dailyCostExceeded': 'Avviso costo giornaliero di otak-usage: il totale di oggi è {total}, sopra la soglia giornaliera di {threshold}.',
         'alert.limitExceeded': "Avviso limite di otak-usage: l'utilizzo di {provider} {window} è al {pct}%, sopra la soglia di avviso del {threshold}%.",
+        'message.alertsResumed': 'otak-usage: avvisi riattivati',
+        'message.alertsSnoozed': 'otak-usage: avvisi silenziati per il resto della giornata',
         'message.codexOptimizeApplied': 'otak-usage: ottimizzazione del contesto Codex applicata a config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: ottimizzazione del contesto Codex rimossa da config.toml',
         'message.summaryCopied': 'otak-usage: riepilogo copiato negli appunti',
@@ -329,9 +356,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Aggiornato',
     },
     ja: {
+        'action.notToday': '今日はもう通知しない',
         'action.openSettings': '設定を開く',
         'alert.dailyCostExceeded': 'otak-usage の本日合計が {total} になり、1日あたりのアラートしきい値 {threshold} を超えました。',
         'alert.limitExceeded': 'otak-usage の {provider} {window} 使用率が {pct}% になり、アラートしきい値 {threshold}% を超えました。',
+        'message.alertsResumed': 'otak-usage: アラートを再開しました',
+        'message.alertsSnoozed': 'otak-usage: 本日はこれ以上アラートを通知しません',
         'message.codexOptimizeApplied': 'otak-usage: Codex コンテキスト最適化を config.toml に適用しました',
         'message.codexOptimizeRemoved': 'otak-usage: Codex コンテキスト最適化を config.toml から削除しました',
         'message.summaryCopied': 'otak-usage: サマリーをクリップボードにコピーしました',
@@ -363,9 +393,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': '更新',
     },
     ko: {
+        'action.notToday': '오늘은 그만',
         'action.openSettings': '설정 열기',
         'alert.dailyCostExceeded': 'otak-usage 일일 비용 알림: 오늘 합계가 {total}이며 일일 알림 기준 {threshold}를 초과했습니다.',
         'alert.limitExceeded': 'otak-usage 한도 알림: {provider} {window} 사용량이 {pct}%로 알림 기준 {threshold}%를 초과했습니다.',
+        'message.alertsResumed': 'otak-usage: 알림을 다시 시작했습니다',
+        'message.alertsSnoozed': 'otak-usage: 오늘 남은 시간 동안 알림을 표시하지 않습니다',
         'message.codexOptimizeApplied': 'otak-usage: Codex 컨텍스트 최적화를 config.toml에 적용했습니다',
         'message.codexOptimizeRemoved': 'otak-usage: Codex 컨텍스트 최적화를 config.toml에서 제거했습니다',
         'message.summaryCopied': 'otak-usage: 요약을 클립보드에 복사했습니다',
@@ -397,9 +430,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': '업데이트',
     },
     'pt-br': {
+        'action.notToday': 'Hoje não',
         'action.openSettings': 'Abrir configurações',
         'alert.dailyCostExceeded': 'Alerta de custo diário do otak-usage: o total de hoje é {total}, acima do limite diário de {threshold}.',
         'alert.limitExceeded': 'Alerta de limite do otak-usage: o uso de {provider} {window} está em {pct}%, acima do seu limite de alerta de {threshold}%.',
+        'message.alertsResumed': 'otak-usage: alertas retomados',
+        'message.alertsSnoozed': 'otak-usage: alertas silenciados pelo resto do dia',
         'message.codexOptimizeApplied': 'otak-usage: otimização de contexto do Codex aplicada ao config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: otimização de contexto do Codex removida do config.toml',
         'message.summaryCopied': 'otak-usage: resumo copiado para a área de transferência',
@@ -431,9 +467,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Atualizado',
     },
     ru: {
+        'action.notToday': 'Не сегодня',
         'action.openSettings': 'Открыть настройки',
         'alert.dailyCostExceeded': 'Ежедневное предупреждение otak-usage: сумма за сегодня {total}, что выше дневного порога {threshold}.',
         'alert.limitExceeded': 'Предупреждение о лимите otak-usage: использование {provider} {window} составляет {pct}%, что выше вашего порога предупреждения {threshold}%.',
+        'message.alertsResumed': 'otak-usage: предупреждения снова включены',
+        'message.alertsSnoozed': 'otak-usage: предупреждения отключены до конца дня',
         'message.codexOptimizeApplied': 'otak-usage: оптимизация контекста Codex применена к config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: оптимизация контекста Codex удалена из config.toml',
         'message.summaryCopied': 'otak-usage: сводка скопирована в буфер обмена',
@@ -465,9 +504,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Обновлено',
     },
     tr: {
+        'action.notToday': 'Bugün değil',
         'action.openSettings': 'Ayarları Aç',
         'alert.dailyCostExceeded': 'otak-usage günlük maliyet uyarısı: bugünün toplamı {total}; günlük uyarı eşiği {threshold} üzerinde.',
         'alert.limitExceeded': 'otak-usage limit uyarısı: {provider} {window} kullanımı {pct}%, uyarı eşiğiniz olan {threshold}% üzerinde.',
+        'message.alertsResumed': 'otak-usage: uyarılar yeniden etkinleştirildi',
+        'message.alertsSnoozed': 'otak-usage: uyarılar günün geri kalanında sessize alındı',
         'message.codexOptimizeApplied': 'otak-usage: Codex bağlam optimizasyonu config.toml dosyasına uygulandı',
         'message.codexOptimizeRemoved': 'otak-usage: Codex bağlam optimizasyonu config.toml dosyasından kaldırıldı',
         'message.summaryCopied': 'otak-usage: özet panoya kopyalandı',
@@ -499,9 +541,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Güncellendi',
     },
     vi: {
+        'action.notToday': 'Hôm nay thì thôi',
         'action.openSettings': 'Mở cài đặt',
         'alert.dailyCostExceeded': 'Cảnh báo chi phí hằng ngày của otak-usage: tổng hôm nay là {total}, vượt ngưỡng cảnh báo hằng ngày {threshold}.',
         'alert.limitExceeded': 'Cảnh báo giới hạn otak-usage: mức sử dụng {provider} {window} đang ở {pct}%, vượt ngưỡng cảnh báo {threshold}% của bạn.',
+        'message.alertsResumed': 'otak-usage: đã bật lại cảnh báo',
+        'message.alertsSnoozed': 'otak-usage: đã tắt cảnh báo trong phần còn lại của hôm nay',
         'message.codexOptimizeApplied': 'otak-usage: đã áp dụng tối ưu hóa ngữ cảnh Codex cho config.toml',
         'message.codexOptimizeRemoved': 'otak-usage: đã xóa tối ưu hóa ngữ cảnh Codex khỏi config.toml',
         'message.summaryCopied': 'otak-usage: đã sao chép tóm tắt vào clipboard',
@@ -533,9 +578,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': 'Đã cập nhật',
     },
     'zh-cn': {
+        'action.notToday': '今天不再提醒',
         'action.openSettings': '打开设置',
         'alert.dailyCostExceeded': 'otak-usage 每日费用提醒：今天合计为 {total}，已超过每日提醒阈值 {threshold}。',
         'alert.limitExceeded': 'otak-usage 限额提醒：{provider} {window} 使用率为 {pct}%，已超过提醒阈值 {threshold}%。',
+        'message.alertsResumed': 'otak-usage：已恢复提醒',
+        'message.alertsSnoozed': 'otak-usage：今天剩余时间不再提醒',
         'message.codexOptimizeApplied': 'otak-usage：已将 Codex 上下文优化应用到 config.toml',
         'message.codexOptimizeRemoved': 'otak-usage：已从 config.toml 中移除 Codex 上下文优化',
         'message.summaryCopied': 'otak-usage：摘要已复制到剪贴板',
@@ -567,9 +615,12 @@ const MESSAGES: Record<SupportedLocale, TranslationMessages> = {
         'tooltip.updated': '已更新',
     },
     'zh-tw': {
+        'action.notToday': '今天不再提醒',
         'action.openSettings': '開啟設定',
         'alert.dailyCostExceeded': 'otak-usage 每日費用提醒：今天合計為 {total}，已超過每日提醒門檻 {threshold}。',
         'alert.limitExceeded': 'otak-usage 額度提醒：{provider} {window} 使用率為 {pct}%，已超過提醒門檻 {threshold}%。',
+        'message.alertsResumed': 'otak-usage：已恢復提醒',
+        'message.alertsSnoozed': 'otak-usage：今天剩餘時間不再提醒',
         'message.codexOptimizeApplied': 'otak-usage：已將 Codex 上下文最佳化套用至 config.toml',
         'message.codexOptimizeRemoved': 'otak-usage：已從 config.toml 中移除 Codex 上下文最佳化',
         'message.summaryCopied': 'otak-usage：摘要已複製到剪貼簿',

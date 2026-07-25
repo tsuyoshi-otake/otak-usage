@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "切换状态栏视图（今天 / 本月 / 限额）",
   "command.refresh": "刷新用量（清除缓存并重新扫描）",
   "command.copyUsage": "复制用量摘要",
+  "command.snoozeAlertsToday": "今天不再提醒（切换）",
   "config.period": "状态栏中显示的汇总周期。",
   "config.updateIntervalSeconds": "重新扫描用量日志的间隔（秒）。",
   "config.dailyAlertThresholdUsd": "每日总成本提醒阈值（美元）。当今天的 Claude + Codex API 等效成本达到此金额时会显示通知。设为 0 可禁用。",

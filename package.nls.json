@@ -5,6 +5,7 @@
   "command.refresh": "Refresh Usage (Clear Cache and Rescan)",
   "command.copyUsage": "Copy Usage Summary",
   "command.configureCodexOptimization": "Configure Context Optimization",
+  "command.snoozeAlertsToday": "Silence Alerts for Today (Toggle)",
   "config.period": "Aggregation period shown in the status bar.",
   "config.updateIntervalSeconds": "How often to rescan usage logs, in seconds.",
   "config.dailyAlertThresholdUsd": "Daily total cost alert threshold in USD. A notification appears when today's Claude + Codex API-equivalent cost reaches this amount. Set to 0 to disable.",

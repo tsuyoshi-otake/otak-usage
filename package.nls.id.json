@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "Ganti tampilan bilah status (Hari Ini / Bulan Ini / Batas)",
   "command.refresh": "Segarkan Penggunaan (hapus cache dan pindai ulang)",
   "command.copyUsage": "Salin Ringkasan Penggunaan",
+  "command.snoozeAlertsToday": "Bisukan peringatan untuk hari ini (alihkan)",
   "config.period": "Periode agregasi yang ditampilkan di status bar.",
   "config.updateIntervalSeconds": "Seberapa sering log penggunaan dipindai ulang, dalam detik.",
   "config.dailyAlertThresholdUsd": "Ambang peringatan total biaya harian dalam USD. Notifikasi muncul saat biaya setara API Claude + Codex hari ini mencapai jumlah ini. Atur ke 0 untuk menonaktifkan.",

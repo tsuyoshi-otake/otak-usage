@@ -4,12 +4,13 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { ProviderSummary, summarize } from './aggregator';
-import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
+import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
+import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from './coordination/alertSnooze';
 import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
 import { SNAPSHOT_VERSION, SharedSnapshot, readSharedSnapshot, writeSharedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
@@ -88,6 +89,8 @@ class UsageController implements vscode.Disposable {
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
     private limitAlertState: LimitAlertState | undefined;
+    /** Epoch ms until which every alert stays quiet; 0 when none is set. */
+    private snoozeUntilMs = 0;
     private updatingClaudeOptimizeConfiguration = false;
     private updatingCodexOptimizeConfiguration = false;
     private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
@@ -110,6 +113,7 @@ class UsageController implements vscode.Disposable {
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
             vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
             vscode.commands.registerCommand('otak-usage.configureCodexOptimization', () => this.configureContextOptimization()),
+            vscode.commands.registerCommand('otak-usage.snoozeAlertsToday', () => this.toggleAlertSnooze()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
                     this.restartTimer();
@@ -1076,6 +1080,15 @@ class UsageController implements vscode.Disposable {
     private async checkAlerts(day: string, todayTotalCost: number): Promise<void> {
         const config = this.config();
         const mode: AlertMode = normalizeAlertMode(config.get<unknown>('alertMode'));
+        if (mode === 'off') {
+            return;
+        }
+        // Ask before evaluating, not after: leaving the "already notified"
+        // records untouched is what lets an alert the user silenced today come
+        // back tomorrow, which is what "not today" promises.
+        if (await this.alertsSnoozed(Date.now())) {
+            return;
+        }
         if (alertModeIncludesCost(mode)) {
             await this.checkDailyAlert(config, day, todayTotalCost);
         }
@@ -1158,10 +1171,55 @@ class UsageController implements vscode.Disposable {
 
     private async showAlertNotification(message: string, settingKey: string): Promise<void> {
         const openSettings = this.i18n.t('action.openSettings');
-        const selected = await vscode.window.showWarningMessage(message, openSettings);
+        const notToday = this.i18n.t('action.notToday');
+        const selected = await vscode.window.showWarningMessage(message, openSettings, notToday);
         if (selected === openSettings) {
             await vscode.commands.executeCommand('workbench.action.openSettings', settingKey);
+        } else if (selected === notToday) {
+            await this.setAlertSnooze(snoozeUntilEndOfDay(Date.now()));
+            vscode.window.setStatusBarMessage(this.i18n.t('message.alertsSnoozed'), 5000);
         }
+    }
+
+    /**
+     * Whether alerts are currently silenced. Reads the shared file rather than
+     * trusting `snoozeUntilMs`, because the window asking is whichever one holds
+     * the leader lock right now and the user may have asked for quiet in another
+     * one. It is one small read per leader tick, next to a scan that stats every
+     * session log — and the in-memory copy still covers the window whose global
+     * storage never came up.
+     */
+    private async alertsSnoozed(nowMs: number): Promise<boolean> {
+        const filePath = this.alertSnoozePath();
+        if (filePath !== '') {
+            this.snoozeUntilMs = (await readAlertSnooze(filePath))?.untilMs ?? 0;
+        }
+        return isSnoozed({ untilMs: this.snoozeUntilMs }, nowMs);
+    }
+
+    /** Command: silence alerts for the rest of the day, or lift it again. */
+    private async toggleAlertSnooze(): Promise<void> {
+        const now = Date.now();
+        const snoozed = await this.alertsSnoozed(now);
+        await this.setAlertSnooze(snoozed ? 0 : snoozeUntilEndOfDay(now));
+        vscode.window.setStatusBarMessage(this.i18n.t(snoozed ? 'message.alertsResumed' : 'message.alertsSnoozed'), 5000);
+    }
+
+    private async setAlertSnooze(untilMs: number): Promise<void> {
+        this.snoozeUntilMs = untilMs;
+        const filePath = this.alertSnoozePath();
+        if (filePath === '') {
+            return; // no shared directory: this window silences only itself
+        }
+        try {
+            await writeAlertSnooze(filePath, `${process.pid}`, { untilMs });
+        } catch (err) {
+            console.error('otak-usage: could not record the alert snooze', err);
+        }
+    }
+
+    private alertSnoozePath(): string {
+        return this.storageDir === '' ? '' : alertSnoozePathFor(this.storageDir);
     }
 
     private async copyUsage(): Promise<void> {

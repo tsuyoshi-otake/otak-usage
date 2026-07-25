@@ -4,6 +4,7 @@
   "command.cycleStatusBarView": "Statusleisten-Ansicht wechseln (Heute / Dieser Monat / Limits)",
   "command.refresh": "Nutzung aktualisieren (Cache leeren und neu scannen)",
   "command.copyUsage": "Nutzungszusammenfassung kopieren",
+  "command.snoozeAlertsToday": "Alarme für heute stummschalten (Umschalten)",
   "config.period": "Aggregationszeitraum, der in der Statusleiste angezeigt wird.",
   "config.updateIntervalSeconds": "Intervall in Sekunden, in dem Nutzungsprotokolle erneut gescannt werden.",
   "config.dailyAlertThresholdUsd": "Schwellenwert für den täglichen Gesamtkostenalarm in USD. Eine Benachrichtigung erscheint, wenn die heutigen API-äquivalenten Kosten von Claude + Codex diesen Betrag erreichen. Auf 0 setzen, um ihn zu deaktivieren.",

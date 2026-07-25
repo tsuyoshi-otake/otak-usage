@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
-import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState } from '../alert';
+import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
@@ -413,6 +413,40 @@ suite('limit alert', () => {
     });
 });
 
+suite('alert snooze', () => {
+    test('"not today" runs until the next local midnight', () => {
+        const now = new Date(2026, 6, 26, 14, 30, 15, 250).getTime();
+        const until = new Date(snoozeUntilEndOfDay(now));
+        assert.strictEqual(until.getDate(), 27);
+        assert.strictEqual(until.getHours(), 0);
+        assert.strictEqual(until.getMinutes(), 0);
+        assert.strictEqual(until.getSeconds(), 0);
+        assert.strictEqual(until.getMilliseconds(), 0);
+        assert.ok(until.getTime() > now);
+    });
+
+    test('a snooze set a minute before midnight still ends that same midnight', () => {
+        const now = new Date(2026, 6, 26, 23, 59, 0).getTime();
+        const until = snoozeUntilEndOfDay(now);
+        assert.strictEqual(until - now, 60_000);
+    });
+
+    test('silences until the deadline and not a moment past it', () => {
+        assert.strictEqual(isSnoozed({ untilMs: 2000 }, 1999), true);
+        assert.strictEqual(isSnoozed({ untilMs: 2000 }, 2000), false);
+        assert.strictEqual(isSnoozed({ untilMs: 2000 }, 2001), false);
+        assert.strictEqual(isSnoozed(undefined, 1999), false);
+    });
+
+    test('rejects an unusable deadline rather than silencing forever', () => {
+        assert.strictEqual(isValidAlertSnooze({ untilMs: 1000 }), true);
+        assert.strictEqual(isValidAlertSnooze({ untilMs: Number.NaN }), false);
+        assert.strictEqual(isValidAlertSnooze({ untilMs: '1000' }), false);
+        assert.strictEqual(isValidAlertSnooze({}), false);
+        assert.strictEqual(isValidAlertSnooze(undefined), false);
+    });
+});
+
 suite('codex optimize', () => {
     const values = { contextWindow: 250000, autoCompactLimit: 230000 };
 
@@ -655,6 +689,23 @@ suite('i18n', () => {
             for (const ph of ['{provider}', '{window}', '{pct}', '{threshold}']) {
                 assert.ok(!message.includes(ph), `${locale}: ${ph}`);
             }
+        }
+    });
+
+    test('every locale names the snooze action and its confirmations', () => {
+        for (const locale of SUPPORTED_LOCALES) {
+            const i18n = new I18n(locale);
+            for (const key of ['action.notToday', 'message.alertsSnoozed', 'message.alertsResumed'] as const) {
+                const text = i18n.t(key);
+                assert.ok(text.trim().length > 0, `${locale}: ${key}`);
+                assert.ok(!text.includes('{'), `${locale}: ${key}`);
+                if (locale !== 'en') {
+                    assert.notStrictEqual(text, new I18n('en').t(key), `${locale} fell back to English: ${key}`);
+                }
+            }
+            // The notification puts the two actions side by side, so a locale
+            // that translated both to the same label would be unusable.
+            assert.notStrictEqual(i18n.t('action.notToday'), i18n.t('action.openSettings'), locale);
         }
     });
 });
