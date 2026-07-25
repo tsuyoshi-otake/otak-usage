@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { isLongContextRequest } from '../pricing';
 import { TokenUsage, UsageEvent } from '../types';
+import { resolveCodexModel } from './codexAutoReview';
 import { ScanIndex, ScannedFile } from './scanIndex';
 
 /**
@@ -104,6 +105,12 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
     if (Number.isNaN(timestamp)) {
         return undefined;
     }
+    // Auto-review turns name a slug that no price table lists, so it is resolved
+    // to the codex model that was current on this line's own date. `lastModel`
+    // deliberately keeps the raw slug: a rollout can span a release boundary, and
+    // every later line has to resolve against its own timestamp rather than
+    // inherit whatever the first one landed on.
+    const model = resolveCodexModel(state.lastModel, rec.timestamp);
     const rawInput = last.input_tokens ?? 0;
     // Cap defensively: a malformed record must not bill more cached tokens
     // than were actually sent.
@@ -116,10 +123,10 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
         cacheWrite1h: 0,
         output: last.output_tokens ?? 0,
     };
-    if (isLongContextRequest(state.lastModel, rawInput)) {
+    if (isLongContextRequest(model, rawInput)) {
         usage.longContextInput = usage.input;
         usage.longContextCachedInput = usage.cachedInput;
         usage.longContextOutput = usage.output;
     }
-    return { provider: 'codex', model: state.lastModel, timestamp, usage };
+    return { provider: 'codex', model, timestamp, usage };
 }

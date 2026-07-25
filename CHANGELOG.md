@@ -2,6 +2,16 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.14.0] - 2026-07-25
+
+### Added
+
+- Price `codex-auto-review` usage instead of dropping it. (#18)
+  - Codex labels its automatic code-review turns `codex-auto-review`. That slug is not a billable OpenAI model id — it appears in neither OpenAI's pricing pages nor LiteLLM's price table (upstream: openai/codex#20981) — so those turns resolved to no price, showed as `n/a` in the model breakdown, and were left out of the today and month totals entirely. On one real July history that silently excluded 8,199 turns across 112 sessions, worth $868.58.
+  - Each turn is now billed as whichever Codex model was current on that turn's own date, using the release table [ccusage](https://github.com/ryoppippi/ccusage) maintains (`codex-auto-review-fallbacks.json`, sourced from a models.dev snapshot): gpt-5.5 from 2026-04-23, gpt-5.4 from 2026-03-05, gpt-5.3-codex from 2026-02-05, gpt-5.2-codex from 2025-12-11, gpt-5.1-codex from 2025-11-13, gpt-5-codex from 2025-09-15, and gpt-5 before that or when the timestamp is unusable.
+  - Resolution runs per turn at parse time rather than at pricing time. `summarize()` prices a whole month with today's date, so resolving later would bill a month containing a release boundary — both 2026-03-05 and 2026-04-23 fall mid-month — entirely at the newer rate. Per-turn resolution also lets the long-context check see the real model, which the bare slug cannot supply a 272K threshold for.
+  - Third-party calculators that publish a flat price for the slug were not used: getmaxim's row is gpt-5.4's rate card ($2.50 / $0.25 / $15.00, 1,050,000 context, 128,000 max output) republished under the auto-review name, and routin.ai disagrees with it outright. These rows are an estimate — OpenAI has not published what auto-review bills as.
+
 ## [1.13.0] - 2026-07-25
 
 ### Added
