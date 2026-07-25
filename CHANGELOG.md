@@ -2,6 +2,18 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.15.0] - 2026-07-26
+
+### Changed
+
+- One VS Code window per machine now does the scanning, whatever number of windows are open. (#19)
+  - Every window ran the whole pipeline on its own timer: it walked the Claude and Codex session logs, called `api.anthropic.com/api/oauth/usage` for the subscription limits, spawned `rtk` to collect its stats, and exported the OTLP telemetry. With five windows open that was five times the file I/O, five identical rate-limit requests (which is how a shared IP earns a 429), five `rtk` processes, five copies of every metric, and five popups for the same cost alert. Windows also wrote `settings.json` and `config.toml` for the optimization presets concurrently.
+  - The windows now elect a leader through a lease file in the extension's global storage directory — `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME`/`~/.config` on Linux, and the remote side of the extension host in Codespaces, WSL and SSH remotes, so a remote window coordinates with the other windows on the same remote rather than with the local ones. The leader scans and publishes a snapshot; every other window renders that snapshot.
+  - The snapshot carries raw per-day, per-model token buckets rather than finished costs, so each window still applies its own `pricingOverrides`, its own `showClaude` / `showCodex` / `showRtk` toggles, its own period and its own status-bar mode. Displayed numbers are unchanged.
+  - The lease is held by rename, not by an OS advisory lock: a heartbeat every 10 seconds, a 30-second lease, and a read-back after each claim so simultaneous claimants converge on one winner. A window that is killed outright is replaced within the lease; one that closes cleanly hands the lock over at once. The refresh command steals leadership, so the window you act in is the one that rescans.
+  - Windows pointed at different `claudeConfigDir` / `codexHome` values elect separate leaders — the lock and snapshot names are keyed by those paths — so a window watching another account is never silenced by one watching yours.
+  - If the storage directory cannot be written at all, the window scans on its own exactly as before rather than showing nothing.
+
 ## [1.14.0] - 2026-07-25
 
 ### Added

@@ -119,6 +119,33 @@ than a full walk (mean 449 vs ~2,228 filesystem calls, 24 ms vs 131 ms), and the
 persisted dedupe state is **8x smaller** (1.2 MB vs 10.4 MB), cutting the
 serialization the extension does on every save.
 
+### One scan, however many windows are open
+
+VS Code runs an extension host per window, so ten open windows would otherwise
+mean ten copies of everything above reading the same files — plus ten calls to
+the Anthropic usage endpoint, ten `rtk` child processes, ten OpenTelemetry
+exports of the same numbers, and ten popups for one cost alert.
+
+Instead the windows elect one of themselves. The leader scans and publishes the
+per-day, per-model token counts; every other window renders that. Costs are
+still computed per window, so `otakUsage.pricingOverrides`, the visibility
+toggles, the period and the status-bar view stay yours to set per window — and
+nothing about the display changes, because every window shows the same numbers
+it always did.
+
+- The election runs through the extension's own global storage directory, which
+  is shared by every window of one installation on **Windows, macOS, Linux, WSL,
+  SSH remotes and Codespaces** alike. In a remote the extension host lives on
+  the remote side, so the windows attached to it elect a leader there, next to
+  the logs they are actually reading.
+- Windows only share a leader when they would scan the same directories. Point
+  `otakUsage.claudeConfigDir` or `otakUsage.codexHome` somewhere else in a
+  workspace and that window scans for itself.
+- The leader renews a 30-second lease every 10 seconds. Close it and the lease
+  is handed over at once; kill it and another window picks the work up within
+  the lease. **Refresh Usage** always takes over on the spot, so the window you
+  are working in is the one that rescans.
+
 ## Commands
 
 | Command | Description |
