@@ -2,12 +2,16 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
+import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
+import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
+import { SNAPSHOT_VERSION, SharedSnapshot, readSharedSnapshot, writeSharedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { I18n } from './i18n';
@@ -16,7 +20,7 @@ import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
 import { TelemetryConfig, TelemetryMetric, exportTelemetry } from './telemetry';
-import { Provider } from './types';
+import { DayBuckets, Provider } from './types';
 
 const CACHE_KEY = 'otakUsage.scanCache';
 const DAILY_ALERT_STATE_KEY = 'otakUsage.dailyAlertState';
@@ -57,6 +61,20 @@ class UsageController implements vscode.Disposable {
     /** Directory listings and stat backoff, kept across ticks; see scanIndex.ts. */
     private scanIndex = new ScanIndex();
     private scanning = false;
+    /** Identifies this window in the lock file; regenerated on every activation. */
+    private readonly instanceId = randomUUID();
+    /** Where the lock and snapshot live; empty when coordination is unavailable. */
+    private storageDir = '';
+    private lock: LeaderLock | undefined;
+    private lockGroup = '';
+    private snapshotPath = '';
+    /** Scanning, network calls, alerts and telemetry belong to the leader alone. */
+    private leader = false;
+    private roleTimer: NodeJS.Timeout | undefined;
+    private roleQueue: Promise<void> = Promise.resolve();
+    /** Day buckets published by the leader; what a follower renders from. */
+    private sharedDays: DayBuckets = {};
+    private lastPublished = '';
     private rtkFetching = false;
     private initialScanDone = false;
     private focused = true;
@@ -97,11 +115,14 @@ class UsageController implements vscode.Disposable {
                     this.restartTimer();
                     void this.renderAndCheckAlert();
                 }
+                // Only the leader reconciles the provider config files, so N
+                // windows reacting to one global setting change do not write
+                // the same two files at the same moment.
                 if (e.affectsConfiguration('otakUsage.optimizeCodexContext') ||
                     e.affectsConfiguration('otakUsage.codexContextWindow') ||
                     e.affectsConfiguration('otakUsage.codexAutoCompactLimit') ||
                     e.affectsConfiguration('otakUsage.codexHome')) {
-                    if (!this.updatingCodexOptimizeConfiguration) {
+                    if (!this.updatingCodexOptimizeConfiguration && this.leader) {
                         void this.syncCodexOptimize();
                     }
                 }
@@ -109,7 +130,7 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.claudeContextWindow') ||
                     e.affectsConfiguration('otakUsage.claudeAutoCompactPercent') ||
                     e.affectsConfiguration('otakUsage.claudeConfigDir')) {
-                    if (!this.updatingClaudeOptimizeConfiguration) {
+                    if (!this.updatingClaudeOptimizeConfiguration && this.leader) {
                         void this.syncClaudeOptimize();
                     }
                 }
@@ -124,15 +145,72 @@ class UsageController implements vscode.Disposable {
             // theme's foreground colour (data-URI images can't use currentColor).
             vscode.window.onDidChangeActiveColorTheme(() => this.render()),
         );
-        void this.tick();
+        void this.startCoordination();
         this.restartTimer();
-        void this.syncClaudeOptimize();
-        void this.syncCodexOptimize();
     }
 
     dispose(): void {
         this.stopTimer();
+        if (this.roleTimer) {
+            clearInterval(this.roleTimer);
+            this.roleTimer = undefined;
+        }
+        // Hand the lock over now instead of making the next window wait out the
+        // lease; a window that is killed outright is covered by the lease.
+        this.lock?.releaseSync();
         this.statusBarItem.dispose();
+    }
+
+    /**
+     * Every VS Code window activates this extension, but the logs they would
+     * read are the same files: one window scans and publishes, the rest render
+     * what it published. Coordination happens through `globalStorageUri`, which
+     * is one real directory per user shared by every window of the installation
+     * — on Windows, macOS, Linux, WSL, SSH remotes and Codespaces alike (in a
+     * remote, the extension host lives on the remote side, so the windows
+     * attached to it share that side's storage).
+     *
+     * If that directory cannot be created there is nothing to coordinate
+     * through, so the window keeps the old behaviour and scans for itself.
+     */
+    private async startCoordination(): Promise<void> {
+        try {
+            const dir = this.context.globalStorageUri.fsPath;
+            await fsp.mkdir(dir, { recursive: true });
+            this.storageDir = dir;
+        } catch (err) {
+            console.error('otak-usage: global storage unavailable; scanning without a leader', err);
+        }
+        this.roleTimer = setInterval(() => void this.pollRole(), HEARTBEAT_MS);
+        await this.tick();
+    }
+
+    /**
+     * Renew the lease (or pick it up when the holder is gone) on its own timer,
+     * so heartbeats keep flowing while a long scan is in progress and a window
+     * that inherits the role starts working without waiting for its next tick.
+     */
+    private async pollRole(): Promise<void> {
+        const wasLeader = this.leader;
+        try {
+            await this.ensureRole(Date.now());
+        } catch (err) {
+            console.error('otak-usage: leader heartbeat failed', err);
+            return;
+        }
+        if (this.leader && !wasLeader) {
+            await this.tick();
+        }
+    }
+
+    coordinationState(): CoordinationState {
+        return this.storageDir === ''
+            ? { leader: this.leader }
+            : {
+                leader: this.leader,
+                lockPath: lockPathFor(this.storageDir, this.lockGroup),
+                snapshotPath: this.snapshotPath,
+            };
     }
 
     private config(): vscode.WorkspaceConfiguration {
@@ -618,6 +696,69 @@ class UsageController implements vscode.Disposable {
         return true;
     }
 
+    /** Serialize role changes: the scan tick and the heartbeat both drive them. */
+    private ensureRole(nowMs: number): Promise<void> {
+        const task = this.roleQueue.then(() => this.updateRole(nowMs));
+        this.roleQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private async updateRole(nowMs: number): Promise<void> {
+        if (this.storageDir === '') {
+            this.setLeader(true); // no shared directory: this window is on its own
+            return;
+        }
+        // The lock covers one set of provider directories. A window pointed at
+        // a different claudeConfigDir / codexHome must not follow a snapshot
+        // built from logs it is not looking at, so it elects its own leader.
+        const key = groupKey(this.claudeConfigDir(), this.codexHomeDir());
+        if (key !== this.lockGroup) {
+            await this.lock?.release().catch(() => undefined);
+            this.lockGroup = key;
+            this.snapshotPath = snapshotPathFor(this.storageDir, key);
+            this.lock = new LeaderLock(lockPathFor(this.storageDir, key), this.instanceId);
+            this.setLeader(false);
+        }
+        try {
+            const lock = this.lock!;
+            this.setLeader(this.leader ? await lock.renew(nowMs) : await lock.acquire(nowMs));
+        } catch (err) {
+            // The lock file itself is unwritable — a read-only or full storage
+            // directory. Coordinating is impossible, so fall back to what every
+            // window did before: scan for itself.
+            console.error('otak-usage: leader lock unusable; scanning without a leader', err);
+            this.lock = undefined;
+            this.storageDir = '';
+            this.setLeader(true);
+        }
+    }
+
+    private setLeader(next: boolean): void {
+        if (next === this.leader) {
+            return;
+        }
+        this.leader = next;
+        if (next) {
+            // A follower keeps no file offsets, so its in-memory cache cannot
+            // be scanned forward — every line would be counted a second time.
+            // Restart from the persisted cache, whose offsets and day buckets
+            // were written together and therefore still agree.
+            this.cache = emptyCache();
+            this.loadCache();
+            this.scanIndex.reset();
+            this.lastPublished = '';
+            this.initialScanDone = Object.keys(this.cache.days).length > 0;
+            // Activation-time reconciliation of the provider config files is
+            // the leader's job, and this window has just taken it on.
+            void this.syncClaudeOptimize();
+            void this.syncCodexOptimize();
+        } else {
+            // Keep showing the numbers we already had until the first snapshot
+            // arrives, instead of blinking through an empty status bar.
+            this.sharedDays = this.cache.days;
+        }
+    }
+
     private async tick(): Promise<void> {
         if (this.scanning) {
             return;
@@ -625,21 +766,84 @@ class UsageController implements vscode.Disposable {
         this.scanning = true;
         try {
             const now = Date.now();
-            const targets = await this.resolveTargets();
-            this.lastTargets = targets;
-            const changed = await scanAll(this.cache, targets, now, this.scanIndex);
-            this.initialScanDone = true;
-            if (changed) {
-                await this.saveCache();
+            await this.ensureRole(now);
+            if (this.leader) {
+                await this.leaderTick(now);
+            } else {
+                await this.followerTick();
             }
-            await this.renderAndCheckAlert();
-            void this.refreshRtkStats(dayKey(now));
-            void this.refreshLimits(now);
-            void this.exportTelemetry(now);
         } catch (err) {
             console.error('otak-usage: scan failed', err);
         } finally {
             this.scanning = false;
+        }
+    }
+
+    private async leaderTick(now: number): Promise<void> {
+        const targets = await this.resolveTargets();
+        this.lastTargets = targets;
+        const changed = await scanAll(this.cache, targets, now, this.scanIndex);
+        this.initialScanDone = true;
+        if (changed) {
+            await this.saveCache();
+        }
+        await this.renderAndCheckAlert();
+        void this.refreshRtkStats(dayKey(now));
+        void this.refreshLimits(now);
+        void this.exportTelemetry(now);
+    }
+
+    /**
+     * Render the leader's snapshot. No filesystem walk, no usage endpoint call,
+     * no `rtk` child process, no telemetry export and no alert — those happen
+     * once per machine, in the leader.
+     */
+    private async followerTick(): Promise<void> {
+        const snapshot = await readSharedSnapshot(this.snapshotPath);
+        if (!snapshot) {
+            return; // leader has not published yet; keep the current display
+        }
+        this.sharedDays = snapshot.days;
+        this.lastTargets = {
+            claudeDir: this.claudeConfigDir(),
+            codexHome: this.codexHomeDir(),
+            claudeAvailable: snapshot.claudeAvailable,
+            codexAvailable: snapshot.codexAvailable,
+        };
+        this.lastClaudeLimits = snapshot.claudeLimits;
+        this.lastCodexLimits = snapshot.codexLimits;
+        this.lastRtkStats = snapshot.rtk;
+        this.initialScanDone = true;
+        this.render();
+    }
+
+    /** Publish what the other windows need, skipping writes that change nothing. */
+    private async publishSnapshot(): Promise<void> {
+        if (!this.leader || !this.initialScanDone || this.snapshotPath === '') {
+            return;
+        }
+        const snapshot: SharedSnapshot = {
+            version: SNAPSHOT_VERSION,
+            updatedAtMs: Date.now(),
+            leader: this.instanceId,
+            days: this.cache.days,
+            claudeAvailable: this.lastTargets.claudeAvailable,
+            codexAvailable: this.lastTargets.codexAvailable,
+            claudeLimits: this.lastClaudeLimits,
+            codexLimits: this.lastCodexLimits,
+            rtk: this.lastRtkStats,
+        };
+        // updatedAtMs moves every time; compare everything else so an idle
+        // machine stops rewriting the file (and the followers stop re-rendering).
+        const payload = JSON.stringify({ ...snapshot, updatedAtMs: 0 });
+        if (payload === this.lastPublished) {
+            return;
+        }
+        try {
+            await writeSharedSnapshot(this.snapshotPath, `${process.pid}`, snapshot);
+            this.lastPublished = payload;
+        } catch (err) {
+            console.error('otak-usage: publishing the usage snapshot failed', err);
         }
     }
 
@@ -800,7 +1004,10 @@ class UsageController implements vscode.Disposable {
         const period = this.period();
         const now = Date.now();
         const today = dayKey(now);
-        const summaries = summarize(this.cache.days, today, overrides);
+        // Costs are recomputed per window: pricingOverrides is a per-window
+        // setting, so the leader publishes token counts and never prices for
+        // anyone but itself.
+        const summaries = summarize(this.leader ? this.cache.days : this.sharedDays, today, overrides);
         this.lastSummaries = summaries;
         const showLimits = config.get<boolean>('showRateLimits', true);
         const claude: ProviderView = {
@@ -850,12 +1057,18 @@ class UsageController implements vscode.Disposable {
         tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
+        // Everything a follower renders is settled by the time we render it
+        // ourselves — including the limits and rtk refreshes, which land after
+        // their own tick and re-render.
+        void this.publishSnapshot();
         return { day: today, todayTotalCost: summaries.claude.todayCost + summaries.codex.todayCost };
     }
 
     private async renderAndCheckAlert(): Promise<void> {
         const snapshot = this.render();
-        if (snapshot) {
+        // One notification per machine rather than one per open window: only
+        // the leader — the window that owns the numbers — raises alerts.
+        if (snapshot && this.leader) {
             await this.checkAlerts(snapshot.day, snapshot.todayTotalCost);
         }
     }
@@ -986,12 +1199,34 @@ class UsageController implements vscode.Disposable {
     }
 
     private async refresh(): Promise<void> {
+        // An explicit refresh should rescan here and now, in the window the
+        // user asked in — so take the lock rather than wait for a snapshot the
+        // current leader will publish on its own schedule.
+        if (this.lock) {
+            try {
+                await this.ensureRoleSteal();
+            } catch (err) {
+                console.error('otak-usage: could not take over scanning for a manual refresh', err);
+            }
+        }
         this.cache = emptyCache();
         this.scanIndex.reset();
         this.initialScanDone = false;
+        this.lastPublished = '';
         await this.context.globalState.update(CACHE_KEY, undefined);
         this.statusBarItem.text = '$(loading~spin) usage';
         await this.tick();
+    }
+
+    private ensureRoleSteal(): Promise<void> {
+        const task = this.roleQueue.then(async () => {
+            const lock = this.lock;
+            if (lock) {
+                this.setLeader(await lock.steal(Date.now()));
+            }
+        });
+        this.roleQueue = task.then(() => undefined, () => undefined);
+        return task;
     }
 
     private loadCache(): void {
@@ -1087,10 +1322,27 @@ function jsonObjectIsEmpty(text: string): boolean {
     return isRecord(value) && Object.keys(value).length === 0;
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * What this window is doing about scanning. Returned from `activate()` so the
+ * integration tests can see the election the user never has to think about;
+ * also the quickest way to answer "which window is actually reading the logs?"
+ * from the debug console.
+ */
+export interface CoordinationState {
+    leader: boolean;
+    lockPath?: string;
+    snapshotPath?: string;
+}
+
+export interface OtakUsageApi {
+    coordination(): CoordinationState;
+}
+
+export function activate(context: vscode.ExtensionContext): OtakUsageApi {
     const controller = new UsageController(context);
     context.subscriptions.push(controller);
     controller.start();
+    return { coordination: () => controller.coordinationState() };
 }
 
 export function deactivate(): void { }
