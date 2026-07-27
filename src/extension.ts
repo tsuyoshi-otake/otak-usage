@@ -20,6 +20,7 @@ import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits, re
 import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
+import { SettingsStore } from './settingsStore';
 import { TelemetryConfig, TelemetryMetric, exportTelemetry } from './telemetry';
 import { DayBuckets, Provider } from './types';
 
@@ -96,6 +97,31 @@ class UsageController implements vscode.Disposable {
     private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private codexOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
+    /**
+     * Settings this extension writes itself. Goes through a store so a write
+     * VS Code refuses — the window still shows a status-bar item whose
+     * manifest is already gone — degrades to an in-memory value instead of an
+     * error thrown at whoever clicked. See settingsStore.ts.
+     */
+    private readonly settings = new SettingsStore(
+        {
+            get: <T>(key: string, fallback: T) => this.config().get<T>(key, fallback),
+            update: async (key: string, value: unknown) => {
+                await this.config().update(key, value, vscode.ConfigurationTarget.Global);
+            },
+        },
+        (key: string, err: unknown) => this.onSettingWriteFailed(key, err),
+    );
+    /** One warning per window is enough; the cause survives until a reload. */
+    private settingWriteWarned = false;
+    /** Settings already reported as unwritable; keeps a retry loop out of the log. */
+    private readonly settingWriteFailuresLogged = new Set<string>();
+    /**
+     * Set when the user picks a status-bar view in this window, whether or not
+     * the pick could be saved. Distinguishes their choice from the value the
+     * first-run subscription default failed to write.
+     */
+    private statusBarModeChosen = false;
 
     constructor(private readonly context: vscode.ExtensionContext) { }
 
@@ -116,6 +142,9 @@ class UsageController implements vscode.Disposable {
             vscode.commands.registerCommand('otak-usage.snoozeAlertsToday', () => this.toggleAlertSnooze()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
+                    // A real settings change always beats a value this window
+                    // could only keep in memory.
+                    this.settings.reconcile((key) => e.affectsConfiguration(`otakUsage.${key}`));
                     this.restartTimer();
                     void this.renderAndCheckAlert();
                 }
@@ -222,7 +251,26 @@ class UsageController implements vscode.Disposable {
     }
 
     private period(): Period {
-        return this.config().get<Period>('period', 'today');
+        return this.settings.get<Period>('period', 'today');
+    }
+
+    /**
+     * A refused settings write is not the user's fault and not worth an error
+     * dialog: the view already changed from the in-memory value, and reloading
+     * the window is what actually fixes it.
+     */
+    private onSettingWriteFailed(key: string, err: unknown): void {
+        if (!this.settingWriteFailuresLogged.has(key)) {
+            this.settingWriteFailuresLogged.add(key);
+            console.error(`otak-usage: could not save otakUsage.${key}`, err);
+        }
+        if (this.settingWriteWarned) {
+            return;
+        }
+        this.settingWriteWarned = true;
+        // Not "reload the window": a reload fixes a lost manifest, but the same
+        // rejection covers a broken settings.json, which it would not.
+        vscode.window.setStatusBarMessage('otak-usage: view not saved. See Developer Tools for details.', 5000);
     }
 
     private restartTimer(): void {
@@ -344,6 +392,10 @@ class UsageController implements vscode.Disposable {
             this.updatingClaudeOptimizeConfiguration = true;
             try {
                 await config.update('optimizeClaudeContext', false, vscode.ConfigurationTarget.Global);
+            } catch (err) {
+                console.error('otak-usage: failed to save Claude optimize settings', err);
+                void vscode.window.showErrorMessage('otak-usage: failed to turn off Claude Code context optimization. See Developer Tools for details.');
+                return;
             } finally {
                 this.updatingClaudeOptimizeConfiguration = false;
             }
@@ -464,6 +516,10 @@ class UsageController implements vscode.Disposable {
             this.updatingCodexOptimizeConfiguration = true;
             try {
                 await config.update('optimizeCodexContext', false, vscode.ConfigurationTarget.Global);
+            } catch (err) {
+                console.error('otak-usage: failed to save Codex optimize settings', err);
+                void vscode.window.showErrorMessage('otak-usage: failed to turn off Codex context optimization. See Developer Tools for details.');
+                return;
             } finally {
                 this.updatingCodexOptimizeConfiguration = false;
             }
@@ -946,7 +1002,9 @@ class UsageController implements vscode.Disposable {
         const inspected = config.inspect<StatusBarMode>('statusBarMode');
         const userChose = inspected?.globalValue !== undefined
             || inspected?.workspaceValue !== undefined
-            || inspected?.workspaceFolderValue !== undefined;
+            || inspected?.workspaceFolderValue !== undefined
+            // A choice this window could not persist still counts as a choice.
+            || this.statusBarModeChosen;
         if (userChose || !config.get<boolean>('showRateLimits', true)) {
             await this.context.globalState.update(STATUS_BAR_MODE_INITIALIZED_KEY, true);
             return;
@@ -955,7 +1013,9 @@ class UsageController implements vscode.Disposable {
         if (!mode) {
             return; // no plan proven yet — try again on a later refresh
         }
-        await config.update('statusBarMode', mode, vscode.ConfigurationTarget.Global);
+        if (!await this.settings.set('statusBarMode', mode)) {
+            return; // nothing persisted — try again once settings are writable
+        }
         await this.context.globalState.update(STATUS_BAR_MODE_INITIALIZED_KEY, true);
     }
 
@@ -1031,7 +1091,7 @@ class UsageController implements vscode.Disposable {
             show: config.get<boolean>('showRtk', true),
         };
         this.lastViews = { claude, codex, rtk };
-        const statusBarMode = showLimits ? config.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
+        const statusBarMode = showLimits ? this.settings.get<StatusBarMode>('statusBarMode', 'cost') : 'cost';
         this.statusBarItem.text = statusBarText(claude, codex, period, false, statusBarMode);
         const claudeOptimizeValues = this.currentClaudeOptimizeValues(config);
         const codexOptimizeValues = this.currentCodexOptimizeValues(config);
@@ -1232,14 +1292,14 @@ class UsageController implements vscode.Disposable {
 
     private async togglePeriod(): Promise<void> {
         const next: Period = this.period() === 'today' ? 'month' : 'today';
-        await this.config().update('period', next, vscode.ConfigurationTarget.Global);
+        await this.settings.set('period', next);
         void this.renderAndCheckAlert();
     }
 
     /** Status-bar click: today's cost → this month's cost → limits → today's cost. */
     private async cycleStatusBarView(): Promise<void> {
         const config = this.config();
-        const mode = config.get<StatusBarMode>('statusBarMode', 'cost');
+        const mode = this.settings.get<StatusBarMode>('statusBarMode', 'cost');
         const limitsEnabled = config.get<boolean>('showRateLimits', true);
         const baseMode = this.context.globalState.get<StatusBarMode>(BASE_STATUS_BAR_MODE_KEY, 'cost');
         const next = cycleStatusBarView(this.period(), mode, limitsEnabled, baseMode);
@@ -1248,10 +1308,11 @@ class UsageController implements vscode.Disposable {
             await this.context.globalState.update(BASE_STATUS_BAR_MODE_KEY, mode);
         }
         if (next.period !== this.period()) {
-            await config.update('period', next.period, vscode.ConfigurationTarget.Global);
+            await this.settings.set('period', next.period);
         }
         if (next.mode !== mode) {
-            await config.update('statusBarMode', next.mode, vscode.ConfigurationTarget.Global);
+            this.statusBarModeChosen = true;
+            await this.settings.set('statusBarMode', next.mode);
         }
         void this.renderAndCheckAlert();
     }

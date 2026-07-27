@@ -2,6 +2,16 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.16.1] - 2026-07-27
+
+### Fixed
+
+- Clicking the status-bar item no longer fails with `Unable to write to User Settings because otakUsage.statusBarMode is not a registered configuration.` (#23)
+  - VS Code refuses a settings write whose key is missing from its configuration registry, which is the case whenever an extension host outlives its own manifest — the extension was just disabled, uninstalled or updated, or the window switched settings profiles, and the window has not been reloaded yet. The status-bar item is still on screen and still clickable, so the click surfaced a raw VS Code error and cycled nothing.
+  - `period` and `statusBarMode` now go through a store that keeps a refused write in memory: the view cycles as usual for the rest of that window's life, the failure is logged with a single status-bar note instead of an error dialog, and the in-memory value is dropped as soon as the real setting changes. Reloading the window restores the persisted value.
+  - The one-time "subscription users get the limits view" default no longer marks itself done when its write was refused, so it still applies once settings are writable again. A view the user picked is still never overwritten by it, saved or not.
+  - Turning off Claude Code or Codex context optimization now reports a settings write it could not make, instead of letting the same raw error escape from the command.
+
 ## [1.16.0] - 2026-07-26
 
 ### Added
