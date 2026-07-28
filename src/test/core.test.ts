@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
@@ -458,14 +458,65 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers stable 200k and 272k preset pairs', () => {
+    test('offers stable 200k and 272k preset pairs, default first', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '272k', contextWindow: 272000, autoCompactLimit: 250000 },
             { id: '200k', contextWindow: 200000, autoCompactLimit: 184000 },
+            { id: '272k', contextWindow: 272000, autoCompactLimit: 250000 },
         ]);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 200000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 184000);
         assert.strictEqual(matchingCodexOptimizePreset(200000, 184000)?.id, '200k');
         assert.strictEqual(matchingCodexOptimizePreset(200000, 180000), undefined);
         assert.strictEqual(suggestedCodexAutoCompactLimit(200000), 184000);
+    });
+
+    suite('one-time default migration', () => {
+        test('clears settings that still read as the old 272k default', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, 250000), {
+                clear: ['codexContextWindow', 'codexAutoCompactLimit'],
+                write: {},
+            });
+        });
+
+        test('writes nothing when neither value was ever set', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, undefined), {
+                clear: [],
+                write: {},
+            });
+        });
+
+        test('clears a half-written pair whose other half was the old default', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, undefined), {
+                clear: ['codexContextWindow'],
+                write: {},
+            });
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 250000), {
+                clear: ['codexAutoCompactLimit'],
+                write: {},
+            });
+        });
+
+        test('leaves chosen values alone and pins the unset half to its old default', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(400000, undefined), {
+                clear: [],
+                write: { codexAutoCompactLimit: 250000 },
+            });
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 120000), {
+                clear: [],
+                write: { codexContextWindow: 272000 },
+            });
+            assert.deepStrictEqual(planCodexContextDefaultMigration(400000, 380000), {
+                clear: [],
+                write: {},
+            });
+        });
+
+        test('treats an unusable stored value as the old default and clears it', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 250000), {
+                clear: ['codexContextWindow', 'codexAutoCompactLimit'],
+                write: {},
+            });
+        });
     });
 
     test('parses custom token limits without accepting partial or unsafe values', () => {
