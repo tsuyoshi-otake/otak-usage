@@ -2,6 +2,15 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.17.0] - 2026-07-29
+
+### Changed
+
+- Codex context optimization now defaults to a 200k window with auto-compaction at 184k, matching the Claude Code side instead of the previous 272k / 250k. (#25)
+  - 272k was picked because OpenAI charges the long-context rate above that many input tokens, which made it the largest window still billed at the standard rate — but it also left the two providers on different defaults and parked every Codex session right at the billing boundary. Both providers now compact around the same point out of the box.
+  - The **272k** preset is still in the Optimize picker (now listed second, below the default), so the larger window is one click away.
+  - Existing installations already carry the old numbers in their settings, so a one-time migration runs on the first activation after the update: values that still read as the old default are cleared so the new default applies, and anything you chose yourself is left exactly as it was. A pair where only one of the two keys was set is pinned to its old value rather than silently picking up the new default for the other half. A settings write VS Code refuses is retried on the next activation instead of leaving a half-migrated configuration.
+
 ## [1.16.1] - 2026-07-27
 
 ### Fixed

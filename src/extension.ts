@@ -7,7 +7,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
 import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from './coordination/alertSnooze';
@@ -31,6 +31,7 @@ const CODEX_OPTIMIZE_APPLIED_KEY = 'otakUsage.codexOptimizeApplied';
 const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
+const CODEX_CONTEXT_DEFAULT_MIGRATED_KEY = 'otakUsage.codexContextDefaultMigrated';
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -207,6 +208,9 @@ class UsageController implements vscode.Disposable {
      * through, so the window keeps the old behaviour and scans for itself.
      */
     private async startCoordination(): Promise<void> {
+        // Before any window can reconcile config.toml, so the leader's
+        // activation sync already writes the migrated values.
+        await this.migrateCodexContextDefaults();
         try {
             const dir = this.context.globalStorageUri.fsPath;
             await fsp.mkdir(dir, { recursive: true });
@@ -467,6 +471,40 @@ class UsageController implements vscode.Disposable {
         } else {
             void vscode.window.showErrorMessage('otak-usage: failed to apply Claude Code context optimization. See Developer Tools for details.');
         }
+    }
+
+    /**
+     * One-time move to the aligned 200k Codex default. The shipped default
+     * changed from 272k/250k to 200k/184k, which on its own would never reach a
+     * user whose settings already hold the old numbers, and would quietly
+     * change what a half-configured pair means. See
+     * `planCodexContextDefaultMigration` for the rules; this only carries the
+     * plan out and records that it ran.
+     *
+     * A write VS Code refuses leaves the flag unset, so the next activation
+     * tries again rather than half-migrating the user for good.
+     */
+    private async migrateCodexContextDefaults(): Promise<void> {
+        if (this.context.globalState.get<boolean>(CODEX_CONTEXT_DEFAULT_MIGRATED_KEY, false)) {
+            return;
+        }
+        const config = this.config();
+        const plan = planCodexContextDefaultMigration(
+            config.inspect<number>('codexContextWindow')?.globalValue,
+            config.inspect<number>('codexAutoCompactLimit')?.globalValue,
+        );
+        try {
+            for (const key of plan.clear) {
+                await config.update(key, undefined, vscode.ConfigurationTarget.Global);
+            }
+            for (const [key, value] of Object.entries(plan.write) as [CodexContextSettingKey, number][]) {
+                await config.update(key, value, vscode.ConfigurationTarget.Global);
+            }
+        } catch (err) {
+            console.error('otak-usage: could not migrate the Codex context defaults', err);
+            return;
+        }
+        await this.context.globalState.update(CODEX_CONTEXT_DEFAULT_MIGRATED_KEY, true);
     }
 
     private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {

@@ -13,11 +13,19 @@
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 
-// OpenAI charges the long-context rate once a request exceeds 272k input
-// tokens, so the window is pinned to that threshold and compaction fires
-// with enough headroom to stay under it.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 250000;
+// Matches the Claude Code side of the Optimize feature, so both providers
+// compact around the same point and neither sits at a long-context billing
+// boundary by default. The 272k preset remains available for Codex sessions
+// that want the whole window OpenAI bills at the standard rate.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 200000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 184000;
+
+/**
+ * The pair that was the default before the two providers were aligned. Kept so
+ * the one-time migration can tell an untouched configuration from a chosen one.
+ */
+export const LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
+export const LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 250000;
 
 export interface CodexOptimizePreset {
     id: '200k' | '272k';
@@ -26,13 +34,19 @@ export interface CodexOptimizePreset {
 }
 
 /**
- * Curated context-size pairs exposed by the Optimize quick pick. The compact
- * limits stay at roughly 92% of the context ceiling so compaction has room to
- * start before the hard limit is reached.
+ * Curated context-size pairs exposed by the Optimize quick pick, default
+ * first. The compact limits stay at roughly 92% of the context ceiling so
+ * compaction has room to start before the hard limit is reached. 272k is the
+ * threshold above which OpenAI charges the long-context rate, so that preset
+ * is the largest window still billed at the standard rate.
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
-    { id: '272k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
-    { id: '200k', contextWindow: 200000, autoCompactLimit: 184000 },
+    { id: '200k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
+    {
+        id: '272k',
+        contextWindow: LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW,
+        autoCompactLimit: LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
+    },
 ];
 
 export function matchingCodexOptimizePreset(contextWindow: number, autoCompactLimit: number): CodexOptimizePreset | undefined {
@@ -65,6 +79,65 @@ export function normalizeCodexTokenLimit(value: unknown, fallback: number): numb
         return fallback;
     }
     return Math.floor(value);
+}
+
+export type CodexContextSettingKey = 'codexContextWindow' | 'codexAutoCompactLimit';
+
+/**
+ * What the one-time default migration has to write, given the values a user
+ * currently has in their global settings (`undefined` when a key is unset).
+ */
+export interface CodexContextDefaultMigration {
+    /** Global values to remove so the new manifest defaults take over. */
+    clear: readonly CodexContextSettingKey[];
+    /** Global values to write so an existing configuration keeps its meaning. */
+    write: Partial<Record<CodexContextSettingKey, number>>;
+}
+
+/**
+ * Lowering the shipped defaults from 272k/250k to 200k/184k would not reach a
+ * user who already has the old numbers written into their settings, and would
+ * silently change the meaning of a half-customized pair — someone who set only
+ * `codexContextWindow` would suddenly compact at 184k instead of 250k.
+ *
+ * So the migration decides per installation:
+ *
+ * - the pair still reads as the old default (an unset key counts as the old
+ *   default, which is what it used to mean) → clear both values so the new
+ *   defaults apply from now on;
+ * - anything else is a chosen configuration → leave the chosen values alone and
+ *   pin whatever is still unset to its old default, so the pair keeps behaving
+ *   exactly as it did before the defaults moved.
+ *
+ * A user who deliberately picked the 272k preset is indistinguishable from one
+ * who never touched the setting, so they are migrated as well and have to pick
+ * 272k again.
+ */
+export function planCodexContextDefaultMigration(
+    contextWindow: unknown,
+    autoCompactLimit: unknown,
+): CodexContextDefaultMigration {
+    const effectiveWindow = normalizeCodexTokenLimit(contextWindow, LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW);
+    const effectiveLimit = normalizeCodexTokenLimit(autoCompactLimit, LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+    if (effectiveWindow === LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW &&
+        effectiveLimit === LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT) {
+        const clear: CodexContextSettingKey[] = [];
+        if (contextWindow !== undefined) {
+            clear.push('codexContextWindow');
+        }
+        if (autoCompactLimit !== undefined) {
+            clear.push('codexAutoCompactLimit');
+        }
+        return { clear, write: {} };
+    }
+    const write: Partial<Record<CodexContextSettingKey, number>> = {};
+    if (contextWindow === undefined) {
+        write.codexContextWindow = LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW;
+    }
+    if (autoCompactLimit === undefined) {
+        write.codexAutoCompactLimit = LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT;
+    }
+    return { clear: [], write };
 }
 
 function detectEol(text: string): string {

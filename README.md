@@ -26,7 +26,7 @@ otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts t
 ---
 
 > [!IMPORTANT]
-> **Context optimization is enabled by default for both Claude Code and Codex CLI.** Claude Code defaults to a 200k effective auto-compaction window with a 92% trigger (about 184k tokens); Codex defaults to a 272k context window with auto-compaction at 250k. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter fully custom values, or turn that provider off. Turning Claude optimization off restores the values that existed before otak-usage took ownership.
+> **Context optimization is enabled by default for both Claude Code and Codex CLI.** Both providers default to a 200k window: Claude Code to a 200k effective auto-compaction window with a 92% trigger (about 184k tokens), Codex to a 200k context window with auto-compaction at 184k. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter fully custom values, or turn that provider off. Turning Claude optimization off restores the values that existed before otak-usage took ownership.
 
 AI coding tools leave useful token-count metadata in local session logs, but comparing day-to-day usage across providers usually means opening separate files or tools. **otak-usage turns those logs into one status-bar readout**: today or month-to-date, combined or per provider/model, with configurable alerts and optional metric export when you want dashboards.
 
@@ -78,7 +78,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
-- **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a 272k context window with auto-compaction at 250k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
+- **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a matching 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
 - **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts.
@@ -195,8 +195,8 @@ from the command palette.
 | `otakUsage.claudeContextWindow` | `200000` | Effective auto-compaction window written to `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. The Custom flow accepts any positive integer; Claude caps it at the active model's actual context window. |
 | `otakUsage.claudeAutoCompactPercent` | `92` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default produces an effective trigger near 184k tokens. |
 | `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove those two keys. While off, the file is left untouched. |
-| `otakUsage.codexContextWindow` | `272000` | Value written for `model_context_window` when the optimization is on. The default matches OpenAI's long-context pricing threshold. The Optimize picker can set this to the 200k or 272k preset, or a custom positive integer. |
-| `otakUsage.codexAutoCompactLimit` | `250000` | Value written for `model_auto_compact_token_limit` when the optimization is on. The Optimize picker pairs 200k with 184k and 272k with 250k; custom values must remain below the context window. |
+| `otakUsage.codexContextWindow` | `200000` | Value written for `model_context_window` when the optimization is on. The default matches the Claude Code side. The Optimize picker can set this to the 200k or 272k preset — 272k being OpenAI's long-context pricing threshold, the largest window still billed at the standard rate — or a custom positive integer. |
+| `otakUsage.codexAutoCompactLimit` | `184000` | Value written for `model_auto_compact_token_limit` when the optimization is on. The Optimize picker pairs 200k with 184k and 272k with 250k; custom values must remain below the context window. |
 | `otakUsage.telemetry.enabled` | `false` | Send usage telemetry to an OpenTelemetry OTLP/HTTP endpoint. Off by default. |
 | `otakUsage.telemetry.includeTokenUsage` | `true` | Include per-model token usage (`gen_ai.client.token.usage`) in telemetry. |
 | `otakUsage.telemetry.includeCost` | `true` | Include per-model USD cost (`otak_usage.cost.usd`) in telemetry. |
@@ -213,7 +213,9 @@ Both providers are optimized immediately after installation unless you turn them
 | Provider | Default | Config written |
 | --- | --- | --- |
 | Claude Code | 200k window × 92% = about 184k auto-compact trigger | `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `~/.claude/settings.json` (or the configured `$CLAUDE_CONFIG_DIR`) |
-| Codex CLI | 272k context, compact at 250k | `model_context_window` and `model_auto_compact_token_limit` in `~/.codex/config.toml` (or the configured `$CODEX_HOME`) |
+| Codex CLI | 200k context, compact at 184k | `model_context_window` and `model_auto_compact_token_limit` in `~/.codex/config.toml` (or the configured `$CODEX_HOME`) |
+
+Codex previously defaulted to 272k / 250k. Upgrading moves an installation to the aligned 200k default once: if your Codex values still read as that old default, they are cleared so the new default applies; anything you chose yourself is kept exactly as it was. Pick the **272k** preset again from the Optimize picker if you want the larger window back.
 
 Open the status-bar tooltip and click **Optimize**. The command palette first asks for **Claude Code** or **Codex CLI**, then offers:
 
