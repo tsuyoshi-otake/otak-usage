@@ -78,7 +78,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
-- **Fast-mode warning**: when Claude Code or Codex CLI fast mode turns on, a notification warns that usage is billed at premium fast-mode rates — and dismisses itself after 7 seconds. See [Fast-mode detection](#fast-mode-detection).
+- **Fast-mode warning**: when Claude Code or Codex CLI fast mode turns on, the same warning notification the cost and limit alerts use points out that usage is billed at premium fast-mode rates. See [Fast-mode detection](#fast-mode-detection).
 - **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a matching 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
@@ -176,7 +176,7 @@ from the command palette.
 
 ## Fast-Mode Detection
 
-Both CLIs offer a fast mode that bills at **premium per-token rates**. otak-usage watches for it and warns with a small notification that **dismisses itself after 7 seconds** — no click required:
+Both CLIs offer a fast mode that bills at **premium per-token rates**. otak-usage watches for it and warns with the same notification the cost and limit alerts use — **Open Settings** and **Not Today** buttons included, so one click silences it for the rest of the day:
 
 - **Claude Code**: fast mode leaves no config flag to read, but every fast response is marked in the session transcripts (`usage.speed: "fast"`, tracked as `<model>-fast` and priced at the fast rates). The warning therefore fires on the first fast-billed response of a day.
 - **Codex CLI**: fast mode is declared as `fast_mode = true` under `[features]` in `~/.codex/config.toml`, so the warning fires as soon as the flag appears — before any tokens are spent.

@@ -36,8 +36,6 @@ const CODEX_CONTEXT_DEFAULT_MIGRATED_KEY = 'otakUsage.codexContextDefaultMigrate
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 const CLAUDE_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.claudeFastOptimizeMigrated';
 const CODEX_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.codexFastOptimizeMigrated';
-/** How long the self-dismissing fast-mode warning stays on screen. */
-const FAST_MODE_NOTIFICATION_MS = 7000;
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -1288,7 +1286,8 @@ class UsageController implements vscode.Disposable {
 
     /**
      * Detect fast mode per provider and warn on every off → on transition with
-     * a notification that dismisses itself. Claude Code keeps no config flag
+     * the same notification the cost and limit alerts use, "Not Today" button
+     * included. Claude Code keeps no config flag
      * this extension could read — fast mode surfaces as "<model>-fast" usage in
      * today's scan buckets, so its warning fires on the first fast-billed
      * response of a day. Codex CLI declares `fast_mode` in config.toml, so its
@@ -1318,7 +1317,9 @@ class UsageController implements vscode.Disposable {
                 if (migrated) {
                     message += ` ${this.i18n.t('alert.fastModeOptimized')}`;
                 }
-                this.showTransientWarning(message);
+                void this.showAlertNotification(message, 'otakUsage.alertMode').catch((err) => {
+                    console.error('otak-usage: could not show the fast mode alert', err);
+                });
             }
             if (!previous || previous.claude !== current.claude || previous.codex !== current.codex) {
                 await this.context.globalState.update(FAST_MODE_STATE_KEY, current);
@@ -1376,18 +1377,6 @@ class UsageController implements vscode.Disposable {
         await this.context.globalState.update(flagKey, true);
         void this.renderAndCheckAlert();
         return true;
-    }
-
-    /**
-     * A warning the user does not have to dismiss. VS Code cannot time out
-     * showWarningMessage, so this rides a progress notification that resolves
-     * itself after FAST_MODE_NOTIFICATION_MS.
-     */
-    private showTransientWarning(message: string): void {
-        void vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: message, cancellable: false },
-            () => new Promise<void>((resolve) => setTimeout(resolve, FAST_MODE_NOTIFICATION_MS)),
-        );
     }
 
     /**
