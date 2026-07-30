@@ -2,6 +2,15 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.18.0] - 2026-07-30
+
+### Added
+
+- otak-usage now detects fast mode for both providers and warns with a notification that dismisses itself after 7 seconds.
+  - **Claude Code** keeps no config flag this extension could read, but fast-mode responses are marked in the transcripts (`usage.speed === "fast"`), so the warning fires on the first fast-billed response of a day. **Codex CLI** declares `fast_mode = true` under `[features]` in `config.toml`, so its warning fires as soon as the flag appears.
+  - The warning fires once per off → on transition (for Claude, at most once per day of fast usage), only from the leader window, and respects both `otakUsage.alertMode: "off"` and **Not Today**.
+- The first time fast mode is seen while that provider's context optimization is turned off, the optimization is re-enabled once. Fast mode bills at premium per-token rates, so a compact, auto-compacted context saves the most exactly there. The migration runs exactly once per provider: turning the optimization off again afterwards is final, and a settings write VS Code refuses is retried on the next detection instead of leaving the migration half-done.
+
 ## [1.17.0] - 2026-07-29
 
 ### Changed
