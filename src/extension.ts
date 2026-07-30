@@ -9,6 +9,7 @@ import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { ScanTargets, scanAll } from './engine';
+import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
 import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from './coordination/alertSnooze';
 import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
@@ -32,6 +33,11 @@ const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 const CODEX_CONTEXT_DEFAULT_MIGRATED_KEY = 'otakUsage.codexContextDefaultMigrated';
+const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
+const CLAUDE_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.claudeFastOptimizeMigrated';
+const CODEX_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.codexFastOptimizeMigrated';
+/** How long the self-dismissing fast-mode warning stays on screen. */
+const FAST_MODE_NOTIFICATION_MS = 7000;
 
 interface ResolvedTargets extends ScanTargets {
     claudeAvailable: boolean;
@@ -886,6 +892,7 @@ class UsageController implements vscode.Disposable {
             await this.saveCache();
         }
         await this.renderAndCheckAlert();
+        await this.checkFastMode(now);
         void this.refreshRtkStats(dayKey(now));
         void this.refreshLimits(now);
         void this.exportTelemetry(now);
@@ -1277,6 +1284,110 @@ class UsageController implements vscode.Disposable {
             await this.setAlertSnooze(snoozeUntilEndOfDay(Date.now()));
             vscode.window.setStatusBarMessage(this.i18n.t('message.alertsSnoozed'), 5000);
         }
+    }
+
+    /**
+     * Detect fast mode per provider and warn on every off → on transition with
+     * a notification that dismisses itself. Claude Code keeps no config flag
+     * this extension could read — fast mode surfaces as "<model>-fast" usage in
+     * today's scan buckets, so its warning fires on the first fast-billed
+     * response of a day. Codex CLI declares `fast_mode` in config.toml, so its
+     * warning fires as soon as the flag appears. Leader-only (called from the
+     * leader tick): one notification per machine, like every other alert.
+     */
+    private async checkFastMode(now: number): Promise<void> {
+        try {
+            const codexConfig = await readOptionalTextFile(path.join(this.codexHomeDir(), 'config.toml'));
+            const current: FastModeState = {
+                claude: claudeFastActive(this.cache.days, dayKey(now)),
+                codex: codexFastModeEnabled(codexConfig ?? ''),
+            };
+            const rawPrevious = this.context.globalState.get<unknown>(FAST_MODE_STATE_KEY);
+            const previous = isValidFastModeState(rawPrevious) ? rawPrevious : undefined;
+            for (const provider of newlyActiveFastProviders(current, previous)) {
+                // The migration is not an alert, so it runs even while alerts
+                // are snoozed or off — only the popup respects those.
+                const migrated = await this.migrateFastModeOptimize(provider);
+                const mode = normalizeAlertMode(this.config().get<unknown>('alertMode'));
+                if (mode === 'off' || await this.alertsSnoozed(now)) {
+                    continue;
+                }
+                let message = this.i18n.t('alert.fastModeDetected', {
+                    provider: provider === 'claude' ? 'Claude Code' : 'Codex CLI',
+                });
+                if (migrated) {
+                    message += ` ${this.i18n.t('alert.fastModeOptimized')}`;
+                }
+                this.showTransientWarning(message);
+            }
+            if (!previous || previous.claude !== current.claude || previous.codex !== current.codex) {
+                await this.context.globalState.update(FAST_MODE_STATE_KEY, current);
+            }
+        } catch (err) {
+            console.error('otak-usage: fast mode check failed', err);
+        }
+    }
+
+    /**
+     * One-time per provider: the first time fast mode is seen while that
+     * provider's context optimization is turned off, turn it back on. Fast
+     * mode bills at premium per-token rates, so a compact context is worth
+     * more than the earlier opt-out. It runs exactly once — turning the
+     * optimization off again afterwards is final. A failed write leaves the
+     * flag unset, so the next detection retries instead of half-migrating.
+     * Returns whether the optimization was actually (re-)enabled.
+     */
+    private async migrateFastModeOptimize(provider: Provider): Promise<boolean> {
+        const flagKey = provider === 'claude' ? CLAUDE_FAST_OPTIMIZE_MIGRATED_KEY : CODEX_FAST_OPTIMIZE_MIGRATED_KEY;
+        if (this.context.globalState.get<boolean>(flagKey, false)) {
+            return false;
+        }
+        const settingKey = provider === 'claude' ? 'optimizeClaudeContext' : 'optimizeCodexContext';
+        const config = this.config();
+        if (config.get<boolean>(settingKey, true)) {
+            // Already optimized — nothing to migrate; record that so a later
+            // opt-out is never overridden.
+            await this.context.globalState.update(flagKey, true);
+            return false;
+        }
+        if (provider === 'claude') {
+            this.updatingClaudeOptimizeConfiguration = true;
+        } else {
+            this.updatingCodexOptimizeConfiguration = true;
+        }
+        try {
+            await config.update(settingKey, true, vscode.ConfigurationTarget.Global);
+        } catch (err) {
+            console.error(`otak-usage: could not migrate ${provider} context optimization for fast mode`, err);
+            return false;
+        } finally {
+            if (provider === 'claude') {
+                this.updatingClaudeOptimizeConfiguration = false;
+            } else {
+                this.updatingCodexOptimizeConfiguration = false;
+            }
+        }
+        const applied = provider === 'claude'
+            ? await this.syncClaudeOptimize(false)
+            : await this.syncCodexOptimize(false);
+        if (!applied) {
+            return false;
+        }
+        await this.context.globalState.update(flagKey, true);
+        void this.renderAndCheckAlert();
+        return true;
+    }
+
+    /**
+     * A warning the user does not have to dismiss. VS Code cannot time out
+     * showWarningMessage, so this rides a progress notification that resolves
+     * itself after FAST_MODE_NOTIFICATION_MS.
+     */
+    private showTransientWarning(message: string): void {
+        void vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: message, cancellable: false },
+            () => new Promise<void>((resolve) => setTimeout(resolve, FAST_MODE_NOTIFICATION_MS)),
+        );
     }
 
     /**
