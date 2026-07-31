@@ -743,6 +743,20 @@ suite('i18n', () => {
         }
     });
 
+    test('every locale names the host it is not reading', () => {
+        for (const locale of SUPPORTED_LOCALES) {
+            const i18n = new I18n(locale);
+            for (const key of ['action.installOnRemote', 'alert.scanningLocalHost', 'tooltip.scanningLocalHost'] as const) {
+                const text = i18n.t(key, { remote: 'GitHub Codespaces' });
+                assert.ok(text.includes('GitHub Codespaces'), `${locale}: ${key}`);
+                assert.ok(!text.includes('{remote}'), `${locale}: ${key}`);
+                if (locale !== 'en') {
+                    assert.notStrictEqual(text, new I18n('en').t(key, { remote: 'GitHub Codespaces' }), `${locale} fell back to English: ${key}`);
+                }
+            }
+        }
+    });
+
     test('every locale names the snooze action and its confirmations', () => {
         for (const locale of SUPPORTED_LOCALES) {
             const i18n = new I18n(locale);
@@ -993,6 +1007,38 @@ suite('formatter', () => {
         assert.ok(md.includes(`openSettings?${encodeURIComponent(JSON.stringify(['otakUsage']))}`));
         assert.ok(md.includes('(command:otak-usage.configureCodexOptimization'));
         assert.ok(md.includes('Optimize'));
+    });
+
+    test('tooltip leads with the host warning when the window reads another machine', () => {
+        const view = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const warning = 'Reading this machine — usage on GitHub Codespaces is not counted.';
+        const render = (hostWarning?: string) => tooltipMarkdown(
+            view, { ...view, show: false }, noRtk, 'today', new Date(2026, 5, 10, 9, 5),
+            new I18n('en'), undefined, undefined, hostWarning,
+        );
+        const warned = render(warning);
+        assert.ok(warned.includes(`$(warning) _${warning}_`));
+        // Which machine the numbers describe outranks the numbers themselves:
+        // the caveat sits under the title, above everything it qualifies.
+        assert.ok(warned.indexOf('otak-usage — API-equivalent cost') < warned.indexOf('$(warning)'));
+        assert.ok(warned.indexOf('$(warning)') < warned.indexOf('Period:'));
+        assert.ok(!render().includes('$(warning)'));
+    });
+
+    test('the copied summary carries the host warning where the tooltip cannot follow it', () => {
+        const view = {
+            summary: { provider: 'claude' as const, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [] },
+            available: true,
+            show: true,
+        };
+        const now = new Date(2026, 5, 10, 9, 5);
+        const note = 'Reading this machine — usage on GitHub Codespaces is not counted.';
+        assert.ok(clipboardText(view, view, noRtk, now, note).split('\n')[1].includes(note));
+        assert.ok(!clipboardText(view, view, noRtk, now).includes('GitHub Codespaces'));
     });
 
     test('tooltip shows the active Optimize token pair', () => {
