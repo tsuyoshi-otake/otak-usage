@@ -82,7 +82,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a matching 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
-- **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts.
+- **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts — and it says so when it ends up on the local side instead. See [Codespaces, Dev Containers and other remotes](#codespaces-dev-containers-and-other-remotes).
 - **Localized interface**: commands, settings, notifications, and status messages follow your VS Code display language.
 
 ## How It Works
@@ -146,6 +146,114 @@ it always did.
   is handed over at once; kill it and another window picks the work up within
   the lease. **Refresh Usage** always takes over on the spot, so the window you
   are working in is the one that rescans.
+
+## Codespaces, Dev Containers and Other Remotes
+
+`extensionKind` is `["workspace", "ui"]` with `workspace` first, so in a
+Codespace, Dev Container, WSL or SSH remote VS Code installs otak-usage on the
+**remote** side — the machine the CLIs actually run on, whose `~/.claude` and
+`~/.codex` are the logs worth reading. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are
+respected there like anywhere else.
+
+### When it lands on the wrong side
+
+An installation that exists only locally falls back to the `ui` kind, and then
+the status bar describes your **local** `~/.claude` while you work inside the
+remote — the same numbers, silently about the wrong computer. VS Code publishes
+exactly the two signals needed to catch that: `env.remoteName` is defined in
+every extension host, local and remote alike, once a remote one exists, and
+`Extension.extensionKind` says which side this instance runs on. So otak-usage
+names the problem instead of reporting the wrong machine:
+
+- the tooltip and the copied summary carry a line naming the host being read;
+- a notification states it once per remote kind, with a button that installs the
+  extension on the remote.
+
+Dismiss the notification and it does not come back. The tooltip line stays for
+as long as the situation does.
+
+### Installing it once instead of once per codespace
+
+An extension cannot install itself into a remote, but the manual step is
+avoidable:
+
+- **Per repository** — list it in `devcontainer.json` and every codespace
+  created from that repo gets it unasked:
+
+  ```jsonc
+  {
+    "customizations": {
+      "vscode": {
+        "extensions": ["odangoo.otak-usage"]
+      }
+    }
+  }
+  ```
+
+  Existing codespaces pick this up after **Codespaces: Rebuild Container**.
+
+- **Per remote kind, for the remotes that offer it** — `dev.containers.defaultExtensions`
+  covers Dev Containers you build locally and `remote.SSH.defaultExtensions`
+  covers SSH hosts. Neither applies to codespaces.
+
+There is no per-account equivalent for Codespaces, and
+[Settings Sync](https://code.visualstudio.com/docs/configure/settings-sync) is
+not one: it "does not synchronize your extensions to or from a remote window,
+such as when you're connected to SSH, a development container (devcontainer), or
+WSL". So for a repository whose `devcontainer.json` you cannot edit, installing
+it stays a deliberate act — which is what the notification's button is for.
+
+### Usage belongs to the host that produced it
+
+otak-usage reads local log files and does not aggregate across machines, so what
+a codespace shows is that codespace's usage:
+
+- disconnect, and your local window is back to local numbers — the codespace's
+  totals are not merged in;
+- reconnect to the same codespace and they are there again;
+- **rebuild the container or delete the codespace and they are gone**, because
+  `~/.claude` and `~/.codex` live outside `/workspaces`, which is the only thing
+  a rebuild preserves.
+
+Claude Code's rate-limit percentages are the exception. They come from the same
+account-level Anthropic endpoint the CLI's `/usage` command uses, so they read
+the same from any host. Codex rate limits are parsed out of its session logs and
+follow the host, exactly like the costs do.
+
+### Keeping `~/.claude` across rebuilds
+
+Session history — and the context-optimization values otak-usage writes into
+`~/.claude/settings.json` and `~/.codex/config.toml` — are discarded when the
+container is rebuilt. Named volumes keep both:
+
+```jsonc
+{
+  "mounts": [
+    "source=claude-home,target=/home/vscode/.claude,type=volume",
+    "source=codex-home,target=/home/vscode/.codex,type=volume"
+  ],
+  // A fresh named volume is owned by root, which would leave the CLIs unable to
+  // write to their own directories.
+  "postCreateCommand": "sudo chown -R $(id -u):$(id -g) ~/.claude ~/.codex"
+}
+```
+
+Replace `/home/vscode` with your image's remote user home. The volumes outlive
+rebuilds of the container, though not deletion of the codespace itself.
+
+### Pinning it to the local machine
+
+To watch your local usage *while* working in a remote, force the UI kind in your
+**local** user settings:
+
+```json
+"remote.extensionKind": { "odangoo.otak-usage": ["ui"] }
+```
+
+This is the arrangement the warning above describes, so it is worth choosing
+deliberately rather than arriving at by accident. Note that costs then cover
+only what you run locally, while Claude Code's rate-limit percentages remain
+account-wide and stay accurate either way.
 
 ## Commands
 
@@ -353,6 +461,8 @@ Reload VS Code after installing the VSIX.
 
 - **The status bar does not show usage**: confirm Claude Code or Codex CLI has created local session logs on the same machine or remote host where the VS Code extension host is running.
 - **One provider is missing**: check `otakUsage.claudeConfigDir` or `otakUsage.codexHome` if your logs are outside the default locations.
+- **The numbers describe the wrong machine**: in a Codespace, Dev Container or SSH remote, the tooltip names the host it is reading whenever that is not the remote you are attached to. Install the extension on the remote side — see [Codespaces, Dev Containers and other remotes](#codespaces-dev-containers-and-other-remotes).
+- **Usage from a codespace disappeared**: it is read from `~/.claude` and `~/.codex` inside that container, so it is not merged into a local window and does not survive a container rebuild unless those directories are on named volumes.
 - **A model shows `n/a` cost**: add an entry to `otakUsage.pricingOverrides` for that model.
 - **Rate limits are not showing**: Codex limits appear after the first Codex turn on this machine (they come from session logs). Claude limits require `~/.claude/.credentials.json` with a valid OAuth token — on macOS Claude Code keeps credentials in the Keychain, so Claude limits are unavailable there. Also confirm `otakUsage.showRateLimits` is enabled and reload the window after installing an update.
 - **RTK savings are absent**: install `rtk`, put it on `PATH`, or set `otakUsage.rtkPath`.

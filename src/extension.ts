@@ -16,6 +16,7 @@ import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
 import { SNAPSHOT_VERSION, SharedSnapshot, readSharedSnapshot, writeSharedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
+import { unscannedRemoteLabel } from './remoteHost';
 import { I18n } from './i18n';
 import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits, recentCodexFiles } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
@@ -34,6 +35,10 @@ const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 const CODEX_CONTEXT_DEFAULT_MIGRATED_KEY = 'otakUsage.codexContextDefaultMigrated';
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
+/** Remote kinds already told about, so the placement hint is stated once each. */
+const REMOTE_HOST_HINT_KEY = 'otakUsage.remoteHostHintShown';
+/** Marketplace id, used to install this extension on the remote side. */
+const EXTENSION_ID = 'odangoo.otak-usage';
 const CLAUDE_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.claudeFastOptimizeMigrated';
 const CODEX_FAST_OPTIMIZE_MIGRATED_KEY = 'otakUsage.codexFastOptimizeMigrated';
 
@@ -102,6 +107,15 @@ class UsageController implements vscode.Disposable {
     private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private codexOptimizeSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
+    /**
+     * Name of the remote this window is attached to while the extension itself
+     * runs locally — undefined whenever the logs being read are the ones the
+     * user is actually producing. See remoteHost.ts.
+     */
+    private readonly unscannedRemote = unscannedRemoteLabel({
+        remoteName: vscode.env.remoteName,
+        local: vscode.extensions.getExtension(EXTENSION_ID)?.extensionKind === vscode.ExtensionKind.UI,
+    });
     /**
      * Settings this extension writes itself. Goes through a store so a write
      * VS Code refuses — the window still shows a status-bar item whose
@@ -184,7 +198,64 @@ class UsageController implements vscode.Disposable {
             vscode.window.onDidChangeActiveColorTheme(() => this.render()),
         );
         void this.startCoordination();
+        void this.warnAboutUnscannedRemote();
         this.restartTimer();
+    }
+
+    /**
+     * Say once that this window is counting the local machine rather than the
+     * remote it is attached to. The condition is permanent — it holds until the
+     * extension is installed on the remote side — so repeating it every
+     * activation would be nagging about something the user has already decided;
+     * the tooltip carries it from then on.
+     *
+     * Deliberately not routed through `showAlertNotification`: `alertMode` and
+     * the snooze govern *usage* alerts, and a window reading the wrong host is
+     * a setup problem that silencing today's cost alerts should not hide.
+     */
+    private async warnAboutUnscannedRemote(): Promise<void> {
+        const remote = this.unscannedRemote;
+        if (!remote) {
+            return;
+        }
+        try {
+            const raw = this.context.globalState.get<unknown>(REMOTE_HOST_HINT_KEY);
+            const shown = Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : [];
+            if (shown.includes(remote)) {
+                return;
+            }
+            // Recorded before the popup, not after: a notification the user
+            // waves away without answering has still been said.
+            await this.context.globalState.update(REMOTE_HOST_HINT_KEY, [...shown, remote]);
+            const install = this.i18n.t('action.installOnRemote', { remote });
+            const selected = await vscode.window.showWarningMessage(this.i18n.t('alert.scanningLocalHost', { remote }), install);
+            if (selected === install) {
+                await this.installOnRemote();
+            }
+        } catch (err) {
+            console.error('otak-usage: could not report the extension host placement', err);
+        }
+    }
+
+    /**
+     * VS Code installs an extension on whichever side its `extensionKind`
+     * prefers, and otak-usage prefers `workspace` — so in a remote window this
+     * lands it on the remote. `installExtension` is not part of the documented
+     * command set, so a failure falls back to opening the extension's page,
+     * where the same install button lives.
+     */
+    private async installOnRemote(): Promise<void> {
+        try {
+            await vscode.commands.executeCommand('workbench.extensions.installExtension', EXTENSION_ID);
+            return;
+        } catch (err) {
+            console.error('otak-usage: could not install on the remote', err);
+        }
+        try {
+            await vscode.commands.executeCommand('extension.open', EXTENSION_ID);
+        } catch (err) {
+            console.error('otak-usage: could not open the extension page', err);
+        }
     }
 
     dispose(): void {
@@ -256,6 +327,17 @@ class UsageController implements vscode.Disposable {
 
     private config(): vscode.WorkspaceConfiguration {
         return vscode.workspace.getConfiguration('otakUsage');
+    }
+
+    /**
+     * The caveat that belongs on every rendering of these numbers while the
+     * window reads a different machine than the user is working on; undefined
+     * when it reads the right one.
+     */
+    private hostWarning(): string | undefined {
+        return this.unscannedRemote === undefined
+            ? undefined
+            : this.i18n.t('tooltip.scanningLocalHost', { remote: this.unscannedRemote });
     }
 
     private period(): Period {
@@ -1157,6 +1239,7 @@ class UsageController implements vscode.Disposable {
                     ...codexOptimizeValues,
                 },
             },
+            this.hostWarning(),
         ));
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider icons use inline data-URI images
@@ -1424,7 +1507,7 @@ class UsageController implements vscode.Disposable {
         if (!this.lastViews) {
             return;
         }
-        await vscode.env.clipboard.writeText(clipboardText(this.lastViews.claude, this.lastViews.codex, this.lastViews.rtk, new Date()));
+        await vscode.env.clipboard.writeText(clipboardText(this.lastViews.claude, this.lastViews.codex, this.lastViews.rtk, new Date(), this.hostWarning()));
         vscode.window.setStatusBarMessage(this.i18n.t('message.summaryCopied'), 3000);
     }
 

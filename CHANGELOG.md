@@ -2,6 +2,23 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.19.0] - 2026-07-31
+
+### Added
+
+- otak-usage now says when it is reading a different machine than the one you are working on. (#30)
+  - `extensionKind` prefers `workspace`, so a Codespace, Dev Container, WSL or SSH remote normally gets the extension on the remote side, next to the CLIs. An installation that exists only locally falls back to the `ui` kind instead — and then the status bar described the local `~/.claude` while the user worked inside the remote, with nothing saying so.
+  - Detection uses the pair of signals VS Code documents for exactly this: `env.remoteName` is defined in every extension host once a remote one exists, and `Extension.extensionKind` says which side this instance is on. Neither is sufficient alone — running as a UI extension is the ordinary case in a window with no remote at all.
+  - The tooltip leads with the caveat, above the numbers it qualifies, and the copied summary carries it too, since a summary gets pasted where the tooltip cannot follow it. A notification states it once per remote kind, with a button that installs the extension on the remote. It is recorded as said before the popup opens, so one waved away without an answer does not come back.
+  - Deliberately not routed through the alert path: `otakUsage.alertMode` and **Not Today** govern usage alerts, and a window reading the wrong host is a setup problem that silencing today's cost alerts should not hide.
+
+### Documentation
+
+- New README section on Codespaces, Dev Containers and other remotes. (#30)
+  - How to install it once per repository through `customizations.vscode.extensions` in `devcontainer.json` instead of by hand in every new codespace, and that Codespaces has no per-account equivalent: `dev.containers.defaultExtensions` and `remote.SSH.defaultExtensions` cover only their own remote kinds, and Settings Sync explicitly does not synchronize extensions to or from a remote window.
+  - That usage belongs to the host that produced it: a codespace's totals are not merged into a local window, come back on reconnect, and are lost on a container rebuild. Claude Code's rate-limit percentages are the exception, coming from the account-level Anthropic endpoint rather than from logs.
+  - How to keep `~/.claude` and `~/.codex` across rebuilds with named volumes, including the `chown` a fresh root-owned volume needs, and how to pin the extension to the local machine with `remote.extensionKind` when local numbers are what you actually want.
+
 ## [1.18.0] - 2026-07-30
 
 ### Added

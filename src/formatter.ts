@@ -168,8 +168,13 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: ContextOptimizeView): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: ContextOptimizeView, hostWarning?: string): string {
     const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
+    // Which machine these numbers describe outranks the numbers themselves, so
+    // it sits directly under the title rather than in the footer.
+    if (hostWarning) {
+        parts.push(`$(warning) _${hostWarning}_\n`);
+    }
     const combined = combinedCostSection(claude, codex, i18n);
     if (combined) {
         parts.push(combined);
@@ -207,9 +212,17 @@ function combinedCostSection(claude: ProviderView, codex: ProviderView, i18n: I1
     return `**${i18n.t('tooltip.combinedTotal')}: ${formatCost(today)} / ${formatCost(month)}**\n`;
 }
 
-/** Plain-text summary written to the clipboard by the Copy Summary link. */
-export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: RtkView, now: Date): string {
+/**
+ * Plain-text summary written to the clipboard by the Copy Summary link.
+ * `hostNote` carries the same caveat the tooltip shows when the window is
+ * reading a different machine than the one the user is working on — a summary
+ * gets pasted somewhere the tooltip cannot follow it.
+ */
+export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: RtkView, now: Date, hostNote?: string): string {
     const lines: string[] = [`otak-usage ${now.toISOString().slice(0, 16).replace('T', ' ')} (API-equivalent cost, USD)`];
+    if (hostNote) {
+        lines.push(`! ${hostNote}`);
+    }
     for (const [title, view] of [['Claude Code', claude], ['Codex CLI', codex]] as const) {
         if (!view.show) {
             continue;
