@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.2] - 2026-08-01
+
+### Fixed
+
+- Tooltip hook toggles now acknowledge every click outside the hover with explicit updating, enabled/disabled, unsaved, and sync-failure feedback. Rapid clicks are serialized to the intended final state, and command-initiated configuration events no longer start a duplicate silent hook sync. (#32)
+- JSONL session reads now wait for the underlying file handle to close before completing, preventing intermittent Windows cleanup failures. (#33)
+
 ## [1.21.1] - 2026-08-01
 
 ### Fixed

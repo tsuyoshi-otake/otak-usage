@@ -10,6 +10,7 @@ import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_C
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { applyCodexModelFeaturesToml } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
+import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
 import { ScanTargets, scanAll } from './engine';
 import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
@@ -68,6 +69,8 @@ interface ClaudeOptimizeOwnership {
     backup: ClaudeOptimizeBackup;
 }
 
+type HookFeatureSettingKey = 'includeRepositoryNameInHistory' | 'enableHookSounds';
+
 class UsageController implements vscode.Disposable {
     private readonly statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     private timer: NodeJS.Timeout | undefined;
@@ -106,6 +109,11 @@ class UsageController implements vscode.Disposable {
     private snoozeUntilMs = 0;
     private updatingClaudeOptimizeConfiguration = false;
     private updatingCodexOptimizeConfiguration = false;
+    private updatingHookFeatureConfiguration = false;
+    /** User clicks are serialized and retain their intended parity while queued. */
+    private readonly hookToggleQueue = new HookToggleQueue<HookFeatureSettingKey>();
+    /** Only the newest click may replace its immediate progress message. */
+    private latestHookFeedbackRevision = 0;
     /** Claude settings.json is shared by context optimization and hooks. */
     private claudeConfigSyncQueue: Promise<void> = Promise.resolve();
     /** All Codex config.toml rewrites share one queue so transforms cannot race. */
@@ -197,7 +205,10 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.enableHookSounds') ||
                     e.affectsConfiguration('otakUsage.claudeConfigDir') ||
                     e.affectsConfiguration('otakUsage.codexHome')) {
-                    if (this.leader) {
+                    // An explicit toggle owns its reconciliation and feedback.
+                    // Skipping its echo event prevents a silent first sync from
+                    // consuming the change before the command can acknowledge it.
+                    if (!this.updatingHookFeatureConfiguration && this.leader) {
                         void this.syncHookFeatures();
                     }
                 }
@@ -872,8 +883,8 @@ class UsageController implements vscode.Disposable {
     }
 
     /** Serialize hooks with Claude's settings.json context-optimization writes. */
-    private syncHookFeatures(showStatus = false): Promise<boolean> {
-        const task = this.claudeConfigSyncQueue.then(() => this.performHookFeaturesSync(showStatus));
+    private syncHookFeatures(): Promise<boolean> {
+        const task = this.claudeConfigSyncQueue.then(() => this.performHookFeaturesSync());
         this.claudeConfigSyncQueue = task.then(() => undefined, () => undefined);
         return task;
     }
@@ -884,6 +895,15 @@ class UsageController implements vscode.Disposable {
             // rejection still updates the tooltip and generated hook files.
             repositoryName: this.settings.get<boolean>('includeRepositoryNameInHistory', false),
             sounds: this.settings.get<boolean>('enableHookSounds', false),
+        };
+    }
+
+    /** The next tooltip shows the latest click even while its write is queued. */
+    private hookFeatureViewSettings(): HookFeatureSettings {
+        const current = this.hookFeatureSettings();
+        return {
+            repositoryName: this.hookToggleQueue.value('includeRepositoryNameInHistory', current.repositoryName),
+            sounds: this.hookToggleQueue.value('enableHookSounds', current.sounds),
         };
     }
 
@@ -903,7 +923,7 @@ class UsageController implements vscode.Disposable {
         return target;
     }
 
-    private async performHookFeaturesSync(showStatus: boolean): Promise<boolean> {
+    private async performHookFeaturesSync(): Promise<boolean> {
         const settings = this.hookFeatureSettings();
         try {
             const runnerPath = settings.repositoryName || settings.sounds ? await this.installHookRunner() : this.hookRunnerPath();
@@ -911,50 +931,89 @@ class UsageController implements vscode.Disposable {
                 [path.join(this.claudeConfigDir(), 'settings.json'), 'claude'],
                 [path.join(this.codexHomeDir(), 'hooks.json'), 'codex'],
             ];
-            let changed = false;
             for (const [filePath, provider] of files) {
                 const current = await readOptionalTextFile(filePath);
                 if (current === undefined && !settings.repositoryName && !settings.sounds) {
                     continue;
                 }
                 const next = applyHookFeaturesJson(current ?? '', provider, runnerPath, settings);
-                changed = (await writeTransformedTextFile(filePath, current, next)) || changed;
-            }
-            if (changed && showStatus) {
-                vscode.window.setStatusBarMessage('otak-usage: updated optional conversation hooks', 4000);
+                await writeTransformedTextFile(filePath, current, next);
             }
             return true;
         } catch (err) {
             console.error('otak-usage: hook feature sync failed', err);
-            if (showStatus) {
-                void vscode.window.showErrorMessage('otak-usage: failed to update optional conversation hooks. See Developer Tools for details.');
-            }
             return false;
         }
     }
 
-    private async toggleRepositoryNameHook(): Promise<void> {
-        const enabled = this.settings.get<boolean>('includeRepositoryNameInHistory', false);
-        await this.settings.set('includeRepositoryNameInHistory', !enabled);
-        if (this.leader) {
-            await this.syncHookFeatures(true);
-        }
-        // Render even when the external hook file could not be rewritten so the
-        // setting remains an interactive toggle and the error is visible in the
-        // status message.
-        void this.renderAndCheckAlert();
+    private toggleRepositoryNameHook(): Promise<void> {
+        return this.toggleHookFeature('includeRepositoryNameInHistory', 'repository names');
     }
 
-    private async toggleHookSounds(): Promise<void> {
-        const enabled = this.settings.get<boolean>('enableHookSounds', false);
-        await this.settings.set('enableHookSounds', !enabled);
-        if (this.leader) {
-            await this.syncHookFeatures(true);
+    private toggleHookSounds(): Promise<void> {
+        return this.toggleHookFeature('enableHookSounds', 'hook sounds');
+    }
+
+    private toggleHookFeature(key: HookFeatureSettingKey, label: string): Promise<void> {
+        const request = this.hookToggleQueue.enqueue(
+            key,
+            this.settings.get<boolean>(key, false),
+            (queued) => this.applyHookFeatureToggle(queued, label),
+            () => this.render(),
+        );
+        this.latestHookFeedbackRevision = request.revision;
+
+        // Updating the backing Markdown only affects the next hover. This
+        // status message is the immediate acknowledgement for the current one.
+        this.render();
+        const progress = vscode.window.setStatusBarMessage(hookToggleProgressMessage(label, request.enabled));
+
+        return request.completion
+            .catch((err: unknown) => {
+                console.error(`otak-usage: ${label} toggle failed`, err);
+                if (request.revision === this.latestHookFeedbackRevision) {
+                    void vscode.window.showErrorMessage(`otak-usage: failed to update ${label}. See Developer Tools for details.`);
+                }
+            })
+            .finally(() => progress.dispose());
+    }
+
+    private async applyHookFeatureToggle(request: HookToggleRequest<HookFeatureSettingKey>, label: string): Promise<void> {
+        this.updatingHookFeatureConfiguration = true;
+        try {
+            const saved = await this.settings.set(request.key, request.enabled);
+
+            // Make the next hover accurate before the external files are touched.
+            this.render();
+            // A newer click on the same feature owns the terminal state and sync.
+            if (!this.hookToggleQueue.isLatest(request)) {
+                return;
+            }
+
+            const synced = this.leader ? await this.syncHookFeatures() : saved;
+            if (!this.hookToggleQueue.isLatest(request) || request.revision !== this.latestHookFeedbackRevision) {
+                return;
+            }
+
+            if (!saved) {
+                if (synced) {
+                    vscode.window.setStatusBarMessage(hookToggleUnsavedMessage(label, request.enabled), 5000);
+                } else {
+                    void vscode.window.showErrorMessage(
+                        `${hookToggleUnsavedMessage(label, request.enabled)}, and the optional hook files were not updated. Reload the window and try again.`,
+                    );
+                }
+                return;
+            }
+            if (!synced) {
+                void vscode.window.showErrorMessage(hookToggleSyncFailureMessage(label, request.enabled));
+                return;
+            }
+            // Confirm every successful click, including an idempotent file sync.
+            vscode.window.setStatusBarMessage(hookToggleSuccessMessage(label, request.enabled), 4000);
+        } finally {
+            this.updatingHookFeatureConfiguration = false;
         }
-        // Render even when the external hook file could not be rewritten so the
-        // setting remains an interactive toggle and the error is visible in the
-        // status message.
-        void this.renderAndCheckAlert();
     }
 
     private async performCodexOptimizeSync(showStatus: boolean): Promise<boolean> {
@@ -1373,7 +1432,7 @@ class UsageController implements vscode.Disposable {
                 },
             },
             this.hostWarning(),
-            this.hookFeatureSettings(),
+            this.hookFeatureViewSettings(),
         ));
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider icons use inline data-URI images

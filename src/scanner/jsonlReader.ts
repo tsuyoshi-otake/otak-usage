@@ -39,6 +39,8 @@ export function visitNewLines(filePath: string, offset: number, visit: (line: st
         let lineCount = 0;
         let settled = false;
         let aborted = false;
+        let result: VisitResult | undefined;
+        let failure: Error | undefined;
         const stream = fs.createReadStream(filePath, { start: offset });
         stream.on('data', (chunk) => {
             if (aborted) {
@@ -61,13 +63,28 @@ export function visitNewLines(filePath: string, offset: number, visit: (line: st
             }
         });
         stream.on('end', () => {
-            if (!settled) {
-                settled = true;
-                resolve({ newOffset: offset + totalRead - pendingLength, lineCount });
+            if (!failure) {
+                result = { newOffset: offset + totalRead - pendingLength, lineCount };
             }
         });
         stream.on('error', (err) => {
             fail(err);
+        });
+        // On Windows, `end` means all bytes were delivered but the underlying
+        // file descriptor can remain open until `close`. Settle only after that
+        // point so callers may safely rename or remove the session file.
+        stream.on('close', () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (failure) {
+                reject(failure);
+            } else if (result) {
+                resolve(result);
+            } else {
+                reject(new Error('JSONL stream closed before reaching end'));
+            }
         });
 
         function emitLine(fragment: Buffer): boolean {
@@ -93,13 +110,12 @@ export function visitNewLines(filePath: string, offset: number, visit: (line: st
         }
 
         function fail(err: unknown): void {
-            if (settled) {
+            if (settled || failure) {
                 return;
             }
-            settled = true;
+            failure = err instanceof Error ? err : new Error(String(err));
             aborted = true;
             stream.destroy();
-            reject(err instanceof Error ? err : new Error(String(err)));
         }
     });
 }

@@ -1,6 +1,7 @@
 .vscode/**
 .vscode-test/**
 .github/**
+.codex/**
 src/**
 out/test/**
 .gitignore
