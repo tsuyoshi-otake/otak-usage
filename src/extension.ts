@@ -9,6 +9,7 @@ import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { applyCodexModelFeaturesToml } from './codexModelFeatures';
+import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { ScanTargets, scanAll } from './engine';
 import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
@@ -105,7 +106,8 @@ class UsageController implements vscode.Disposable {
     private snoozeUntilMs = 0;
     private updatingClaudeOptimizeConfiguration = false;
     private updatingCodexOptimizeConfiguration = false;
-    private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
+    /** Claude settings.json is shared by context optimization and hooks. */
+    private claudeConfigSyncQueue: Promise<void> = Promise.resolve();
     /** All Codex config.toml rewrites share one queue so transforms cannot race. */
     private codexConfigSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
@@ -160,6 +162,8 @@ class UsageController implements vscode.Disposable {
             vscode.commands.registerCommand('otak-usage.refresh', () => this.refresh()),
             vscode.commands.registerCommand('otak-usage.copyUsage', () => this.copyUsage()),
             vscode.commands.registerCommand('otak-usage.configureCodexOptimization', () => this.configureContextOptimization()),
+            vscode.commands.registerCommand('otak-usage.toggleRepositoryNameHook', () => this.toggleRepositoryNameHook()),
+            vscode.commands.registerCommand('otak-usage.toggleHookSounds', () => this.toggleHookSounds()),
             vscode.commands.registerCommand('otak-usage.snoozeAlertsToday', () => this.toggleAlertSnooze()),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (e.affectsConfiguration('otakUsage')) {
@@ -187,6 +191,14 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.claudeConfigDir')) {
                     if (!this.updatingClaudeOptimizeConfiguration && this.leader) {
                         void this.syncClaudeOptimize();
+                    }
+                }
+                if (e.affectsConfiguration('otakUsage.includeRepositoryNameInHistory') ||
+                    e.affectsConfiguration('otakUsage.enableHookSounds') ||
+                    e.affectsConfiguration('otakUsage.claudeConfigDir') ||
+                    e.affectsConfiguration('otakUsage.codexHome')) {
+                    if (this.leader) {
+                        void this.syncHookFeatures();
                     }
                 }
             }),
@@ -736,8 +748,8 @@ class UsageController implements vscode.Disposable {
      * terminal state or leaves an ownership phase that the next sync can retry.
      */
     private syncClaudeOptimize(showStatus = true): Promise<boolean> {
-        const task = this.claudeOptimizeSyncQueue.then(() => this.performClaudeOptimizeSync(showStatus));
-        this.claudeOptimizeSyncQueue = task.then(() => undefined, () => undefined);
+        const task = this.claudeConfigSyncQueue.then(() => this.performClaudeOptimizeSync(showStatus));
+        this.claudeConfigSyncQueue = task.then(() => undefined, () => undefined);
         return task;
     }
 
@@ -859,6 +871,90 @@ class UsageController implements vscode.Disposable {
         return task;
     }
 
+    /** Serialize hooks with Claude's settings.json context-optimization writes. */
+    private syncHookFeatures(showStatus = false): Promise<boolean> {
+        const task = this.claudeConfigSyncQueue.then(() => this.performHookFeaturesSync(showStatus));
+        this.claudeConfigSyncQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private hookFeatureSettings(config = this.config()): HookFeatureSettings {
+        return {
+            repositoryName: config.get<boolean>('includeRepositoryNameInHistory', false),
+            sounds: config.get<boolean>('enableHookSounds', false),
+        };
+    }
+
+    private hookRunnerPath(): string {
+        return path.join(os.homedir(), '.otak-usage', 'hooks', HOOK_RUNNER_FILE);
+    }
+
+    private async installHookRunner(): Promise<string> {
+        const source = path.join(this.context.extensionPath, 'out', 'hookRunner.js');
+        const target = this.hookRunnerPath();
+        const runner = await fsp.readFile(source, 'utf8');
+        const current = await readOptionalTextFile(target);
+        if (current !== runner) {
+            await fsp.mkdir(path.dirname(target), { recursive: true });
+            await fsp.writeFile(target, runner, 'utf8');
+        }
+        return target;
+    }
+
+    private async performHookFeaturesSync(showStatus: boolean): Promise<boolean> {
+        const settings = this.hookFeatureSettings();
+        try {
+            const runnerPath = settings.repositoryName || settings.sounds ? await this.installHookRunner() : this.hookRunnerPath();
+            const files: Array<[string, 'claude' | 'codex']> = [
+                [path.join(this.claudeConfigDir(), 'settings.json'), 'claude'],
+                [path.join(this.codexHomeDir(), 'hooks.json'), 'codex'],
+            ];
+            let changed = false;
+            for (const [filePath, provider] of files) {
+                const current = await readOptionalTextFile(filePath);
+                if (current === undefined && !settings.repositoryName && !settings.sounds) {
+                    continue;
+                }
+                const next = applyHookFeaturesJson(current ?? '', provider, runnerPath, settings);
+                changed = (await writeTransformedTextFile(filePath, current, next)) || changed;
+            }
+            if (changed && showStatus) {
+                vscode.window.setStatusBarMessage('otak-usage: updated optional conversation hooks', 4000);
+            }
+            return true;
+        } catch (err) {
+            console.error('otak-usage: hook feature sync failed', err);
+            if (showStatus) {
+                void vscode.window.showErrorMessage('otak-usage: failed to update optional conversation hooks. See Developer Tools for details.');
+            }
+            return false;
+        }
+    }
+
+    private async toggleRepositoryNameHook(): Promise<void> {
+        const enabled = this.settings.get<boolean>('includeRepositoryNameInHistory', false);
+        if (!await this.settings.set('includeRepositoryNameInHistory', !enabled)) {
+            return;
+        }
+        const synced = this.leader ? await this.syncHookFeatures(true) : true;
+        if (!synced) {
+            return;
+        }
+        void this.renderAndCheckAlert();
+    }
+
+    private async toggleHookSounds(): Promise<void> {
+        const enabled = this.settings.get<boolean>('enableHookSounds', false);
+        if (!await this.settings.set('enableHookSounds', !enabled)) {
+            return;
+        }
+        const synced = this.leader ? await this.syncHookFeatures(true) : true;
+        if (!synced) {
+            return;
+        }
+        void this.renderAndCheckAlert();
+    }
+
     private async performCodexOptimizeSync(showStatus: boolean): Promise<boolean> {
         const config = this.config();
         const desired = config.get<boolean>('optimizeCodexContext', true);
@@ -970,6 +1066,7 @@ class UsageController implements vscode.Disposable {
             void this.syncClaudeOptimize();
             void this.syncCodexOptimize();
             void this.syncCodexModelFeatures();
+            void this.syncHookFeatures();
         } else {
             // Keep showing the numbers we already had until the first snapshot
             // arrives, instead of blinking through an empty status bar.
@@ -1274,11 +1371,12 @@ class UsageController implements vscode.Disposable {
                 },
             },
             this.hostWarning(),
+            this.hookFeatureSettings(config),
         ));
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider icons use inline data-URI images
 
-        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings'] };
+        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings', 'otak-usage.toggleRepositoryNameHook', 'otak-usage.toggleHookSounds'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
         // Everything a follower renders is settled by the time we render it

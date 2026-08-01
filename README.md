@@ -81,6 +81,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Fast-mode warning**: when Claude Code or Codex CLI fast mode turns on, the same warning notification the cost and limit alerts use points out that usage is billed at premium fast-mode rates. See [Fast-mode detection](#fast-mode-detection).
 - **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a matching 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
 - **Codex model controls — all reasoning efforts on by default**: On activation, otak-usage ensures the shared Codex `config.toml` enables `low`, `medium`, `high`, `xhigh`, `ultra`, and `max` in the desktop model picker. If the `[desktop]` table does not exist, it is added without changing the rest of the file.
+- **Optional conversation hooks (off by default)**: Tooltip toggles can prefix Claude Code and Codex conversation titles with the Git repository name and play prompt/stop chimes. The hook runner is a dependency-free Node script that works on Windows, macOS, Linux, WSL, SSH remotes, Dev Containers, and GitHub Codespaces; unrelated user hooks remain untouched.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
 - **Fast incremental scanning**: current-month files are streamed, only newly appended bytes are scanned after the first pass, and scan state survives VS Code restarts.
 - **Remote-ready**: the extension runs in the workspace extension host, so it reads logs where your CLIs run, including GitHub Codespaces, Dev Containers, and Remote-SSH hosts — and it says so when it ends up on the local side instead. See [Codespaces, Dev Containers and other remotes](#codespaces-dev-containers-and-other-remotes).
@@ -265,7 +266,18 @@ account-wide and stay accurate either way.
 | `Otak Usage: Refresh Usage (Clear Cache and Rescan)` | Drop the incremental scan cache and rebuild the usage summary from local logs. |
 | `Otak Usage: Copy Usage Summary` | Copy a plain-text per-model breakdown to the clipboard. The tooltip also exposes this action. |
 | `Otak Usage: Configure Context Optimization` | Choose Claude Code or Codex CLI, then select a preset, enter arbitrary custom values, or turn optimization off for that provider. The tooltip's **Optimize** action runs this command. |
+| `Otak Usage: Toggle Repository Name in Conversation History` | Enable or disable the repository-name Stop hooks for both providers. |
+| `Otak Usage: Toggle Hook Sounds` | Enable or disable prompt/stop sound hooks for both providers. |
 | `Otak Usage: Silence Alerts for Today (Toggle)` | Silence every cost and rate-limit notification until the next local midnight, or lift the silence again. See [Alerts](#alerts). |
+
+## Optional Conversation Hooks
+
+These hooks are deliberately **off by default**. Use either Settings or the two links at the bottom of the otak-usage tooltip:
+
+- **Repository name** writes only managed hook entries to Claude Code `settings.json` and Codex `hooks.json`. On Stop, the runner resolves the Git origin name (falling back to the repository directory) and prefixes the existing conversation title as `[repository] ...`.
+- **Hook sounds** adds `UserPromptSubmit` and `Stop` entries. The runner uses a configured sound path (`OTAK_USAGE_PROMPT_SOUND` / `OTAK_USAGE_STOP_SOUND`), then the conventional Claude sound files, then a generated short WAV. It uses PowerShell on Windows, `afplay` on macOS, and `paplay`/`aplay`/`canberra-gtk-play` on Linux; a missing audio device never blocks a turn.
+- The runner is copied to `~/.otak-usage/hooks/otak-usage-hook.js` on the side where the extension host runs. That means a remote VS Code window installs and invokes it inside the Codespace, Dev Container, WSL, or SSH host alongside the CLI.
+- Turning either option off removes only otak-usage entries marked with its managed command marker; your own hooks and unrelated settings stay in place.
 
 ## Alerts
 
@@ -312,6 +324,8 @@ The warning fires once per off → on transition (for Claude, at most once per d
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, for example `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}`. |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config directory. Empty means `$CLAUDE_CONFIG_DIR` or `~/.claude`. |
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
+| `otakUsage.includeRepositoryNameInHistory` | `false` | When enabled from the tooltip or Settings, install a managed Stop hook for Claude Code and Codex that prefixes conversation history titles with the repository name. |
+| `otakUsage.enableHookSounds` | `false` | When enabled from the tooltip or Settings, install managed `UserPromptSubmit` and `Stop` hooks that play short sounds. Uses platform players where available and degrades quietly on headless Codespaces. |
 | `otakUsage.optimizeClaudeContext` | `true` | **On by default.** Writes the two official auto-compaction environment settings below under `env` in Claude Code `settings.json`. Turning it off through **Optimize** restores the values that existed before otak-usage took ownership. |
 | `otakUsage.claudeContextWindow` | `200000` | Effective auto-compaction window written to `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. The Custom flow accepts any positive integer; Claude caps it at the active model's actual context window. |
 | `otakUsage.claudeAutoCompactPercent` | `92` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default produces an effective trigger near 184k tokens. |

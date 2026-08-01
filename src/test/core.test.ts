@@ -4,6 +4,7 @@ import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, is
 import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { CODEX_ALL_REASONING_EFFORTS, applyCodexModelFeaturesToml } from '../codexModelFeatures';
+import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
@@ -660,6 +661,54 @@ suite('codex model features', () => {
     });
 });
 
+suite('optional hooks', () => {
+    const runner = '/tmp/otak-usage-hook.js';
+
+    test('adds repository and sound hooks for Claude and Codex', () => {
+        for (const provider of ['claude', 'codex'] as const) {
+            const out = applyHookFeaturesJson('{}\n', provider, runner, { repositoryName: true, sounds: true });
+            assert.ok(hasManagedHook(out, provider, 'repository'));
+            assert.ok(hasManagedHook(out, provider, 'sounds'));
+            assert.ok(out.includes('--otak-usage-hook ' + provider + ' repository'));
+            assert.ok(out.includes('--otak-usage-hook ' + provider + ' sounds'));
+            const parsed = JSON.parse(out);
+            assert.ok(parsed.hooks.Stop);
+            assert.ok(parsed.hooks.UserPromptSubmit);
+        }
+    });
+
+    test('preserves user hooks and is idempotent', () => {
+        const input = JSON.stringify({
+            permissions: { allow: ['git status'] },
+            hooks: {
+                Stop: [{ matcher: '.*', hooks: [{ type: 'command', command: 'echo user-stop' }] }],
+            },
+        }, null, 2) + '\r\n';
+        const once = applyHookFeaturesJson(input, 'claude', runner, { repositoryName: true, sounds: true });
+        const twice = applyHookFeaturesJson(once, 'claude', runner, { repositoryName: true, sounds: true });
+        assert.strictEqual(twice, once);
+        assert.deepStrictEqual(JSON.parse(once).permissions, { allow: ['git status'] });
+        assert.ok(once.includes('echo user-stop'));
+    });
+
+    test('removes only managed hooks when disabled', () => {
+        const input = JSON.stringify({
+            hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo user-stop' }] }] },
+        });
+        const enabled = applyHookFeaturesJson(input, 'codex', runner, { repositoryName: true, sounds: true });
+        const disabled = applyHookFeaturesJson(enabled, 'codex', runner, { repositoryName: false, sounds: false });
+        assert.ok(!hasManagedHook(disabled, 'codex', 'repository'));
+        assert.ok(!hasManagedHook(disabled, 'codex', 'sounds'));
+        assert.ok(disabled.includes('echo user-stop'));
+    });
+
+    test('preserves CRLF when creating a missing desktop-style document', () => {
+        const out = applyHookFeaturesJson('{"permissions":{}}\r\n', 'codex', runner, { repositoryName: true, sounds: false });
+        assert.ok(out.includes('\r\n'));
+        assert.ok(out.includes('--otak-usage-hook codex repository'));
+    });
+});
+
 suite('claude optimize', () => {
     const values = { contextWindow: 200000, autoCompactPercent: 92 };
 
@@ -933,6 +982,28 @@ suite('formatter', () => {
 
         const unavailableMd = tooltipMarkdown(claude, { ...codex, available: false }, noRtk, 'today', new Date(2026, 5, 10, 9, 5));
         assert.ok(!unavailableMd.includes('OpenAI + Claude Total'));
+    });
+
+    test('tooltip exposes optional hook toggles', () => {
+        const summary = (provider: 'claude' | 'codex') => ({
+            provider, todayCost: 1, monthCost: 2, hasUnknownModel: false, models: [],
+        });
+        const md = tooltipMarkdown(
+            { summary: summary('claude'), available: true, show: true },
+            { summary: summary('codex'), available: true, show: true },
+            noRtk,
+            'today',
+            new Date(2026, 5, 10, 9, 5),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            { repositoryName: true, sounds: false },
+        );
+        assert.ok(md.includes('Repository name: On'));
+        assert.ok(md.includes('Hook sounds: Off'));
+        assert.ok(md.includes('command:otak-usage.toggleRepositoryNameHook'));
+        assert.ok(md.includes('command:otak-usage.toggleHookSounds'));
     });
 
     test('tooltip renders brand icons as sized theme-coloured images when a colour is given', () => {

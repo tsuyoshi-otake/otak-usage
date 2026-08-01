@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -53,6 +53,16 @@
       {
         "command": "otak-usage.configureCodexOptimization",
         "title": "%command.configureCodexOptimization%",
+        "category": "Otak Usage"
+      },
+      {
+        "command": "otak-usage.toggleRepositoryNameHook",
+        "title": "Toggle Repository Name in Conversation History",
+        "category": "Otak Usage"
+      },
+      {
+        "command": "otak-usage.toggleHookSounds",
+        "title": "Toggle Hook Sounds",
         "category": "Otak Usage"
       },
       {
@@ -143,6 +153,16 @@
           "type": "boolean",
           "default": true,
           "description": "%config.showRtk%"
+        },
+        "otakUsage.includeRepositoryNameInHistory": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prefix Claude Code and Codex conversation history titles with the Git repository name using optional Stop hooks."
+        },
+        "otakUsage.enableHookSounds": {
+          "type": "boolean",
+          "default": false,
+          "description": "Play optional prompt and stop sounds from Claude Code and Codex hooks. Disabled by default."
         },
         "otakUsage.rtkPath": {
           "type": "string",

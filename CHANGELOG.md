@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.0] - 2026-08-01
+
+### Added
+
+- Optional repository-name and sound hooks can be enabled from the tooltip or settings. Managed Claude Code and Codex hooks preserve unrelated user configuration and work on Windows, macOS, Linux, WSL, SSH remotes, Dev Containers, and GitHub Codespaces.
+- The standalone hook runner decorates Claude transcript titles and Codex thread names with the Git repository name, and uses platform-native audio players with a quiet headless fallback.
+
 ## [1.20.0] - 2026-08-01
 
 ### Added

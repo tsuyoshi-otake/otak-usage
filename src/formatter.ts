@@ -67,6 +67,11 @@ export interface ContextOptimizeView {
     codex: ProviderOptimizeView;
 }
 
+export interface HookFeatureView {
+    repositoryName: boolean;
+    sounds: boolean;
+}
+
 /**
  * What the status-bar item displays:
  * - `cost`: API-equivalent cost only (default, unchanged behaviour).
@@ -168,7 +173,7 @@ function periodCost(view: ProviderView, period: Period): number {
     return period === 'today' ? view.summary.todayCost : view.summary.monthCost;
 }
 
-export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: ContextOptimizeView, hostWarning?: string): string {
+export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: RtkView, period: Period, updatedAt: Date, i18n = DEFAULT_I18N, iconColor?: string, optimize?: ContextOptimizeView, hostWarning?: string, hooks?: HookFeatureView): string {
     const parts: string[] = [`**${i18n.t('tooltip.title')}**\n`];
     // Which machine these numbers describe outranks the numbers themselves, so
     // it sits directly under the title rather than in the footer.
@@ -199,6 +204,11 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
         `[$(copy) ${i18n.t('tooltip.copySummary')}](command:otak-usage.copyUsage "${i18n.t('tooltip.copySummaryTitle')}")` +
         ` · [$(gear) ${i18n.t('tooltip.settings')}](command:workbench.action.openSettings?${settingsArg} "${i18n.t('tooltip.settingsTitle')}")` +
         ` · [$(rocket) ${i18n.t('tooltip.optimize')}${optimizeValue}](command:otak-usage.configureCodexOptimization "${i18n.t('tooltip.optimizeTitle')}")`,
+    );
+    const hookState = hooks ?? { repositoryName: false, sounds: false };
+    parts.push(
+        `[Repository name: ${hookState.repositoryName ? 'On' : 'Off'}](command:otak-usage.toggleRepositoryNameHook "Toggle repository name in conversation history")` +
+        ` | [Hook sounds: ${hookState.sounds ? 'On' : 'Off'}](command:otak-usage.toggleHookSounds "Toggle hook sounds")`,
     );
     return parts.join('\n');
 }
