@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.1] - 2026-08-01
+
+### Fixed
+
+- Tooltip hook toggles now remain clickable when VS Code temporarily refuses a settings write or the external hook files cannot be updated. The in-memory state is rendered immediately and retried after the window or remote configuration becomes writable.
+
 ## [1.21.0] - 2026-08-01
 
 ### Added

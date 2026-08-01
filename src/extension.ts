@@ -878,10 +878,12 @@ class UsageController implements vscode.Disposable {
         return task;
     }
 
-    private hookFeatureSettings(config = this.config()): HookFeatureSettings {
+    private hookFeatureSettings(): HookFeatureSettings {
         return {
-            repositoryName: config.get<boolean>('includeRepositoryNameInHistory', false),
-            sounds: config.get<boolean>('enableHookSounds', false),
+            // Read through SettingsStore so a temporary VS Code settings-registry
+            // rejection still updates the tooltip and generated hook files.
+            repositoryName: this.settings.get<boolean>('includeRepositoryNameInHistory', false),
+            sounds: this.settings.get<boolean>('enableHookSounds', false),
         };
     }
 
@@ -933,25 +935,25 @@ class UsageController implements vscode.Disposable {
 
     private async toggleRepositoryNameHook(): Promise<void> {
         const enabled = this.settings.get<boolean>('includeRepositoryNameInHistory', false);
-        if (!await this.settings.set('includeRepositoryNameInHistory', !enabled)) {
-            return;
+        await this.settings.set('includeRepositoryNameInHistory', !enabled);
+        if (this.leader) {
+            await this.syncHookFeatures(true);
         }
-        const synced = this.leader ? await this.syncHookFeatures(true) : true;
-        if (!synced) {
-            return;
-        }
+        // Render even when the external hook file could not be rewritten so the
+        // setting remains an interactive toggle and the error is visible in the
+        // status message.
         void this.renderAndCheckAlert();
     }
 
     private async toggleHookSounds(): Promise<void> {
         const enabled = this.settings.get<boolean>('enableHookSounds', false);
-        if (!await this.settings.set('enableHookSounds', !enabled)) {
-            return;
+        await this.settings.set('enableHookSounds', !enabled);
+        if (this.leader) {
+            await this.syncHookFeatures(true);
         }
-        const synced = this.leader ? await this.syncHookFeatures(true) : true;
-        if (!synced) {
-            return;
-        }
+        // Render even when the external hook file could not be rewritten so the
+        // setting remains an interactive toggle and the error is visible in the
+        // status message.
         void this.renderAndCheckAlert();
     }
 
@@ -1371,7 +1373,7 @@ class UsageController implements vscode.Disposable {
                 },
             },
             this.hostWarning(),
-            this.hookFeatureSettings(config),
+            this.hookFeatureSettings(),
         ));
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider icons use inline data-URI images
