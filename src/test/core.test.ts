@@ -3,6 +3,7 @@ import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CODEX_ALL_REASONING_EFFORTS, applyCodexModelFeaturesToml } from '../codexModelFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
@@ -607,6 +608,55 @@ suite('codex optimize', () => {
         assert.ok(out.includes('\r\n'));
         assert.ok(!out.includes('320000'));
         assert.ok(out.includes('model_context_window = 250000'));
+    });
+});
+
+suite('codex model features', () => {
+    test('adds the desktop table when config.toml has no desktop section', () => {
+        const out = applyCodexModelFeaturesToml('model = "gpt-5.6-sol"\n');
+        assert.ok(out.includes('[desktop]'));
+        assert.ok(out.includes('enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "max"]'));
+        assert.ok(out.includes('show-ultra-in-model-picker-slider = true'));
+        assert.ok(out.includes('model = "gpt-5.6-sol"'));
+    });
+
+    test('merges the supported efforts into an existing desktop table', () => {
+        const input = [
+            'model = "x"',
+            '[desktop]',
+            'enabled-reasoning-efforts = ["minimal", "low"] # user choice',
+            'show-ultra-in-model-picker-slider = false',
+            'custom = true',
+            '[features]',
+            'fast_mode = true',
+        ].join('\n');
+        const out = applyCodexModelFeaturesToml(input);
+        assert.ok(out.includes('enabled-reasoning-efforts = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"] # user choice'));
+        assert.ok(out.includes('show-ultra-in-model-picker-slider = true'));
+        assert.ok(out.includes('custom = true'));
+        assert.ok(out.includes('[features]\nfast_mode = true'));
+        assert.strictEqual(out.match(/^enabled-reasoning-efforts\s*=/gm)?.length, 1);
+    });
+
+    test('collapses a multiline effort array and preserves extra values', () => {
+        const input = [
+            '[desktop]',
+            'enabled-reasoning-efforts = [',
+            '  "minimal",',
+            '  "low",',
+            ']',
+            'show-ultra-in-model-picker-slider = false',
+        ].join('\r\n');
+        const out = applyCodexModelFeaturesToml(input);
+        assert.ok(out.includes('enabled-reasoning-efforts = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"]'));
+        assert.ok(out.includes('\r\nshow-ultra-in-model-picker-slider = true'));
+        assert.ok(!out.includes('  "minimal"'));
+    });
+
+    test('is idempotent', () => {
+        const once = applyCodexModelFeaturesToml('[desktop]\nenabled-reasoning-efforts = ["low"]\n');
+        assert.strictEqual(applyCodexModelFeaturesToml(once), once);
+        assert.deepStrictEqual(CODEX_ALL_REASONING_EFFORTS, ['low', 'medium', 'high', 'xhigh', 'ultra', 'max']);
     });
 });
 

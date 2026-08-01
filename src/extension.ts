@@ -8,6 +8,7 @@ import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertMod
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { applyCodexModelFeaturesToml } from './codexModelFeatures';
 import { ScanTargets, scanAll } from './engine';
 import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
@@ -105,7 +106,8 @@ class UsageController implements vscode.Disposable {
     private updatingClaudeOptimizeConfiguration = false;
     private updatingCodexOptimizeConfiguration = false;
     private claudeOptimizeSyncQueue: Promise<void> = Promise.resolve();
-    private codexOptimizeSyncQueue: Promise<void> = Promise.resolve();
+    /** All Codex config.toml rewrites share one queue so transforms cannot race. */
+    private codexConfigSyncQueue: Promise<void> = Promise.resolve();
     private readonly i18n = new I18n(vscode.env.language);
     /**
      * Name of the remote this window is attached to while the extension itself
@@ -176,6 +178,7 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.codexHome')) {
                     if (!this.updatingCodexOptimizeConfiguration && this.leader) {
                         void this.syncCodexOptimize();
+                        void this.syncCodexModelFeatures();
                     }
                 }
                 if (e.affectsConfiguration('otakUsage.optimizeClaudeContext') ||
@@ -821,8 +824,38 @@ class UsageController implements vscode.Disposable {
      * values are never removed unless they opted in first.
      */
     private syncCodexOptimize(showStatus = true): Promise<boolean> {
-        const task = this.codexOptimizeSyncQueue.then(() => this.performCodexOptimizeSync(showStatus));
-        this.codexOptimizeSyncQueue = task.then(() => undefined, () => undefined);
+        return this.enqueueCodexConfigSync(() => this.performCodexOptimizeSync(showStatus));
+    }
+
+    /**
+     * Make every supported reasoning effort visible in the Codex model picker.
+     * This is intentionally separate from context optimization: turning context
+     * optimization off must not hide the model controls that were enabled by
+     * otak-usage.
+     */
+    private syncCodexModelFeatures(showStatus = false): Promise<boolean> {
+        return this.enqueueCodexConfigSync(async () => {
+            const configPath = path.join(this.codexHomeDir(), 'config.toml');
+            try {
+                const changed = await this.rewriteCodexConfig(configPath, applyCodexModelFeaturesToml, true);
+                if (changed && showStatus) {
+                    vscode.window.setStatusBarMessage('otak-usage: enabled all Codex reasoning efforts', 4000);
+                }
+                return true;
+            } catch (err) {
+                console.error('otak-usage: Codex model-feature sync failed', err);
+                if (showStatus) {
+                    void vscode.window.showErrorMessage('otak-usage: failed to enable all Codex reasoning efforts. See Developer Tools for details.');
+                }
+                return false;
+            }
+        });
+    }
+
+    /** Serialize all transforms that write the shared Codex config.toml. */
+    private enqueueCodexConfigSync(taskFactory: () => Promise<boolean>): Promise<boolean> {
+        const task = this.codexConfigSyncQueue.then(taskFactory);
+        this.codexConfigSyncQueue = task.then(() => undefined, () => undefined);
         return task;
     }
 
@@ -936,6 +969,7 @@ class UsageController implements vscode.Disposable {
             // the leader's job, and this window has just taken it on.
             void this.syncClaudeOptimize();
             void this.syncCodexOptimize();
+            void this.syncCodexModelFeatures();
         } else {
             // Keep showing the numbers we already had until the first snapshot
             // arrives, instead of blinking through an empty status bar.

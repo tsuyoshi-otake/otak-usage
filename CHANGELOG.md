@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.20.0] - 2026-08-01
+
+### Added
+
+- Codex model controls now enable all supported reasoning efforts (`low`, `medium`, `high`, `xhigh`, `ultra`, and `max`) on activation. If `config.toml` has no `[desktop]` table, otak-usage adds it while preserving the rest of the file.
+
 ## [1.19.0] - 2026-07-31
 
 ### Added
