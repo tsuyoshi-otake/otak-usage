@@ -1,154 +1,178 @@
 /**
- * Codex model-picker settings that otak-usage enables on activation.
+ * Codex VS Code extension model-picker state.
  *
- * The Codex desktop picker keeps its available reasoning levels in the
- * `[desktop]` table.  Keep the rewrite text-based so comments, ordering, and
- * settings owned by Codex (or another tool) remain intact.
+ * The Codex extension does not expose a public API for its hidden model
+ * feature settings. Its global-state memento is still owned by VS Code, so
+ * this module uses a narrowly feature-detected bridge to the same storage
+ * service. The bridge fails closed when VS Code changes those private
+ * implementation details; it never edits the storage database directly.
  */
 
-/** The levels currently accepted by the Codex model controls. */
-export const CODEX_ALL_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'ultra', 'max'] as const;
-
-export const CODEX_DESKTOP_TABLE = 'desktop';
+export const CODEX_EXTENSION_ID = 'openai.chatgpt';
+export const CODEX_PERSISTED_ATOM_STATE_KEY = 'persisted-atom-state';
 export const CODEX_ENABLED_REASONING_EFFORTS_KEY = 'enabled-reasoning-efforts';
-export const CODEX_SHOW_ULTRA_IN_MODEL_PICKER_SLIDER_KEY = 'show-ultra-in-model-picker-slider';
+export const CODEX_MAX_REASONING_EFFORT = 'max';
 
-function detectEol(text: string): string {
-    return text.includes('\r\n') ? '\r\n' : '\n';
+/** Codex's current default levels, before Max is enabled. */
+export const CODEX_DEFAULT_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'ultra'] as const;
+
+/** The small part of vscode.Memento used by the bridge and its tests. */
+export interface MementoLike {
+    get<T>(key: string, defaultValue?: T): T | undefined;
+    update(key: string, value: unknown): Thenable<void>;
 }
 
-function isTableHeader(line: string): boolean {
-    return /^\s*\[{1,2}/.test(line);
+export interface CodexMaxMergeResult {
+    state: Record<string, unknown>;
+    changed: boolean;
+    supported: boolean;
 }
 
-function isDesktopHeader(line: string): boolean {
-    return /^\s*\[\s*desktop\s*\]\s*(?:#.*)?$/.test(line);
-}
+export type CodexMaxSyncResult =
+    | 'updated'
+    | 'already-enabled'
+    | 'bridge-unavailable'
+    | 'unsupported-state'
+    | 'failed';
 
-function tableEnd(lines: string[], start: number): number {
-    for (let i = start + 1; i < lines.length; i++) {
-        if (isTableHeader(lines[i])) {
-            return i;
-        }
-    }
-    return lines.length;
-}
-
-function assignmentRegex(key: string): RegExp {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`^(\\s*)${escaped}\\s*=\\s*(.*)$`);
-}
-
-function inlineComment(value: string): string {
-    // These managed values contain only simple strings/booleans, so a hash
-    // after the assignment is an inline TOML comment.
-    const match = value.match(/(\s+#.*)$/);
-    return match?.[1] ?? '';
-}
-
-function quotedValues(value: string): string[] {
-    const values: string[] = [];
-    const pattern = /(["'])(.*?)\1/g;
-    for (const match of value.matchAll(pattern)) {
-        if (match[2] !== undefined && !values.includes(match[2])) {
-            values.push(match[2]);
-        }
-    }
-    return values;
-}
-
-function arrayAssignmentEnd(lines: string[], start: number, sectionEnd: number, firstValue: string): number {
-    if (firstValue.includes(']')) {
-        return start;
-    }
-    for (let i = start + 1; i < sectionEnd; i++) {
-        if (lines[i].includes(']')) {
-            return i;
-        }
-    }
-    return start;
-}
-
-function allReasoningEffortsValue(existing: string): string {
-    const values = quotedValues(existing);
-    for (const effort of CODEX_ALL_REASONING_EFFORTS) {
-        if (!values.includes(effort)) {
-            values.push(effort);
-        }
-    }
-    return `[${values.map((value) => JSON.stringify(value)).join(', ')}]`;
-}
-
-function rewriteDesktopAssignment(
-    lines: string[],
-    sectionStart: number,
-    key: string,
-    value: string,
-    array: boolean,
-): boolean {
-    const sectionEnd = tableEnd(lines, sectionStart);
-    const matcher = assignmentRegex(key);
-    for (let i = sectionStart + 1; i < sectionEnd; i++) {
-        const match = lines[i].match(matcher);
-        if (!match) {
-            continue;
-        }
-        const end = array ? arrayAssignmentEnd(lines, i, sectionEnd, match[2]) : i;
-        const comment = inlineComment(match[2]);
-        lines.splice(i, end - i + 1, `${match[1]}${key} = ${value}${comment}`);
-        return true;
-    }
-    lines.splice(sectionEnd, 0, `${key} = ${value}`);
-    return true;
-}
-
-function appendDesktopTable(lines: string[]): void {
-    let insertAt = lines.length;
-    while (insertAt > 0 && lines[insertAt - 1] === '') {
-        insertAt--;
-    }
-    const separator = insertAt > 0 ? [''] : [];
-    lines.splice(
-        insertAt,
-        0,
-        ...separator,
-        `[${CODEX_DESKTOP_TABLE}]`,
-        `${CODEX_ENABLED_REASONING_EFFORTS_KEY} = [${CODEX_ALL_REASONING_EFFORTS.map((value) => JSON.stringify(value)).join(', ')}]`,
-        `${CODEX_SHOW_ULTRA_IN_MODEL_PICKER_SLIDER_KEY} = true`,
-    );
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Ensure that every supported reasoning level is available in the Codex
- * desktop model controls and that Ultra is offered by the slider.
- *
- * Existing values are kept and the supported levels are appended, which means
- * a user-specific value such as `minimal` is not discarded.  The function is
- * idempotent and only touches the exact `[desktop]` table.
+ * Add Max while retaining the user's existing reasoning-effort selection.
+ * Missing state follows Codex's current defaults, so enabling Max does not
+ * accidentally leave the picker with only Max available.
  */
-export function applyCodexModelFeaturesToml(text: string): string {
-    const eol = detectEol(text);
-    const lines = text.split(/\r?\n/);
-    const sectionStart = lines.findIndex(isDesktopHeader);
-    if (sectionStart < 0) {
-        appendDesktopTable(lines);
-        return lines.join(eol);
+export function addCodexMaxReasoningEffort(raw: unknown): CodexMaxMergeResult {
+    if (raw === undefined || raw === null) {
+        return {
+            state: {
+                [CODEX_ENABLED_REASONING_EFFORTS_KEY]: [
+                    ...CODEX_DEFAULT_REASONING_EFFORTS,
+                    CODEX_MAX_REASONING_EFFORT,
+                ],
+            },
+            changed: true,
+            supported: true,
+        };
+    }
+    if (!isRecord(raw)) {
+        return { state: {}, changed: false, supported: false };
     }
 
-    const sectionEnd = tableEnd(lines, sectionStart);
-    const effortMatcher = assignmentRegex(CODEX_ENABLED_REASONING_EFFORTS_KEY);
-    let currentEfforts = '';
-    for (let i = sectionStart + 1; i < sectionEnd; i++) {
-        const match = lines[i].match(effortMatcher);
-        if (match) {
-            const end = arrayAssignmentEnd(lines, i, sectionEnd, match[2]);
-            currentEfforts = lines.slice(i, end + 1).join('\n');
-            break;
+    const existing = raw[CODEX_ENABLED_REASONING_EFFORTS_KEY];
+    if (existing === undefined) {
+        return {
+            state: {
+                ...raw,
+                [CODEX_ENABLED_REASONING_EFFORTS_KEY]: [
+                    ...CODEX_DEFAULT_REASONING_EFFORTS,
+                    CODEX_MAX_REASONING_EFFORT,
+                ],
+            },
+            changed: true,
+            supported: true,
+        };
+    }
+    if (!Array.isArray(existing) || existing.some((value) => typeof value !== 'string')) {
+        return { state: {}, changed: false, supported: false };
+    }
+    if (existing.includes(CODEX_MAX_REASONING_EFFORT)) {
+        return { state: raw, changed: false, supported: true };
+    }
+    return {
+        state: {
+            ...raw,
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: [...existing, CODEX_MAX_REASONING_EFFORT],
+        },
+        changed: true,
+        supported: true,
+    };
+}
+
+interface ForeignMemento extends MementoLike {
+    readonly whenReady?: PromiseLike<unknown>;
+    dispose?: () => void;
+}
+
+interface ExtensionDescription {
+    identifier: { value: string };
+    version: string;
+}
+
+type ForeignMementoConstructor = new (description: ExtensionDescription, storage: unknown) => ForeignMemento;
+
+function isMemento(value: unknown): value is ForeignMemento {
+    if (!isRecord(value)) {
+        return false;
+    }
+    return typeof value.get === 'function' && typeof value.update === 'function';
+}
+
+/**
+ * Construct a global-state memento for another extension using the storage
+ * service already backing this extension's own globalState. _storage and
+ * whenReady are intentionally checked at runtime because they are private
+ * VS Code implementation details, not part of the extension API contract.
+ */
+function createForeignGlobalState(source: MementoLike, version: string): ForeignMemento | undefined {
+    const internals = source as unknown as { constructor?: unknown; _storage?: unknown };
+    if (typeof internals.constructor !== 'function' || internals._storage === undefined) {
+        return undefined;
+    }
+
+    try {
+        const Constructor = internals.constructor as ForeignMementoConstructor;
+        const target = new Constructor({
+            identifier: { value: CODEX_EXTENSION_ID },
+            version,
+        }, internals._storage);
+        if (!isMemento(target) || !target.whenReady || typeof target.whenReady.then !== 'function') {
+            target.dispose?.();
+            return undefined;
+        }
+        return target;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Enable Max in Codex's persisted model-feature state.
+ *
+ * This operation is idempotent. A foreign memento is disposed after the
+ * update so it does not keep a second storage listener alive in the host.
+ */
+export async function syncCodexMaxReasoningEffort(source: MementoLike, codexVersion: string): Promise<CodexMaxSyncResult> {
+    const target = createForeignGlobalState(source, codexVersion);
+    if (!target) {
+        return 'bridge-unavailable';
+    }
+
+    try {
+        const ready = target.whenReady;
+        if (!ready) {
+            return 'bridge-unavailable';
+        }
+        await ready;
+        const current = target.get<unknown>(CODEX_PERSISTED_ATOM_STATE_KEY);
+        const merged = addCodexMaxReasoningEffort(current);
+        if (!merged.supported) {
+            return 'unsupported-state';
+        }
+        if (!merged.changed) {
+            return 'already-enabled';
+        }
+        await target.update(CODEX_PERSISTED_ATOM_STATE_KEY, merged.state);
+        return 'updated';
+    } catch {
+        return 'failed';
+    } finally {
+        try {
+            target.dispose?.();
+        } catch {
+            // Disposal is best effort when the host changes its internals.
         }
     }
-    const efforts = allReasoningEffortsValue(currentEfforts);
-    rewriteDesktopAssignment(lines, sectionStart, CODEX_ENABLED_REASONING_EFFORTS_KEY, efforts, true);
-    const updatedSectionStart = lines.findIndex(isDesktopHeader);
-    rewriteDesktopAssignment(lines, updatedSectionStart, CODEX_SHOW_ULTRA_IN_MODEL_PICKER_SLIDER_KEY, 'true', false);
-    return lines.join(eol);
 }

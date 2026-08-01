@@ -8,7 +8,7 @@ import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertMod
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
-import { applyCodexModelFeaturesToml } from './codexModelFeatures';
+import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
 import { ScanTargets, scanAll } from './engine';
@@ -118,6 +118,9 @@ class UsageController implements vscode.Disposable {
     private claudeConfigSyncQueue: Promise<void> = Promise.resolve();
     /** All Codex config.toml rewrites share one queue so transforms cannot race. */
     private codexConfigSyncQueue: Promise<void> = Promise.resolve();
+    /** The Codex extension's hidden model-feature state has its own queue. */
+    private codexModelFeatureSyncQueue: Promise<void> = Promise.resolve();
+    private codexModelFeatureSyncWarned = false;
     private readonly i18n = new I18n(vscode.env.language);
     /**
      * Name of the remote this window is attached to while the extension itself
@@ -190,7 +193,6 @@ class UsageController implements vscode.Disposable {
                     e.affectsConfiguration('otakUsage.codexHome')) {
                     if (!this.updatingCodexOptimizeConfiguration && this.leader) {
                         void this.syncCodexOptimize();
-                        void this.syncCodexModelFeatures();
                     }
                 }
                 if (e.affectsConfiguration('otakUsage.optimizeClaudeContext') ||
@@ -222,6 +224,11 @@ class UsageController implements vscode.Disposable {
             // Re-render so the tooltip's inline brand marks pick up the new
             // theme's foreground colour (data-URI images can't use currentColor).
             vscode.window.onDidChangeActiveColorTheme(() => this.render()),
+            vscode.extensions.onDidChange(() => {
+                if (this.leader) {
+                    void this.syncCodexModelFeatures();
+                }
+            }),
         );
         void this.startCoordination();
         void this.warnAboutUnscannedRemote();
@@ -851,28 +858,46 @@ class UsageController implements vscode.Disposable {
     }
 
     /**
-     * Make every supported reasoning effort visible in the Codex model picker.
-     * This is intentionally separate from context optimization: turning context
-     * optimization off must not hide the model controls that were enabled by
-     * otak-usage.
+     * Add only Max to Codex's VS Code model-feature state. The Codex extension
+     * has no public setting API, so the helper uses a feature-detected memento
+     * bridge and fails closed when that private VS Code detail is unavailable.
      */
-    private syncCodexModelFeatures(showStatus = false): Promise<boolean> {
-        return this.enqueueCodexConfigSync(async () => {
-            const configPath = path.join(this.codexHomeDir(), 'config.toml');
-            try {
-                const changed = await this.rewriteCodexConfig(configPath, applyCodexModelFeaturesToml, true);
-                if (changed && showStatus) {
-                    vscode.window.setStatusBarMessage('otak-usage: enabled all Codex reasoning efforts', 4000);
-                }
-                return true;
-            } catch (err) {
-                console.error('otak-usage: Codex model-feature sync failed', err);
-                if (showStatus) {
-                    void vscode.window.showErrorMessage('otak-usage: failed to enable all Codex reasoning efforts. See Developer Tools for details.');
-                }
-                return false;
+    private syncCodexModelFeatures(): Promise<boolean> {
+        const task = this.codexModelFeatureSyncQueue.then(() => this.performCodexModelFeatureSync());
+        this.codexModelFeatureSyncQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private async performCodexModelFeatureSync(): Promise<boolean> {
+        const codex = vscode.extensions.getExtension(CODEX_EXTENSION_ID);
+        if (!codex) {
+            return true;
+        }
+        const version = typeof codex.packageJSON?.version === 'string' ? codex.packageJSON.version : '0.0.0';
+        const result = await syncCodexMaxReasoningEffort(this.context.globalState, version);
+        if (result === 'updated') {
+            if (codex.isActive) {
+                await this.refreshCodexWebviews();
             }
-        });
+            return true;
+        }
+        if (result === 'already-enabled') {
+            return true;
+        }
+        if (!this.codexModelFeatureSyncWarned) {
+            this.codexModelFeatureSyncWarned = true;
+            console.warn('otak-usage: could not enable Codex Max automatically (' + result + ')');
+        }
+        return false;
+    }
+
+    /** Re-request persisted atoms in an already-open Codex webview. */
+    private async refreshCodexWebviews(): Promise<void> {
+        try {
+            await vscode.commands.executeCommand('workbench.action.webview.reloadWebviewAction');
+        } catch (err) {
+            console.warn('otak-usage: Codex Max was saved, but existing webviews could not be refreshed', err);
+        }
     }
 
     /** Serialize all transforms that write the shared Codex config.toml. */

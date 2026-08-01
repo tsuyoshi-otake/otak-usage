@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.3] - 2026-08-01
+
+### Fixed
+
+- Codex Max is now enabled in the VS Code extension's persisted model-picker state instead of the unrelated `config.toml` desktop table. Existing reasoning-effort selections and other Codex settings are preserved, and already-open webviews refresh after a change.
+
 ## [1.21.2] - 2026-08-01
 
 ### Fixed

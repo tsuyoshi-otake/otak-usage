@@ -3,7 +3,7 @@ import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from '../claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
-import { CODEX_ALL_REASONING_EFFORTS, applyCodexModelFeaturesToml } from '../codexModelFeatures';
+import { CODEX_DEFAULT_REASONING_EFFORTS, CODEX_ENABLED_REASONING_EFFORTS_KEY, CODEX_PERSISTED_ATOM_STATE_KEY, MementoLike, addCodexMaxReasoningEffort, syncCodexMaxReasoningEffort } from '../codexModelFeatures';
 import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
@@ -613,51 +613,93 @@ suite('codex optimize', () => {
 });
 
 suite('codex model features', () => {
-    test('adds the desktop table when config.toml has no desktop section', () => {
-        const out = applyCodexModelFeaturesToml('model = "gpt-5.6-sol"\n');
-        assert.ok(out.includes('[desktop]'));
-        assert.ok(out.includes('enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "max"]'));
-        assert.ok(out.includes('show-ultra-in-model-picker-slider = true'));
-        assert.ok(out.includes('model = "gpt-5.6-sol"'));
+    class FakeMemento implements MementoLike {
+        readonly whenReady = Promise.resolve();
+
+        constructor(
+            readonly description: { identifier: { value: string }; version: string },
+            readonly _storage: { state: Record<string, unknown> },
+        ) { }
+
+        get<T>(key: string): T | undefined {
+            return this._storage.state[key] as T | undefined;
+        }
+
+        update(key: string, value: unknown): Thenable<void> {
+            this._storage.state[key] = value;
+            return Promise.resolve();
+        }
+
+        dispose(): void { }
+    }
+
+    function fakeSource(state: unknown): { source: FakeMemento; storage: { state: Record<string, unknown> } } {
+        const storage = { state: { [CODEX_PERSISTED_ATOM_STATE_KEY]: state } };
+        const source = new FakeMemento({
+            identifier: { value: 'odangoo.otak-usage' },
+            version: '1.0.0',
+        }, storage);
+        return { source, storage };
+    }
+
+    test('appends only Max and preserves existing reasoning choices', () => {
+        const current = {
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['minimal', 'high'],
+            unrelated: true,
+        };
+        const result = addCodexMaxReasoningEffort(current);
+        assert.deepStrictEqual(result.state, {
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['minimal', 'high', 'max'],
+            unrelated: true,
+        });
+        assert.strictEqual(result.changed, true);
+        assert.strictEqual(result.supported, true);
+        assert.deepStrictEqual(current[CODEX_ENABLED_REASONING_EFFORTS_KEY], ['minimal', 'high']);
     });
 
-    test('merges the supported efforts into an existing desktop table', () => {
-        const input = [
-            'model = "x"',
-            '[desktop]',
-            'enabled-reasoning-efforts = ["minimal", "low"] # user choice',
-            'show-ultra-in-model-picker-slider = false',
-            'custom = true',
-            '[features]',
-            'fast_mode = true',
-        ].join('\n');
-        const out = applyCodexModelFeaturesToml(input);
-        assert.ok(out.includes('enabled-reasoning-efforts = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"] # user choice'));
-        assert.ok(out.includes('show-ultra-in-model-picker-slider = true'));
-        assert.ok(out.includes('custom = true'));
-        assert.ok(out.includes('[features]\nfast_mode = true'));
-        assert.strictEqual(out.match(/^enabled-reasoning-efforts\s*=/gm)?.length, 1);
+    test('uses Codex defaults when the persisted effort list is missing', () => {
+        const result = addCodexMaxReasoningEffort({ unrelated: 'keep' });
+        assert.deepStrictEqual(result.state, {
+            unrelated: 'keep',
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: [...CODEX_DEFAULT_REASONING_EFFORTS, 'max'],
+        });
     });
 
-    test('collapses a multiline effort array and preserves extra values', () => {
-        const input = [
-            '[desktop]',
-            'enabled-reasoning-efforts = [',
-            '  "minimal",',
-            '  "low",',
-            ']',
-            'show-ultra-in-model-picker-slider = false',
-        ].join('\r\n');
-        const out = applyCodexModelFeaturesToml(input);
-        assert.ok(out.includes('enabled-reasoning-efforts = ["minimal", "low", "medium", "high", "xhigh", "ultra", "max"]'));
-        assert.ok(out.includes('\r\nshow-ultra-in-model-picker-slider = true'));
-        assert.ok(!out.includes('  "minimal"'));
+    test('is idempotent when Max is already enabled', () => {
+        const current = { [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['low', 'max'] };
+        const result = addCodexMaxReasoningEffort(current);
+        assert.strictEqual(result.changed, false);
+        assert.strictEqual(result.supported, true);
+        assert.strictEqual(result.state, current);
     });
 
-    test('is idempotent', () => {
-        const once = applyCodexModelFeaturesToml('[desktop]\nenabled-reasoning-efforts = ["low"]\n');
-        assert.strictEqual(applyCodexModelFeaturesToml(once), once);
-        assert.deepStrictEqual(CODEX_ALL_REASONING_EFFORTS, ['low', 'medium', 'high', 'xhigh', 'ultra', 'max']);
+    test('fails closed for malformed persisted state', () => {
+        const result = addCodexMaxReasoningEffort({
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['low', 42],
+        });
+        assert.strictEqual(result.changed, false);
+        assert.strictEqual(result.supported, false);
+    });
+
+    test('fails closed when the VS Code memento bridge is unavailable', async () => {
+        const source: MementoLike = {
+            get: () => undefined,
+            update: () => Promise.resolve(),
+        };
+        assert.strictEqual(await syncCodexMaxReasoningEffort(source, '26.727.40816'), 'bridge-unavailable');
+    });
+
+    test('updates the Codex extension memento through the shared storage service', async () => {
+        const { source, storage } = fakeSource({
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['low', 'ultra'],
+            anotherSetting: 'keep',
+        });
+        assert.strictEqual(await syncCodexMaxReasoningEffort(source, '26.727.40816'), 'updated');
+        assert.deepStrictEqual(storage.state[CODEX_PERSISTED_ATOM_STATE_KEY], {
+            [CODEX_ENABLED_REASONING_EFFORTS_KEY]: ['low', 'ultra', 'max'],
+            anotherSetting: 'keep',
+        });
+        assert.strictEqual(await syncCodexMaxReasoningEffort(source, '26.727.40816'), 'already-enabled');
     });
 });
 
