@@ -42,9 +42,16 @@ export interface ProviderSummary {
  * Summarize all retained days (callers prune to the current month) into
  * per-provider, per-model today/month costs. Unknown models contribute $0
  * and set hasUnknownModel.
+ *
+ * The month cost is accumulated day by day, each day priced at the rates that
+ * were in force on it, so a price revision that lands mid-month (rather than on
+ * the first) does not retroactively reprice the days before it. Cost is linear
+ * in every token count, so this agrees with pricing the month total whenever no
+ * revision falls inside the month.
  */
 export function summarize(days: DayBuckets, today: string, overrides?: PricingOverrides): Record<Provider, ProviderSummary> {
     const rows = new Map<string, ModelRow & { provider: Provider }>();
+    const monthCosts = new Map<string, { total: number; priced: boolean }>();
     for (const [day, bucket] of Object.entries(days)) {
         for (const [key, usage] of Object.entries(bucket)) {
             const { provider, model } = parseBucketKey(key);
@@ -52,8 +59,16 @@ export function summarize(days: DayBuckets, today: string, overrides?: PricingOv
             if (!row) {
                 row = { provider, model, todayUsage: emptyUsage(), monthUsage: emptyUsage(), todayCost: undefined, monthCost: undefined };
                 rows.set(key, row);
+                monthCosts.set(key, { total: 0, priced: true });
             }
             addUsage(row.monthUsage, usage);
+            const dayCost = calcCost(model, usage, overrides, day);
+            const acc = monthCosts.get(key)!;
+            if (dayCost === undefined) {
+                acc.priced = false;
+            } else {
+                acc.total += dayCost;
+            }
             if (day === today) {
                 addUsage(row.todayUsage, usage);
             }
@@ -63,9 +78,10 @@ export function summarize(days: DayBuckets, today: string, overrides?: PricingOv
         claude: { provider: 'claude', todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] },
         codex: { provider: 'codex', todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] },
     };
-    for (const row of rows.values()) {
+    for (const [key, row] of rows.entries()) {
         row.todayCost = calcCost(row.model, row.todayUsage, overrides, today);
-        row.monthCost = calcCost(row.model, row.monthUsage, overrides, today);
+        const acc = monthCosts.get(key);
+        row.monthCost = acc?.priced ? acc.total : undefined;
         const summary = result[row.provider];
         summary.todayCost += row.todayCost ?? 0;
         summary.monthCost += row.monthCost ?? 0;

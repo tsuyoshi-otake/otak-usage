@@ -71,6 +71,8 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
     'gpt-5.6-sol': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
+    // Terra and Luna are listed at their launch prices; the 2026-07-30 price cut
+    // lives in DEFAULT_PRICING_REVISIONS so earlier days keep costing what they did.
     'gpt-5.6-terra': { input: 2.5, cachedInput: 0.25, output: 15, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.6-luna': { input: 1, cachedInput: 0.1, output: 6, ...GPT_LONG_CONTEXT_PRICING },
     // The unsuffixed alias routes to GPT-5.6 Sol.
@@ -109,9 +111,22 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
 const DEFAULT_PRICING_KEYS = Object.keys(DEFAULT_PRICING);
 const DEFAULT_PRICING_ORDER = new Map(DEFAULT_PRICING_KEYS.map((key, index) => [key, index]));
 
+/**
+ * Price changes that took effect on a known day. The DEFAULT_PRICING entry is
+ * the model's original price, and each revision replaces the listed fields from
+ * its `from` day onward, so a day is always costed at the price that was in
+ * force on that day. Keep revisions oldest-first per model.
+ */
 const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>> = {
     'claude-sonnet-5': [
         { from: '2026-09-01', pricing: { input: 3, output: 15 } },
+    ],
+    // 2026-07-30 price cut: Luna -80%, Terra -20%. Sol was left unchanged.
+    'gpt-5.6-terra': [
+        { from: '2026-07-30', pricing: { input: 2, cachedInput: 0.2, output: 12 } },
+    ],
+    'gpt-5.6-luna': [
+        { from: '2026-07-30', pricing: { input: 0.2, cachedInput: 0.02, output: 1.2 } },
     ],
 };
 

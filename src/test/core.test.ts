@@ -161,6 +161,33 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('gpt-5.6-luna')?.output, 6);
     });
 
+    test('gpt-5.6 terra and luna resolve launch and post-cut prices', () => {
+        const terraLaunch = resolvePricing('gpt-5.6-terra', undefined, '2026-07-29');
+        assert.strictEqual(terraLaunch?.input, 2.5);
+        assert.strictEqual(terraLaunch?.cachedInput, 0.25);
+        assert.strictEqual(terraLaunch?.output, 15);
+
+        const terraCut = resolvePricing('gpt-5.6-terra-20260710', undefined, '2026-07-30');
+        assert.strictEqual(terraCut?.input, 2);
+        assert.strictEqual(terraCut?.cachedInput, 0.2);
+        assert.strictEqual(terraCut?.output, 12);
+        assert.strictEqual(terraCut?.longContextThreshold, 272_000);
+
+        const lunaLaunch = resolvePricing('gpt-5.6-luna', undefined, '2026-07-29');
+        assert.strictEqual(lunaLaunch?.input, 1);
+        assert.strictEqual(lunaLaunch?.cachedInput, 0.1);
+        assert.strictEqual(lunaLaunch?.output, 6);
+
+        const lunaCut = resolvePricing('gpt-5.6-luna', undefined, '2026-07-30');
+        assert.strictEqual(lunaCut?.input, 0.2);
+        assert.strictEqual(lunaCut?.cachedInput, 0.02);
+        assert.strictEqual(lunaCut?.output, 1.2);
+
+        // Sol and the unsuffixed alias were not part of the cut.
+        assert.strictEqual(resolvePricing('gpt-5.6-sol', undefined, '2026-07-30')?.output, 30);
+        assert.strictEqual(resolvePricing('gpt-5.6', undefined, '2026-07-30')?.input, 5);
+    });
+
     test('gpt-5.6 long-context premium applies to the full request', () => {
         const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
         assert.ok(Math.abs((calcCost('gpt-5.6-sol', usage) ?? 0) - 3.6) < 1e-12);
@@ -223,6 +250,17 @@ suite('aggregator', () => {
         const s = summarize(days, '2026-09-02');
         assert.strictEqual(s.claude.monthCost, 15);
         assert.strictEqual(s.claude.hasUnknownModel, false);
+    });
+
+    test('a mid-month price cut leaves the days before it at the old price', () => {
+        const days: DayBuckets = {};
+        const usage = { ...emptyUsage(), output: 1_000_000 };
+        addEvent(days, { provider: 'codex', model: 'gpt-5.6-luna', timestamp: new Date(2026, 6, 29, 10).getTime(), usage });
+        addEvent(days, { provider: 'codex', model: 'gpt-5.6-luna', timestamp: new Date(2026, 6, 31, 10).getTime(), usage });
+        const s = summarize(days, '2026-07-31');
+        // 2026-07-29 still bills at $6/M output, 2026-07-31 at the cut $1.20/M.
+        assert.ok(Math.abs(s.codex.monthCost - 7.2) < 1e-12);
+        assert.ok(Math.abs(s.codex.todayCost - 1.2) < 1e-12);
     });
 
     test('gpt-5.6 long-context premium survives daily and monthly aggregation', () => {

@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.4] - 2026-08-04
+
+### Fixed
+
+- The 2026-07-30 GPT-5.6 price cut is now applied: from that day on, Terra bills at $2.00 input / $0.20 cached input / $12.00 output per million tokens (was $2.50 / $0.25 / $15.00) and Luna at $0.20 / $0.02 / $1.20 (was $1.00 / $0.10 / $6.00). Days before the cut keep the launch prices, and Sol, the `gpt-5.6` alias, and the long-context rates above 272K tokens are unchanged. (#5)
+- Monthly cost is now accumulated per day at the prices in force on each day, so a price revision taking effect mid-month no longer reprices the earlier days of that month. Revisions that land on the first of a month were already correct. (#5)
+
 ## [1.21.3] - 2026-08-01
 
 ### Fixed
