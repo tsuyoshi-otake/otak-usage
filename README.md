@@ -26,7 +26,7 @@ otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts t
 ---
 
 > [!IMPORTANT]
-> **Context optimization is enabled by default for both Claude Code and Codex CLI.** Both providers default to a 200k window: Claude Code to a 200k effective auto-compaction window with a 92% trigger (about 184k tokens), Codex to a 200k context window with auto-compaction at 184k. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter fully custom values, or turn that provider off. Turning Claude optimization off restores the values that existed before otak-usage took ownership.
+> **Context optimization is enabled by default for both Claude Code and Codex CLI.** Claude Code keeps the active model's native context window and compacts at 90%, leaving 10% available to produce the summary. Codex defaults to a 200k context window with auto-compaction at 184k. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter custom values, or turn that provider off. Turning Claude optimization off restores the percentage that existed before otak-usage took ownership.
 
 AI coding tools leave useful token-count metadata in local session logs, but comparing day-to-day usage across providers usually means opening separate files or tools. **otak-usage turns those logs into one status-bar readout**: today or month-to-date, combined or per provider/model, with configurable alerts and optional metric export when you want dashboards.
 
@@ -79,7 +79,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
 - **Fast-mode warning**: when Claude Code or Codex CLI fast mode turns on, the same warning notification the cost and limit alerts use points out that usage is billed at premium fast-mode rates. See [Fast-mode detection](#fast-mode-detection).
-- **Claude + Codex context optimization — on by default**: Claude Code gets a 200k effective auto-compaction window with a 92% trigger (about 184k); Codex gets a matching 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
+- **Claude + Codex context optimization — on by default**: Claude Code keeps each model's native context window and compacts at 90%; Codex gets a 200k context window with auto-compaction at 184k. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The active values for both providers are shown directly in the tooltip.
 - **Codex model controls — Max enabled automatically**: On activation, otak-usage updates the Codex VS Code extension's persisted model state, preserves the reasoning efforts you already have selected, and appends `max`. If Codex is already open, its webviews are refreshed after a change so the picker updates immediately. This does not modify `config.toml`.
 - **Optional conversation hooks (off by default)**: Tooltip toggles can prefix Claude Code and Codex conversation titles with the Git repository name and play prompt/stop chimes. The hook runner is a dependency-free Node script that works on Windows, macOS, Linux, WSL, SSH remotes, Dev Containers, and GitHub Codespaces; unrelated user hooks remain untouched.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
@@ -326,11 +326,10 @@ The warning fires once per off → on transition (for Claude, at most once per d
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
 | `otakUsage.includeRepositoryNameInHistory` | `false` | When enabled from the tooltip or Settings, install a managed Stop hook for Claude Code and Codex that prefixes conversation history titles with the repository name. |
 | `otakUsage.enableHookSounds` | `false` | When enabled from the tooltip or Settings, install managed `UserPromptSubmit` and `Stop` hooks that play short sounds. Uses platform players where available and degrades quietly on headless Codespaces. |
-| `otakUsage.optimizeClaudeContext` | `true` | **On by default.** Writes the two official auto-compaction environment settings below under `env` in Claude Code `settings.json`. Turning it off through **Optimize** restores the values that existed before otak-usage took ownership. |
-| `otakUsage.claudeContextWindow` | `200000` | Effective auto-compaction window written to `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. The Custom flow accepts any positive integer; Claude caps it at the active model's actual context window. |
-| `otakUsage.claudeAutoCompactPercent` | `92` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default produces an effective trigger near 184k tokens. |
+| `otakUsage.optimizeClaudeContext` | `true` | **On by default.** Writes the official auto-compaction percentage below under `env` in Claude Code `settings.json`; Claude Code chooses the active model's context window. Turning it off through **Optimize** restores the percentage that existed before otak-usage took ownership. |
+| `otakUsage.claudeAutoCompactPercent` | `90` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default leaves 10% of the active model's context window available for compaction. |
 | `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove those two keys. While off, the file is left untouched. |
-| `otakUsage.codexContextWindow` | `200000` | Value written for `model_context_window` when the optimization is on. The default matches the Claude Code side. The Optimize picker can set this to the 200k or 272k preset — 272k being OpenAI's long-context pricing threshold, the largest window still billed at the standard rate — or a custom positive integer. |
+| `otakUsage.codexContextWindow` | `200000` | Value written for `model_context_window` when the optimization is on. The Optimize picker can set this to the 200k or 272k preset — 272k being OpenAI's long-context pricing threshold, the largest window still billed at the standard rate — or a custom positive integer. Claude Code no longer shares this fixed-window behavior. |
 | `otakUsage.codexAutoCompactLimit` | `184000` | Value written for `model_auto_compact_token_limit` when the optimization is on. The Optimize picker pairs 200k with 184k and 272k with 250k; custom values must remain below the context window. |
 | `otakUsage.telemetry.enabled` | `false` | Send usage telemetry to an OpenTelemetry OTLP/HTTP endpoint. Off by default. |
 | `otakUsage.telemetry.includeTokenUsage` | `true` | Include per-model token usage (`gen_ai.client.token.usage`) in telemetry. |
@@ -347,7 +346,7 @@ Both providers are optimized immediately after installation unless you turn them
 
 | Provider | Default | Config written |
 | --- | --- | --- |
-| Claude Code | 200k window × 92% = about 184k auto-compact trigger | `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `~/.claude/settings.json` (or the configured `$CLAUDE_CONFIG_DIR`) |
+| Claude Code | Active model's native window, compact at 90% | `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `~/.claude/settings.json` (or the configured `$CLAUDE_CONFIG_DIR`) |
 | Codex CLI | 200k context, compact at 184k | `model_context_window` and `model_auto_compact_token_limit` in `~/.codex/config.toml` (or the configured `$CODEX_HOME`) |
 
 Codex previously defaulted to 272k / 250k. Upgrading moves an installation to the aligned 200k default once: if your Codex values still read as that old default, they are cleared so the new default applies; anything you chose yourself is kept exactly as it was. Pick the **272k** preset again from the Optimize picker if you want the larger window back.
@@ -358,22 +357,21 @@ Open the status-bar tooltip and click **Optimize**. The command palette first as
 - **Custom…**, where every value is validated before it is saved;
 - **Turn Off**, which disables only the selected provider.
 
-Claude's Custom flow accepts any positive effective-window token count and an auto-compaction percentage from 1 to 100. For example, 150000 and 80% compact near 120000 tokens. Codex's Custom flow accepts any positive context window and a smaller positive auto-compact token limit.
+Claude's Custom flow accepts an auto-compaction percentage from 1 to 100. Claude Code applies it to the active model's native context window: at the 90% default, a 1M model keeps 100k tokens free and a 200k model keeps 20k free. Codex's Custom flow accepts any positive context window and a smaller positive auto-compact token limit.
 
 Claude Code officially supports environment variables under the `env` object in `settings.json`. With the defaults, otak-usage manages this semantic configuration:
 
 ```json
 {
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "92"
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"
   }
 }
 ```
 
-Unrelated Claude settings and environment variables are preserved. On first enable, otak-usage records whether these two values already existed; **Turn Off** restores those exact earlier values, or removes only the values it added. Invalid JSON or a non-object `env` value causes a visible error and no file write. See the official [Claude Code settings](https://code.claude.com/docs/en/settings) and [environment variable reference](https://code.claude.com/docs/en/env-vars).
+Unrelated Claude settings and environment variables are preserved. On first enable, otak-usage records whether the percentage already existed; **Turn Off** restores that exact earlier value, or removes only the value it added. Installations upgraded from the earlier 200k-window behavior restore the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` value that existed before otak-usage took ownership, or remove the extension-added value when none existed. Invalid JSON or a non-object `env` value causes a visible error and no file write. See the official [Claude Code settings](https://code.claude.com/docs/en/settings) and [environment variable reference](https://code.claude.com/docs/en/env-vars).
 
-Claude's effective auto-compaction window is capped at the active model's real context window. Claude Code's status-line `used_percentage` still uses the model's full context window, so a 1M model configured to compact near 184k can compact while that indicator is near 18%. A shell variable, managed setting, or higher-priority project/local setting may override the user-level values; use Claude Code's `/status` and `/context` commands to inspect the effective configuration. `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, or `autoCompactEnabled: false` also prevents automatic compaction and is never silently removed by otak-usage.
+Claude Code determines the context window from the active model, so current 1M and 200k models both compact at the configured percentage without being forced onto a common token limit. A shell variable, managed setting, or higher-priority project/local setting may override the user-level value; use Claude Code's `/status` and `/context` commands to inspect the effective configuration. `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, or `autoCompactEnabled: false` also prevents automatic compaction and is never silently removed by otak-usage.
 
 ## Subscription Rate Limits
 
@@ -429,7 +427,7 @@ Token counts and cost are month-to-date and reset at the start of each month. RT
 otak-usage is local by default:
 
 - **Local log reading**: it reads token-count metadata from local Claude Code and Codex CLI logs.
-- **Local config optimization**: by default it updates only the documented context/auto-compaction keys in local Claude Code `settings.json` and Codex `config.toml`. Both can be turned off from **Optimize**; Claude's previous values are restored.
+- **Local config optimization**: by default it updates only Claude Code's documented auto-compaction percentage and Codex's documented context/auto-compaction keys. Both can be turned off from **Optimize**; Claude's previous percentage is restored.
 - **No prompt collection**: it does not collect, store, or export prompt content.
 - **Read-only credential use, provider-only**: for the Claude rate-limit display it reads the OAuth token Claude Code already stores locally and sends it only to `api.anthropic.com` — never to any other endpoint, and never modified. Disable `otakUsage.showRateLimits` to prevent this entirely; no other feature touches credential files.
 - **No other network use**: apart from the Anthropic rate-limit request above (on by default, one call per refresh interval), network access happens only when you explicitly enable OpenTelemetry export.

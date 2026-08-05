@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.5] - 2026-08-05
+
+### Changed
+
+- Claude Code context optimization now manages only the auto-compaction trigger percentage, defaulting to 90%, while Claude Code chooses each model's native context window. Upgrades safely remove the extension-managed 200k window and restore any value that existed before otak-usage took ownership. Codex optimization is unchanged. (#35)
+
 ## [1.21.4] - 2026-08-04
 
 ### Fixed

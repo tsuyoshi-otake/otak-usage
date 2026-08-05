@@ -56,15 +56,20 @@ export function formatTokenLimit(n: number): string {
     return n % 1000 === 0 ? `${n / 1000}k` : n.toLocaleString('en-US');
 }
 
-export interface ProviderOptimizeView {
+export interface ClaudeOptimizeView {
+    enabled: boolean;
+    autoCompactPercent: number;
+}
+
+export interface CodexOptimizeView {
     enabled: boolean;
     contextWindow: number;
     autoCompactLimit: number;
 }
 
 export interface ContextOptimizeView {
-    claude: ProviderOptimizeView;
-    codex: ProviderOptimizeView;
+    claude: ClaudeOptimizeView;
+    codex: CodexOptimizeView;
 }
 
 export interface HookFeatureView {
@@ -197,7 +202,7 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
     const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage']));
     const optimizeValue = optimize
-        ? ` (Claude ${optimize.claude.enabled ? `${formatTokenLimit(optimize.claude.contextWindow)} → ${formatTokenLimit(optimize.claude.autoCompactLimit)}` : 'off'}` +
+        ? ` (Claude ${optimize.claude.enabled ? `${optimize.claude.autoCompactPercent}%` : 'off'}` +
           ` · Codex ${optimize.codex.enabled ? `${formatTokenLimit(optimize.codex.contextWindow)} → ${formatTokenLimit(optimize.codex.autoCompactLimit)}` : 'off'})`
         : '';
     parts.push(

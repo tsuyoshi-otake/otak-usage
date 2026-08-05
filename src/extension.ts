@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
-import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeValues, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson } from './claudeOptimize';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, ClaudeOptimizeBackup, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, matchingClaudeOptimizePreset, migrateLegacyClaudeOptimizeJson, normalizeClaudeAutoCompactPercent, parseClaudeAutoCompactPercent, restoreClaudeOptimizeJson, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
@@ -63,11 +63,20 @@ interface ClaudeOptimizeQuickPickItem extends vscode.QuickPickItem {
 }
 
 interface ClaudeOptimizeOwnership {
-    version: 1;
+    version: 2;
     phase: 'applying' | 'applied' | 'removing';
     filePresent: boolean;
     backup: ClaudeOptimizeBackup;
 }
+
+interface LegacyClaudeOptimizeOwnership {
+    version: 1;
+    phase: 'applying' | 'applied' | 'removing';
+    filePresent: boolean;
+    backup: LegacyClaudeOptimizeBackup;
+}
+
+type AnyClaudeOptimizeOwnership = ClaudeOptimizeOwnership | LegacyClaudeOptimizeOwnership;
 
 type HookFeatureSettingKey = 'includeRepositoryNameInHistory' | 'enableHookSounds';
 
@@ -196,7 +205,6 @@ class UsageController implements vscode.Disposable {
                     }
                 }
                 if (e.affectsConfiguration('otakUsage.optimizeClaudeContext') ||
-                    e.affectsConfiguration('otakUsage.claudeContextWindow') ||
                     e.affectsConfiguration('otakUsage.claudeAutoCompactPercent') ||
                     e.affectsConfiguration('otakUsage.claudeConfigDir')) {
                     if (!this.updatingClaudeOptimizeConfiguration && this.leader) {
@@ -438,7 +446,6 @@ class UsageController implements vscode.Disposable {
 
     private currentClaudeOptimizeValues(config = this.config()): ClaudeOptimizeValues {
         return {
-            contextWindow: normalizeClaudeTokenLimit(config.get<unknown>('claudeContextWindow'), DEFAULT_CLAUDE_CONTEXT_WINDOW),
             autoCompactPercent: normalizeClaudeAutoCompactPercent(config.get<unknown>('claudeAutoCompactPercent'), DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT),
         };
     }
@@ -451,9 +458,9 @@ class UsageController implements vscode.Disposable {
             {
                 label: '$(otak-claude) Claude Code',
                 description: config.get<boolean>('optimizeClaudeContext', true)
-                    ? `On · ${formatTokenLimit(claudeValues.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(claudeValues))}`
+                    ? `On · compact at ${claudeValues.autoCompactPercent}%`
                     : 'Off',
-                detail: 'Configure the effective auto-compaction window and trigger percentage.',
+                detail: 'Configure the auto-compaction trigger percentage; Claude Code chooses the model context window.',
                 provider: 'claude' as const,
             },
             {
@@ -484,15 +491,15 @@ class UsageController implements vscode.Disposable {
         const currentPreset = optimizeEnabled ? matchingClaudeOptimizePreset(current) : undefined;
         const items: ClaudeOptimizeQuickPickItem[] = CLAUDE_OPTIMIZE_PRESETS.map((preset) => ({
             label: `${currentPreset?.id === preset.id ? '$(check) ' : ''}${preset.id}`,
-            description: `${formatTokenLimit(preset.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(preset))} (${preset.autoCompactPercent}%)`,
-            detail: `CLAUDE_CODE_AUTO_COMPACT_WINDOW ${preset.contextWindow.toLocaleString('en-US')} · CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ${preset.autoCompactPercent}`,
+            description: `Compact at ${preset.autoCompactPercent}% of the active model's context window`,
+            detail: `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ${preset.autoCompactPercent}`,
             values: preset,
         }));
         items.push(
             {
                 label: `${optimizeEnabled && !currentPreset ? '$(check) ' : ''}$(edit) Custom…`,
-                description: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(current))} (${current.autoCompactPercent}%)`,
-                detail: 'Enter any positive context window and an auto-compaction percentage from 1 to 100.',
+                description: `Compact at ${current.autoCompactPercent}% of the active model's context window`,
+                detail: 'Enter an auto-compaction percentage from 1 to 100.',
                 custom: true,
             },
             {
@@ -504,7 +511,7 @@ class UsageController implements vscode.Disposable {
 
         const selected = await vscode.window.showQuickPick(items, {
             title: 'Claude Code Context Optimization',
-            placeHolder: `${formatTokenLimit(current.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(current))} (${current.autoCompactPercent}%)`,
+            placeHolder: `Compact at ${current.autoCompactPercent}% of the active model's context window`,
             matchOnDescription: true,
             matchOnDetail: true,
         });
@@ -534,19 +541,6 @@ class UsageController implements vscode.Disposable {
 
         let values = selected.values;
         if (selected.custom) {
-            const contextInput = await vscode.window.showInputBox({
-                title: 'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-                prompt: 'Effective context window in tokens (> 0)',
-                value: String(current.contextWindow),
-                validateInput: (value) => parseClaudeTokenLimit(value) === undefined ? 'Enter a positive integer.' : undefined,
-            });
-            if (contextInput === undefined) {
-                return;
-            }
-            const contextWindow = parseClaudeTokenLimit(contextInput);
-            if (contextWindow === undefined) {
-                return;
-            }
             const percentInput = await vscode.window.showInputBox({
                 title: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
                 prompt: 'Auto-compaction trigger percentage (1–100)',
@@ -560,7 +554,7 @@ class UsageController implements vscode.Disposable {
             if (autoCompactPercent === undefined) {
                 return;
             }
-            values = { contextWindow, autoCompactPercent };
+            values = { autoCompactPercent };
         }
         if (!values) {
             return;
@@ -568,7 +562,6 @@ class UsageController implements vscode.Disposable {
 
         this.updatingClaudeOptimizeConfiguration = true;
         try {
-            await config.update('claudeContextWindow', values.contextWindow, vscode.ConfigurationTarget.Global);
             await config.update('claudeAutoCompactPercent', values.autoCompactPercent, vscode.ConfigurationTarget.Global);
             await config.update('optimizeClaudeContext', true, vscode.ConfigurationTarget.Global);
         } catch (err) {
@@ -583,7 +576,7 @@ class UsageController implements vscode.Disposable {
         const applied = await this.syncClaudeOptimize(false);
         if (applied) {
             vscode.window.setStatusBarMessage(
-                `otak-usage: applied Claude Code context optimization: ${formatTokenLimit(values.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(values))} (${values.autoCompactPercent}%)`,
+                `otak-usage: Claude Code will compact at ${values.autoCompactPercent}% of the active model's context window`,
                 5000,
             );
             void this.renderAndCheckAlert();
@@ -782,7 +775,7 @@ class UsageController implements vscode.Disposable {
             }
             return false;
         }
-        let ownership = rawOwnership as ClaudeOptimizeOwnership | undefined;
+        let ownership = rawOwnership as AnyClaudeOptimizeOwnership | undefined;
         if (!desired && !ownership) {
             return true;
         }
@@ -793,7 +786,7 @@ class UsageController implements vscode.Disposable {
                 const current = await readOptionalTextFile(configPath);
                 if (!ownership) {
                     ownership = {
-                        version: 1,
+                        version: 2,
                         phase: 'applying',
                         filePresent: current !== undefined,
                         backup: captureClaudeOptimizeBackup(current ?? ''),
@@ -805,12 +798,22 @@ class UsageController implements vscode.Disposable {
                 // stops after the file write, the original values remain known.
                 await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
                 const values = this.currentClaudeOptimizeValues(config);
+                const next = ownership.version === 1
+                    ? migrateLegacyClaudeOptimizeJson(current ?? '', values, ownership.backup)
+                    : applyClaudeOptimizeJson(current ?? '', values);
                 const changed = await writeTransformedTextFile(
                     configPath,
                     current,
-                    applyClaudeOptimizeJson(current ?? '', values),
+                    next,
                 );
-                ownership = { ...ownership, phase: 'applied' };
+                ownership = ownership.version === 1
+                    ? {
+                        version: 2,
+                        phase: 'applied',
+                        filePresent: ownership.filePresent,
+                        backup: upgradeLegacyClaudeOptimizeBackup(ownership.backup),
+                    }
+                    : { ...ownership, phase: 'applied' };
                 await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
                 if (changed && showStatus) {
                     vscode.window.setStatusBarMessage('otak-usage: applied Claude Code context optimization to settings.json', 4000);
@@ -820,7 +823,9 @@ class UsageController implements vscode.Disposable {
                 await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
                 const current = await readOptionalTextFile(configPath);
                 if (current !== undefined) {
-                    const restored = restoreClaudeOptimizeJson(current, ownership.backup);
+                    const restored = ownership.version === 1
+                        ? restoreLegacyClaudeOptimizeJson(current, ownership.backup)
+                        : restoreClaudeOptimizeJson(current, ownership.backup);
                     if (!ownership.filePresent && jsonObjectIsEmpty(restored)) {
                         await fsp.unlink(configPath).catch((err: unknown) => {
                             if (!isNodeError(err, 'ENOENT')) {
@@ -1448,8 +1453,7 @@ class UsageController implements vscode.Disposable {
             {
                 claude: {
                     enabled: config.get<boolean>('optimizeClaudeContext', true),
-                    contextWindow: claudeOptimizeValues.contextWindow,
-                    autoCompactLimit: claudeAutoCompactTokenLimit(claudeOptimizeValues),
+                    autoCompactPercent: claudeOptimizeValues.autoCompactPercent,
                 },
                 codex: {
                     enabled: config.get<boolean>('optimizeCodexContext', true),
@@ -1840,15 +1844,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isClaudeOptimizeOwnership(value: unknown): value is ClaudeOptimizeOwnership {
-    if (!isRecord(value) || value.version !== 1 || typeof value.filePresent !== 'boolean' ||
+function isClaudeOptimizeOwnership(value: unknown): value is AnyClaudeOptimizeOwnership {
+    if (!isRecord(value) || ![1, 2].includes(Number(value.version)) || typeof value.filePresent !== 'boolean' ||
         !['applying', 'applied', 'removing'].includes(String(value.phase)) || !isRecord(value.backup)) {
         return false;
     }
     const backup = value.backup;
-    return backup.version === 1 && typeof backup.envPresent === 'boolean' &&
-        isRecord(backup.contextWindow) && typeof backup.contextWindow.present === 'boolean' &&
+    const sharedValid = typeof backup.envPresent === 'boolean' &&
         isRecord(backup.autoCompactPercent) && typeof backup.autoCompactPercent.present === 'boolean';
+    if (!sharedValid || backup.version !== value.version) {
+        return false;
+    }
+    return value.version === 2 ||
+        (backup.version === 1 && isRecord(backup.contextWindow) && typeof backup.contextWindow.present === 'boolean');
 }
 
 function isNodeError(err: unknown, code: string): err is NodeJS.ErrnoException {
