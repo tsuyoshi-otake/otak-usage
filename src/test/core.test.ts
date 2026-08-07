@@ -498,20 +498,20 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers stable 230k and 272k preset pairs, default first', () => {
+    test('offers stable 240k and 272k preset pairs, default first', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '230k', contextWindow: 230000, autoCompactLimit: 195500 },
-            { id: '272k', contextWindow: 272000, autoCompactLimit: 231200 },
+            { id: '240k', contextWindow: 240000, autoCompactLimit: 216000 },
+            { id: '272k', contextWindow: 272000, autoCompactLimit: 244800 },
         ]);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 230000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 195500);
-        assert.strictEqual(matchingCodexOptimizePreset(230000, 195500)?.id, '230k');
-        assert.strictEqual(matchingCodexOptimizePreset(230000, 180000), undefined);
-        assert.strictEqual(suggestedCodexAutoCompactLimit(230000), 195500);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 240000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 216000);
+        assert.strictEqual(matchingCodexOptimizePreset(240000, 216000)?.id, '240k');
+        assert.strictEqual(matchingCodexOptimizePreset(240000, 180000), undefined);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(240000), 216000);
     });
 
-    test('compacts every preset at the shared 85% of its window', () => {
-        assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.85);
+    test('compacts every preset at the shared 90% of its window', () => {
+        assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.9);
         // Both providers compact at the same share of their window.
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT / 100, CODEX_AUTO_COMPACT_RATIO);
         for (const preset of CODEX_OPTIMIZE_PRESETS) {
@@ -522,7 +522,7 @@ suite('codex optimize', () => {
             );
         }
         // A custom window gets the same treatment, rounded down to an integer.
-        assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 340000);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 360000);
         assert.strictEqual(suggestedCodexAutoCompactLimit(1), 1);
     });
 
@@ -806,19 +806,18 @@ suite('optional hooks', () => {
 });
 
 suite('claude optimize', () => {
-    const values = { contextWindow: 230000, autoCompactPercent: 85 };
+    const values = { contextWindow: 240000, autoCompactPercent: 90 };
 
-    test('offers a 230k preset that compacts just under the 200k billing boundary', () => {
+    test('offers a 240k preset that compacts at 216k, leaving 24k for the summary', () => {
         assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
-            { id: '230k', contextWindow: 230000, autoCompactPercent: 85 },
+            { id: '240k', contextWindow: 240000, autoCompactPercent: 90 },
         ]);
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 230000);
-        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
-        // Anthropic bills above 200k input tokens at the long-context rate.
-        assert.strictEqual(claudeAutoCompactTokenLimit(values), 195500);
-        assert.ok(claudeAutoCompactTokenLimit(values) < 200000);
-        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '230k');
-        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 90 }), undefined);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 240000);
+        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 90);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 216000);
+        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 24000);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '240k');
+        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 85 }), undefined);
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, contextWindow: 200000 }), undefined);
     });
 
@@ -856,8 +855,8 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
         assert.strictEqual(parsed.autoCompactEnabled, true);
         assert.strictEqual(parsed.env.EXISTING, 'keep-me');
-        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '230000');
-        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '240000');
+        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '90');
         assert.ok(applied.includes('\n    "permissions"'));
 
         const restored = JSON.parse(restoreClaudeOptimizeJson(applied, backup));
@@ -922,7 +921,7 @@ suite('claude optimize', () => {
             autoCompactPercent: { present: true, value: '80' },
         });
         const applied = JSON.parse(applyClaudeOptimizeJson(current, values));
-        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '230000');
+        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '240000');
         const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), adopted));
         assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
         assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '80');
@@ -1361,11 +1360,11 @@ suite('formatter', () => {
             new I18n('en'),
             undefined,
             {
-                claude: { enabled: true, contextWindow: 230000, autoCompactLimit: 195500 },
+                claude: { enabled: true, contextWindow: 240000, autoCompactLimit: 216000 },
                 codex: { enabled: true, contextWindow: 272000, autoCompactLimit: 250000 },
             },
         );
-        assert.ok(md.includes('Optimize (Claude 230k → 195.5k · Codex 272k → 250k)'));
+        assert.ok(md.includes('Optimize (Claude 240k → 216k · Codex 272k → 250k)'));
     });
 
     test('tooltip includes the RTK savings table when stats exist', () => {

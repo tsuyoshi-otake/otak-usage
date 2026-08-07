@@ -23,15 +23,16 @@ export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
  * (`DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT`), so the two providers are aligned
  * even though one is configured in tokens and the other in percent.
  */
-export const CODEX_AUTO_COMPACT_RATIO = 0.85;
+export const CODEX_AUTO_COMPACT_RATIO = 0.9;
 
 // The window both providers share (`DEFAULT_CLAUDE_CONTEXT_WINDOW` is the same
 // number), so a session behaves alike whichever CLI it runs on. It stays below
 // 272k, the point above which OpenAI charges the long-context rate, so the
-// default never parks a Codex session at that billing boundary — and its 85%
-// trigger at 195.5k stays below Anthropic's own 200k boundary on the other side.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 230000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 195500;
+// default never parks a Codex session at that billing boundary. Its 90% trigger
+// lands at 216k, which is past Anthropic's own 200k boundary on the other side —
+// the wider working window is taken in exchange.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 240000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 216000;
 
 /**
  * The pair that was the default before the two providers were aligned. Kept so
@@ -52,7 +53,7 @@ export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
 }
 
 export interface CodexOptimizePreset {
-    id: '230k' | '272k';
+    id: '240k' | '272k';
     contextWindow: number;
     autoCompactLimit: number;
 }
@@ -64,7 +65,7 @@ export interface CodexOptimizePreset {
  * compaction is given.
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
-    { id: '230k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
+    { id: '240k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
     {
         id: '272k',
         contextWindow: STANDARD_RATE_CODEX_CONTEXT_WINDOW,

@@ -13,14 +13,15 @@ export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 
 /**
  * The working window both providers are pinned to. Current Claude models offer
- * far more, but Anthropic bills a request above 200k input tokens at the
- * long-context rate, so a window that compacts before that boundary keeps a
- * session on standard pricing. 230k paired with the shared compact share below
- * triggers at 195.5k — just under the boundary, with the remaining 34.5k left
- * to write the summary. `DEFAULT_CODEX_CONTEXT_WINDOW` is the same number, so
- * the two providers behave alike regardless of which one a session runs on.
+ * far more, but pinning the window is what makes compaction land on a fixed
+ * token count instead of a share of whatever model happens to be active. 240k
+ * paired with the shared compact share below triggers at 216k, leaving 24k to
+ * write the summary. That trigger sits above the 200k input tokens at which
+ * Anthropic switches to the long-context rate — the larger working window is
+ * taken in exchange. `DEFAULT_CODEX_CONTEXT_WINDOW` is the same number, so the
+ * two providers behave alike regardless of which one a session runs on.
  */
-export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 230000;
+export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 240000;
 
 /**
  * Claude Code compacts at this share of the managed window, leaving the rest to
@@ -28,7 +29,7 @@ export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 230000;
  * window (`CODEX_AUTO_COMPACT_RATIO`), so both providers compact at the same
  * point even though one is configured in percent and the other in tokens.
  */
-export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
+export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
 
 export interface ClaudeOptimizeValues {
     contextWindow: number;
@@ -36,12 +37,12 @@ export interface ClaudeOptimizeValues {
 }
 
 export interface ClaudeOptimizePreset extends ClaudeOptimizeValues {
-    id: '230k';
+    id: '240k';
 }
 
 export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
     {
-        id: '230k',
+        id: '240k',
         contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
     },
