@@ -2,7 +2,7 @@
   "name": "otak-usage",
   "displayName": "otak-usage",
   "description": "%extension.description%",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "publisher": "odangoo",
   "license": "MIT",
   "icon": "./images/icon.png",
@@ -211,13 +211,13 @@
         },
         "otakUsage.claudeContextWindow": {
           "type": "number",
-          "default": 230000,
+          "default": 240000,
           "minimum": 1,
           "description": "%config.claudeContextWindow%"
         },
         "otakUsage.claudeAutoCompactPercent": {
           "type": "number",
-          "default": 85,
+          "default": 90,
           "minimum": 1,
           "maximum": 100,
           "description": "%config.claudeAutoCompactPercent%"
@@ -229,13 +229,13 @@
         },
         "otakUsage.codexContextWindow": {
           "type": "number",
-          "default": 230000,
+          "default": 240000,
           "minimum": 1,
           "description": "%config.codexContextWindow%"
         },
         "otakUsage.codexAutoCompactLimit": {
           "type": "number",
-          "default": 195500,
+          "default": 216000,
           "minimum": 1,
           "description": "%config.codexAutoCompactLimit%"
         },

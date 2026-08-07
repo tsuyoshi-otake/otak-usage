@@ -2,6 +2,15 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.23.0] - 2026-08-07
+
+### Changed
+
+- **Both providers now share a 240k context window and compact at 90% of it — 216k tokens**, up from 1.22.0's 230k / 85% / 195.5k. The working window grows by 10k and compaction starts 20.5k later, leaving 24k to produce the summary. Claude and Codex still move together, so a session behaves the same whichever CLI it runs on. (#39)
+- 216k is **above the 200k input tokens at which Anthropic charges the long-context rate**, which 1.22.0 deliberately stayed under — the wider working window is taken in exchange. Set `otakUsage.claudeAutoCompactPercent` to 83 (or the window to 230k at 85%) to go back to compacting on standard pricing. The 240k window is still below OpenAI's 272k threshold, so the Codex side is unaffected. (#39)
+- The 90% ratio applies to every Codex preset and to the Custom flow's suggested limit: the **272k** preset now pairs with 244.8k instead of 231.2k, and the Optimize picker lists **240k** where it listed 230k. Claude's preset is now **240k / 90%**. (#39)
+- No migration runs. An installation that never picked a preset holds no explicit values and moves to 240k / 216k automatically; values you chose yourself — including 1.22.0's 230k / 195.5k picked from the picker — are kept exactly as they are and show as **Custom…**. (#39)
+
 ## [1.22.0] - 2026-08-07
 
 ### Changed
