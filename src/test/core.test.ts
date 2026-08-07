@@ -1,8 +1,8 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
-import { CLAUDE_OPTIMIZE_PRESETS, LegacyClaudeOptimizeBackup, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, matchingClaudeOptimizePreset, migrateLegacyClaudeOptimizeJson, normalizeClaudeAutoCompactPercent, parseClaudeAutoCompactPercent, restoreClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackupV2, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
+import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { CODEX_DEFAULT_REASONING_EFFORTS, CODEX_ENABLED_REASONING_EFFORTS_KEY, CODEX_PERSISTED_ATOM_STATE_KEY, MementoLike, addCodexMaxReasoningEffort, syncCodexMaxReasoningEffort } from '../codexModelFeatures';
 import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
@@ -498,16 +498,32 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers stable 200k and 272k preset pairs, default first', () => {
+    test('offers stable 230k and 272k preset pairs, default first', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '200k', contextWindow: 200000, autoCompactLimit: 184000 },
-            { id: '272k', contextWindow: 272000, autoCompactLimit: 250000 },
+            { id: '230k', contextWindow: 230000, autoCompactLimit: 195500 },
+            { id: '272k', contextWindow: 272000, autoCompactLimit: 231200 },
         ]);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 200000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 184000);
-        assert.strictEqual(matchingCodexOptimizePreset(200000, 184000)?.id, '200k');
-        assert.strictEqual(matchingCodexOptimizePreset(200000, 180000), undefined);
-        assert.strictEqual(suggestedCodexAutoCompactLimit(200000), 184000);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 230000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 195500);
+        assert.strictEqual(matchingCodexOptimizePreset(230000, 195500)?.id, '230k');
+        assert.strictEqual(matchingCodexOptimizePreset(230000, 180000), undefined);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(230000), 195500);
+    });
+
+    test('compacts every preset at the shared 85% of its window', () => {
+        assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.85);
+        // Both providers compact at the same share of their window.
+        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT / 100, CODEX_AUTO_COMPACT_RATIO);
+        for (const preset of CODEX_OPTIMIZE_PRESETS) {
+            assert.strictEqual(
+                preset.autoCompactLimit,
+                suggestedCodexAutoCompactLimit(preset.contextWindow),
+                `${preset.id} must follow the shared compact ratio`,
+            );
+        }
+        // A custom window gets the same treatment, rounded down to an integer.
+        assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 340000);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(1), 1);
     });
 
     suite('one-time default migration', () => {
@@ -790,23 +806,41 @@ suite('optional hooks', () => {
 });
 
 suite('claude optimize', () => {
-    const values = { autoCompactPercent: 90 };
+    const values = { contextWindow: 230000, autoCompactPercent: 85 };
 
-    test('offers a model-independent 90% preset', () => {
+    test('offers a 230k preset that compacts just under the 200k billing boundary', () => {
         assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
-            { id: '90%', autoCompactPercent: 90 },
+            { id: '230k', contextWindow: 230000, autoCompactPercent: 85 },
         ]);
-        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '90%');
-        assert.strictEqual(matchingClaudeOptimizePreset({ autoCompactPercent: 85 }), undefined);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 230000);
+        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
+        // Anthropic bills above 200k input tokens at the long-context rate.
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 195500);
+        assert.ok(claudeAutoCompactTokenLimit(values) < 200000);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '230k');
+        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 90 }), undefined);
+        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, contextWindow: 200000 }), undefined);
     });
 
-    test('normalizes percentages', () => {
+    test('matches the Codex window so both providers behave alike', () => {
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, DEFAULT_CODEX_CONTEXT_WINDOW);
+        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT / 100, CODEX_AUTO_COMPACT_RATIO);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+    });
+
+    test('normalizes percentages and token limits', () => {
         assert.strictEqual(normalizeClaudeAutoCompactPercent(0, 90), 90);
         assert.strictEqual(normalizeClaudeAutoCompactPercent(101, 90), 90);
         assert.strictEqual(normalizeClaudeAutoCompactPercent(85.8, 90), 85);
         assert.strictEqual(parseClaudeAutoCompactPercent('70'), 70);
         assert.strictEqual(parseClaudeAutoCompactPercent('0'), undefined);
         assert.strictEqual(parseClaudeAutoCompactPercent('101'), undefined);
+        assert.strictEqual(normalizeClaudeTokenLimit(0, 230000), 230000);
+        assert.strictEqual(normalizeClaudeTokenLimit('300000', 230000), 230000);
+        assert.strictEqual(normalizeClaudeTokenLimit(300000.7, 230000), 300000);
+        assert.strictEqual(parseClaudeTokenLimit('300_000'), 300000);
+        assert.strictEqual(parseClaudeTokenLimit('0'), undefined);
+        assert.strictEqual(parseClaudeTokenLimit('-1'), undefined);
     });
 
     test('applies string environment values and preserves unrelated settings', () => {
@@ -822,8 +856,8 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
         assert.strictEqual(parsed.autoCompactEnabled, true);
         assert.strictEqual(parsed.env.EXISTING, 'keep-me');
-        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined);
-        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '90');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '230000');
+        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
         assert.ok(applied.includes('\n    "permissions"'));
 
         const restored = JSON.parse(restoreClaudeOptimizeJson(applied, backup));
@@ -844,44 +878,76 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(JSON.parse(restored), JSON.parse(original));
     });
 
-    test('migrates legacy ownership by restoring the original context window', () => {
-        const current = JSON.stringify({
-            env: {
-                CLAUDE_CODE_AUTO_COMPACT_WINDOW: '200000',
-                CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '92',
-                OTHER: 'keep-me',
-            },
-        });
+    test('carries a v1 backup forward untouched, since it already held both values', () => {
         const legacyBackup: LegacyClaudeOptimizeBackup = {
             version: 1,
             envPresent: true,
             contextWindow: { present: true, value: '750000' },
             autoCompactPercent: { present: true, value: '80' },
         };
-        const migrated = JSON.parse(migrateLegacyClaudeOptimizeJson(current, values, legacyBackup));
-        assert.strictEqual(migrated.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
-        assert.strictEqual(migrated.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '90');
-        assert.strictEqual(migrated.env.OTHER, 'keep-me');
-        assert.deepStrictEqual(upgradeLegacyClaudeOptimizeBackup(legacyBackup), {
+        const upgraded = upgradeLegacyClaudeOptimizeBackup(legacyBackup);
+        assert.deepStrictEqual(upgraded, {
+            version: 3,
+            envPresent: true,
+            contextWindow: { present: true, value: '750000' },
+            autoCompactPercent: { present: true, value: '80' },
+        });
+        // Both formats give back the same file, so an interrupted upgrade is safe.
+        const applied = applyClaudeOptimizeJson(JSON.stringify({ env: { OTHER: 'keep-me' } }), values);
+        assert.deepStrictEqual(
+            JSON.parse(restoreClaudeOptimizeJson(applied, upgraded)),
+            JSON.parse(restoreLegacyClaudeOptimizeJson(applied, legacyBackup)),
+        );
+    });
+
+    test('captures the window a v2 owner left in place before managing it again', () => {
+        // v2 never wrote a window, so the one in the file is the user's own.
+        const current = JSON.stringify({
+            env: {
+                CLAUDE_CODE_AUTO_COMPACT_WINDOW: '750000',
+                CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '90',
+                OTHER: 'keep-me',
+            },
+        });
+        const v2Backup: ClaudeOptimizeBackupV2 = {
             version: 2,
             envPresent: true,
             autoCompactPercent: { present: true, value: '80' },
+        };
+        const adopted = adoptClaudeOptimizeBackupV2(current, v2Backup);
+        assert.deepStrictEqual(adopted, {
+            version: 3,
+            envPresent: true,
+            contextWindow: { present: true, value: '750000' },
+            autoCompactPercent: { present: true, value: '80' },
         });
+        const applied = JSON.parse(applyClaudeOptimizeJson(current, values));
+        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '230000');
+        const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), adopted));
+        assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
+        assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '80');
+        assert.strictEqual(restored.env.OTHER, 'keep-me');
     });
 
-    test('migrates away the 200k window when no original value existed', () => {
-        const legacyBackup: LegacyClaudeOptimizeBackup = {
-            version: 1,
-            envPresent: false,
-            contextWindow: { present: false },
+    test('leaves the window alone when restoring v2 ownership that never managed it', () => {
+        const v2Backup: ClaudeOptimizeBackupV2 = {
+            version: 2,
+            envPresent: true,
             autoCompactPercent: { present: false },
         };
-        const migrated = JSON.parse(migrateLegacyClaudeOptimizeJson(JSON.stringify({ env: {
-            CLAUDE_CODE_AUTO_COMPACT_WINDOW: '200000',
-            CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '92',
-        } }), values, legacyBackup));
-        assert.strictEqual(migrated.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined);
-        assert.strictEqual(migrated.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '90');
+        const restored = JSON.parse(restoreClaudeOptimizeV2Json(JSON.stringify({ env: {
+            CLAUDE_CODE_AUTO_COMPACT_WINDOW: '750000',
+            CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '90',
+        } }), v2Backup));
+        assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
+        assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, undefined);
+    });
+
+    test('rejects a backup tagged with another ownership version', () => {
+        const v2Backup: ClaudeOptimizeBackupV2 = { version: 2, envPresent: false, autoCompactPercent: { present: false } };
+        assert.throws(() => restoreClaudeOptimizeJson('{}', v2Backup as never), /backup version/);
+        assert.throws(() => restoreClaudeOptimizeV2Json('{}', { version: 3 } as never), /backup version/);
+        assert.throws(() => restoreLegacyClaudeOptimizeJson('{}', v2Backup as never), /backup version/);
     });
 
     test('removes an env object created solely for optimization on restore', () => {
@@ -997,7 +1063,10 @@ suite('formatter', () => {
 
     test('formatTokenLimit keeps Optimize targets compact and exact', () => {
         assert.strictEqual(formatTokenLimit(272000), '272k');
-        assert.strictEqual(formatTokenLimit(250500), '250,500');
+        assert.strictEqual(formatTokenLimit(195500), '195.5k');
+        assert.strictEqual(formatTokenLimit(231200), '231.2k');
+        assert.strictEqual(formatTokenLimit(250500), '250.5k');
+        assert.strictEqual(formatTokenLimit(250550), '250,550');
     });
 
     test('status bar shows the selected-period total for visible available providers', () => {
@@ -1292,11 +1361,11 @@ suite('formatter', () => {
             new I18n('en'),
             undefined,
             {
-                claude: { enabled: true, autoCompactPercent: 90 },
+                claude: { enabled: true, contextWindow: 230000, autoCompactLimit: 195500 },
                 codex: { enabled: true, contextWindow: 272000, autoCompactLimit: 250000 },
             },
         );
-        assert.ok(md.includes('Optimize (Claude 90% · Codex 272k → 250k)'));
+        assert.ok(md.includes('Optimize (Claude 230k → 195.5k · Codex 272k → 250k)'));
     });
 
     test('tooltip includes the RTK savings table when stats exist', () => {

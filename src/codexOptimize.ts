@@ -13,39 +13,62 @@
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 
-// Matches the Claude Code side of the Optimize feature, so both providers
-// compact around the same point and neither sits at a long-context billing
-// boundary by default. The 272k preset remains available for Codex sessions
-// that want the whole window OpenAI bills at the standard rate.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 200000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 184000;
+/**
+ * Every window is paired with a compact limit at this share of it, so
+ * compaction starts with enough room left to write the summary. Presets and the
+ * Custom flow's suggestion both derive from it, which keeps a hand-entered
+ * window on the same rule as a preset one.
+ *
+ * The Claude Code side compacts at the same share of its own managed window
+ * (`DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT`), so the two providers are aligned
+ * even though one is configured in tokens and the other in percent.
+ */
+export const CODEX_AUTO_COMPACT_RATIO = 0.85;
+
+// The window both providers share (`DEFAULT_CLAUDE_CONTEXT_WINDOW` is the same
+// number), so a session behaves alike whichever CLI it runs on. It stays below
+// 272k, the point above which OpenAI charges the long-context rate, so the
+// default never parks a Codex session at that billing boundary — and its 85%
+// trigger at 195.5k stays below Anthropic's own 200k boundary on the other side.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 230000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 195500;
 
 /**
  * The pair that was the default before the two providers were aligned. Kept so
  * the one-time migration can tell an untouched configuration from a chosen one.
+ * It records what shipped once, so it stays put when the defaults move again.
  */
 export const LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
 export const LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 250000;
 
+/**
+ * OpenAI charges the long-context rate above this many input tokens, making it
+ * the largest window still billed at the standard rate.
+ */
+export const STANDARD_RATE_CODEX_CONTEXT_WINDOW = 272000;
+
+export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
+    return Math.max(1, Math.floor(contextWindow * CODEX_AUTO_COMPACT_RATIO));
+}
+
 export interface CodexOptimizePreset {
-    id: '200k' | '272k';
+    id: '230k' | '272k';
     contextWindow: number;
     autoCompactLimit: number;
 }
 
 /**
- * Curated context-size pairs exposed by the Optimize quick pick, default
- * first. The compact limits stay at roughly 92% of the context ceiling so
- * compaction has room to start before the hard limit is reached. 272k is the
- * threshold above which OpenAI charges the long-context rate, so that preset
- * is the largest window still billed at the standard rate.
+ * Curated context-size pairs exposed by the Optimize quick pick, default first.
+ * Both compact at `CODEX_AUTO_COMPACT_RATIO` of their window, so switching
+ * presets — or typing a custom window — never changes how much headroom
+ * compaction is given.
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
-    { id: '200k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
+    { id: '230k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
     {
         id: '272k',
-        contextWindow: LEGACY_DEFAULT_CODEX_CONTEXT_WINDOW,
-        autoCompactLimit: LEGACY_DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
+        contextWindow: STANDARD_RATE_CODEX_CONTEXT_WINDOW,
+        autoCompactLimit: suggestedCodexAutoCompactLimit(STANDARD_RATE_CODEX_CONTEXT_WINDOW),
     },
 ];
 
@@ -53,10 +76,6 @@ export function matchingCodexOptimizePreset(contextWindow: number, autoCompactLi
     return CODEX_OPTIMIZE_PRESETS.find((preset) =>
         preset.contextWindow === contextWindow && preset.autoCompactLimit === autoCompactLimit,
     );
-}
-
-export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
-    return Math.max(1, Math.floor(contextWindow * 0.92));
 }
 
 export function parseCodexTokenLimit(value: string): number | undefined {
@@ -95,10 +114,10 @@ export interface CodexContextDefaultMigration {
 }
 
 /**
- * Lowering the shipped defaults from 272k/250k to 200k/184k would not reach a
- * user who already has the old numbers written into their settings, and would
- * silently change the meaning of a half-customized pair — someone who set only
- * `codexContextWindow` would suddenly compact at 184k instead of 250k.
+ * Moving the shipped defaults off 272k/250k would not reach a user who already
+ * has those numbers written into their settings, and would silently change the
+ * meaning of a half-customized pair — someone who set only `codexContextWindow`
+ * would suddenly compact at the new limit instead of 250k.
  *
  * So the migration decides per installation:
  *

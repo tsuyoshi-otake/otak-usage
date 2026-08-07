@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.22.0] - 2026-08-07
+
+### Changed
+
+- **Both providers now share a 230k context window and compact at 85% of it — 195.5k tokens**, replacing Claude's model-native window at 90% and Codex's 200k / 184k. A session now behaves the same whichever CLI it runs on. 195.5k sits just under the 200k input tokens above which Anthropic charges the long-context rate, and 230k stays below OpenAI's 272k equivalent, so neither default parks a session at a billing boundary. The remaining 34.5k is left to produce the summary. (#37)
+- Claude Code context optimization **manages `CLAUDE_CODE_AUTO_COMPACT_WINDOW` again**, reversing the 1.21.5 change that let Claude Code pick each model's native window. Pinning the window is what makes the trigger land on a fixed token count rather than 85% of whatever model happens to be active — 850k on a 1M model, which is far past the billing boundary. (#37)
+- The 85% ratio applies to every Codex preset and to the Custom flow's suggested limit, so a hand-entered window gets the same headroom as a preset one: the **272k** preset now pairs with 231.2k instead of 250k, and the Optimize picker lists **230k** where it used to list 200k. Claude's preset is now **230k / 85%**, and its Custom flow accepts a window again alongside the percentage. (#37)
+- Exact token limits ending in a round hundred are shown with one decimal (`195.5k`) in the tooltip and Optimize picker instead of falling back to the fully grouped number (`195,500`). (#37)
+- Ownership of Claude `settings.json` moves to a third format that records both managed values. An installation upgraded from 1.21.5 captures whatever `CLAUDE_CODE_AUTO_COMPACT_WINDOW` it finds **before** writing one, so **Turn Off** still restores the user's own window; the capture is persisted before the file is touched, so an interrupted upgrade cannot record otak-usage's own value as the backup. (#37)
+- No new Codex migration runs. Installations that already moved off the original 272k / 250k default hold no explicit values and pick up 230k / 195.5k automatically; anything you chose yourself is still kept exactly as it was. An explicitly configured 200k / 184k pair keeps working and now shows as **Custom…** in the picker. (#37)
+
 ## [1.21.6] - 2026-08-07
 
 ### Fixed

@@ -11,36 +11,68 @@
 export const CLAUDE_AUTO_COMPACT_WINDOW_ENV = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
 export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE';
 
-export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
+/**
+ * The working window both providers are pinned to. Current Claude models offer
+ * far more, but Anthropic bills a request above 200k input tokens at the
+ * long-context rate, so a window that compacts before that boundary keeps a
+ * session on standard pricing. 230k paired with the shared compact share below
+ * triggers at 195.5k — just under the boundary, with the remaining 34.5k left
+ * to write the summary. `DEFAULT_CODEX_CONTEXT_WINDOW` is the same number, so
+ * the two providers behave alike regardless of which one a session runs on.
+ */
+export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 230000;
+
+/**
+ * Claude Code compacts at this share of the managed window, leaving the rest to
+ * produce the summary. The Codex side compacts at the same share of its own
+ * window (`CODEX_AUTO_COMPACT_RATIO`), so both providers compact at the same
+ * point even though one is configured in percent and the other in tokens.
+ */
+export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
 
 export interface ClaudeOptimizeValues {
+    contextWindow: number;
     autoCompactPercent: number;
 }
 
 export interface ClaudeOptimizePreset extends ClaudeOptimizeValues {
-    id: '90%';
+    id: '230k';
 }
 
 export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
     {
-        id: '90%',
+        id: '230k',
+        contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
     },
 ];
+
+/** Tokens at which Claude Code starts compacting, for display only. */
+export function claudeAutoCompactTokenLimit(values: ClaudeOptimizeValues): number {
+    return Math.max(1, Math.floor(values.contextWindow * values.autoCompactPercent / 100));
+}
 
 interface StoredJsonValue {
     present: boolean;
     value?: unknown;
 }
 
-/** Original percentage captured before otak-usage first takes ownership. */
+/** Original values captured before otak-usage first takes ownership. */
 export interface ClaudeOptimizeBackup {
+    version: 3;
+    envPresent: boolean;
+    contextWindow: StoredJsonValue;
+    autoCompactPercent: StoredJsonValue;
+}
+
+/** Ownership format written while only the trigger percentage was managed. */
+export interface ClaudeOptimizeBackupV2 {
     version: 2;
     envPresent: boolean;
     autoCompactPercent: StoredJsonValue;
 }
 
-/** Ownership format written by otak-usage versions that managed both values. */
+/** Ownership format written by the first version that managed both values. */
 export interface LegacyClaudeOptimizeBackup {
     version: 1;
     envPresent: boolean;
@@ -50,11 +82,27 @@ export interface LegacyClaudeOptimizeBackup {
 
 type JsonObject = Record<string, unknown>;
 
+export function normalizeClaudeTokenLimit(value: unknown, fallback: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        return fallback;
+    }
+    return Math.floor(value);
+}
+
 export function normalizeClaudeAutoCompactPercent(value: unknown, fallback: number): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 1 || value > 100) {
         return fallback;
     }
     return Math.floor(value);
+}
+
+export function parseClaudeTokenLimit(value: string): number | undefined {
+    const normalized = value.replace(/[,_\s]/g, '');
+    if (!/^\d+$/.test(normalized)) {
+        return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function parseClaudeAutoCompactPercent(value: string): number | undefined {
@@ -68,6 +116,7 @@ export function parseClaudeAutoCompactPercent(value: string): number | undefined
 
 export function matchingClaudeOptimizePreset(values: ClaudeOptimizeValues): ClaudeOptimizePreset | undefined {
     return CLAUDE_OPTIMIZE_PRESETS.find((preset) =>
+        preset.contextWindow === values.contextWindow &&
         preset.autoCompactPercent === values.autoCompactPercent,
     );
 }
@@ -127,8 +176,9 @@ export function captureClaudeOptimizeBackup(text: string): ClaudeOptimizeBackup 
     const settings = parseSettings(text);
     const env = settingsEnv(settings, false);
     return {
-        version: 2,
+        version: 3,
         envPresent: env !== undefined,
+        contextWindow: storedValue(env, CLAUDE_AUTO_COMPACT_WINDOW_ENV),
         autoCompactPercent: storedValue(env, CLAUDE_AUTO_COMPACT_PERCENT_ENV),
     };
 }
@@ -136,33 +186,34 @@ export function captureClaudeOptimizeBackup(text: string): ClaudeOptimizeBackup 
 export function applyClaudeOptimizeJson(text: string, values: ClaudeOptimizeValues): string {
     const settings = parseSettings(text);
     const env = settingsEnv(settings, true)!;
+    env[CLAUDE_AUTO_COMPACT_WINDOW_ENV] = String(values.contextWindow);
     env[CLAUDE_AUTO_COMPACT_PERCENT_ENV] = String(values.autoCompactPercent);
     return serializeSettings(settings, text);
+}
+
+/** v1 ownership already backed up both values, so only the tag changes. */
+export function upgradeLegacyClaudeOptimizeBackup(backup: LegacyClaudeOptimizeBackup): ClaudeOptimizeBackup {
+    return {
+        version: 3,
+        envPresent: backup.envPresent,
+        contextWindow: backup.contextWindow,
+        autoCompactPercent: backup.autoCompactPercent,
+    };
 }
 
 /**
- * Stop managing the context window during a v1 -> v2 ownership migration.
- * Repeating this after an interrupted migration is safe and deterministic.
+ * v2 ownership left the window alone, restoring any pre-existing one when it
+ * took over. Whatever the file holds now is therefore the user's own value, so
+ * it has to be captured here — before this version starts writing a window
+ * again — or turning the feature off would leave otak-usage's number behind.
  */
-export function migrateLegacyClaudeOptimizeJson(
-    text: string,
-    values: ClaudeOptimizeValues,
-    backup: LegacyClaudeOptimizeBackup,
-): string {
+export function adoptClaudeOptimizeBackupV2(text: string, backup: ClaudeOptimizeBackupV2): ClaudeOptimizeBackup {
     const settings = parseSettings(text);
-    const env = settingsEnv(settings, true)!;
-    restoreStoredValue(env, CLAUDE_AUTO_COMPACT_WINDOW_ENV, backup.contextWindow);
-    env[CLAUDE_AUTO_COMPACT_PERCENT_ENV] = String(values.autoCompactPercent);
-    if (!backup.envPresent && Object.keys(env).length === 0) {
-        delete settings.env;
-    }
-    return serializeSettings(settings, text);
-}
-
-export function upgradeLegacyClaudeOptimizeBackup(backup: LegacyClaudeOptimizeBackup): ClaudeOptimizeBackup {
+    const env = settingsEnv(settings, false);
     return {
-        version: 2,
+        version: 3,
         envPresent: backup.envPresent,
+        contextWindow: storedValue(env, CLAUDE_AUTO_COMPACT_WINDOW_ENV),
         autoCompactPercent: backup.autoCompactPercent,
     };
 }
@@ -175,7 +226,29 @@ function restoreStoredValue(object: JsonObject, key: string, stored: StoredJsonV
     }
 }
 
+function restoreBothJson(
+    text: string,
+    backup: { envPresent: boolean; contextWindow: StoredJsonValue; autoCompactPercent: StoredJsonValue },
+): string {
+    const settings = parseSettings(text);
+    const env = settingsEnv(settings, true)!;
+    restoreStoredValue(env, CLAUDE_AUTO_COMPACT_WINDOW_ENV, backup.contextWindow);
+    restoreStoredValue(env, CLAUDE_AUTO_COMPACT_PERCENT_ENV, backup.autoCompactPercent);
+    if (!backup.envPresent && Object.keys(env).length === 0) {
+        delete settings.env;
+    }
+    return serializeSettings(settings, text);
+}
+
 export function restoreClaudeOptimizeJson(text: string, backup: ClaudeOptimizeBackup): string {
+    if (backup.version !== 3) {
+        throw new Error('Unsupported Claude context optimization backup version.');
+    }
+    return restoreBothJson(text, backup);
+}
+
+/** Give back only the percentage, which is all v2 ownership ever managed. */
+export function restoreClaudeOptimizeV2Json(text: string, backup: ClaudeOptimizeBackupV2): string {
     if (backup.version !== 2) {
         throw new Error('Unsupported Claude context optimization backup version.');
     }
@@ -192,12 +265,5 @@ export function restoreLegacyClaudeOptimizeJson(text: string, backup: LegacyClau
     if (backup.version !== 1) {
         throw new Error('Unsupported legacy Claude context optimization backup version.');
     }
-    const settings = parseSettings(text);
-    const env = settingsEnv(settings, true)!;
-    restoreStoredValue(env, CLAUDE_AUTO_COMPACT_WINDOW_ENV, backup.contextWindow);
-    restoreStoredValue(env, CLAUDE_AUTO_COMPACT_PERCENT_ENV, backup.autoCompactPercent);
-    if (!backup.envPresent && Object.keys(env).length === 0) {
-        delete settings.env;
-    }
-    return serializeSettings(settings, text);
+    return restoreBothJson(text, backup);
 }
