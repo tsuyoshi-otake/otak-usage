@@ -51,25 +51,25 @@ export interface RtkView {
     show: boolean;
 }
 
-/** Compact exact token limit for the Optimize action, e.g. 272000 -> 272k. */
+/**
+ * Compact exact token limit for the Optimize action, e.g. 272000 -> 272k. A
+ * limit derived from a percentage of a window rarely lands on a whole thousand,
+ * so hundreds are kept as one decimal (217600 -> 217.6k) instead of falling
+ * back to the full grouped number.
+ */
 export function formatTokenLimit(n: number): string {
-    return n % 1000 === 0 ? `${n / 1000}k` : n.toLocaleString('en-US');
+    return n % 100 === 0 ? `${n / 1000}k` : n.toLocaleString('en-US');
 }
 
-export interface ClaudeOptimizeView {
-    enabled: boolean;
-    autoCompactPercent: number;
-}
-
-export interface CodexOptimizeView {
+export interface ProviderOptimizeView {
     enabled: boolean;
     contextWindow: number;
     autoCompactLimit: number;
 }
 
 export interface ContextOptimizeView {
-    claude: ClaudeOptimizeView;
-    codex: CodexOptimizeView;
+    claude: ProviderOptimizeView;
+    codex: ProviderOptimizeView;
 }
 
 export interface HookFeatureView {
@@ -202,7 +202,7 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     parts.push(`---\n\n${i18n.t('tooltip.period')}: **${periodLabel}** · ${i18n.t('tooltip.updated')} ${hh}:${mm} · ${i18n.t('tooltip.clickToTogglePeriod')}\n`);
     const settingsArg = encodeURIComponent(JSON.stringify(['otakUsage']));
     const optimizeValue = optimize
-        ? ` (Claude ${optimize.claude.enabled ? `${optimize.claude.autoCompactPercent}%` : 'off'}` +
+        ? ` (Claude ${optimize.claude.enabled ? `${formatTokenLimit(optimize.claude.contextWindow)} → ${formatTokenLimit(optimize.claude.autoCompactLimit)}` : 'off'}` +
           ` · Codex ${optimize.codex.enabled ? `${formatTokenLimit(optimize.codex.contextWindow)} → ${formatTokenLimit(optimize.codex.autoCompactLimit)}` : 'off'})`
         : '';
     parts.push(
