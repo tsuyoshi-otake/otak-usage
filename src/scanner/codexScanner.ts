@@ -106,11 +106,9 @@ export function parseCodexLine(line: string, state: CodexParseState): UsageEvent
         return undefined;
     }
     // Auto-review turns name a slug that no price table lists, so it is resolved
-    // to the codex model that was current on this line's own date. `lastModel`
-    // deliberately keeps the raw slug: a rollout can span a release boundary, and
-    // every later line has to resolve against its own timestamp rather than
-    // inherit whatever the first one landed on.
-    const model = resolveCodexModel(state.lastModel, rec.timestamp);
+    // to the model those requests bill as. `lastModel` deliberately keeps the raw
+    // slug so the resolution stays a rendering of it rather than state.
+    const model = resolveCodexModel(state.lastModel);
     const rawInput = last.input_tokens ?? 0;
     // Cap defensively: a malformed record must not bill more cached tokens
     // than were actually sent.

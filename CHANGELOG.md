@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.21.6] - 2026-08-07
+
+### Fixed
+
+- `codex-auto-review` turns are now billed flat at GPT-5.4's rates ($2.50 input / $0.25 cached input / $15.00 output per million tokens, long-context rates above 272K) on every date, and show as `gpt-5.4` in the model breakdown. OpenAI's usage dashboard reports these requests under GPT-5.4 whatever day they ran, which the date-based release table added in 1.14.0 contradicted: it billed everything from 2026-04-23 onward as gpt-5.5, roughly double the real rate, and earlier turns at the various `gpt-5.x-codex` rates. (#36)
+- The scan cache version was bumped, so history already ingested under the old resolution is re-read once and re-attributed out of its gpt-5.5 and `gpt-5.x-codex` buckets instead of keeping the over-priced totals. (#36)
+
 ## [1.21.5] - 2026-08-05
 
 ### Changed

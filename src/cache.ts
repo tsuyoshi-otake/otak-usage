@@ -10,9 +10,12 @@ import { DayBuckets, TokenUsage } from './types';
  * appears before the first model-bearing turn_context in forked sessions.
  * v6: the month-wide dedupe map (50k records, ~10 MB of persisted state) is
  * replaced by the per-file `seen`/`pend` windows below.
+ * v7: `codex-auto-review` bills flat as gpt-5.4, so history ingested under the
+ * previous date-based resolution has to be re-attributed out of its gpt-5.5 and
+ * gpt-5.x-codex buckets.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 6;
+export const CACHE_VERSION = 7;
 
 /**
  * A record that may still be superseded. Claude logs a streaming partial

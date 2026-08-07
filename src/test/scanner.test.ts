@@ -16,7 +16,7 @@ import { scanAll } from '../engine';
 import { resolvePricing } from '../pricing';
 import { UsageEvent } from '../types';
 import { parseClaudeLine } from '../scanner/claudeScanner';
-import { CODEX_AUTO_REVIEW_FALLBACKS, CODEX_AUTO_REVIEW_MODEL, resolveCodexModel } from '../scanner/codexAutoReview';
+import { CODEX_AUTO_REVIEW_MODEL, CODEX_AUTO_REVIEW_PRICED_AS, resolveCodexModel } from '../scanner/codexAutoReview';
 import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
 import { readNewLines, visitNewLines } from '../scanner/jsonlReader';
 
@@ -157,83 +157,62 @@ suite('parseCodexLine: codex-auto-review', () => {
         return parseCodexLine(codexTokenCount(iso, 1000, 0, 100), state);
     }
 
-    test('resolves to the codex model current on the line date', () => {
-        const cases: Array<[string, string]> = [
-            ['2026-07-25T03:00:00.000Z', 'gpt-5.5'],
-            ['2026-04-01T03:00:00.000Z', 'gpt-5.4'],
-            ['2026-02-20T03:00:00.000Z', 'gpt-5.3-codex'],
-            ['2026-01-05T03:00:00.000Z', 'gpt-5.2-codex'],
-            ['2025-12-01T03:00:00.000Z', 'gpt-5.1-codex'],
-            ['2025-10-01T03:00:00.000Z', 'gpt-5-codex'],
-            ['2025-08-20T03:00:00.000Z', 'gpt-5'],
+    test('resolves to the model auto-review bills as, whatever the line date', () => {
+        const dates = [
+            '2026-07-25T03:00:00.000Z',
+            '2026-04-01T03:00:00.000Z',
+            '2026-02-20T03:00:00.000Z',
+            '2025-12-01T03:00:00.000Z',
+            '2025-08-20T03:00:00.000Z',
+            '2025-01-01T03:00:00.000Z',
         ];
-        for (const [iso, expected] of cases) {
-            assert.strictEqual(autoReviewAt(iso)?.model, expected, iso);
+        for (const iso of dates) {
+            assert.strictEqual(autoReviewAt(iso)?.model, CODEX_AUTO_REVIEW_PRICED_AS, iso);
         }
+        assert.strictEqual(CODEX_AUTO_REVIEW_PRICED_AS, 'gpt-5.4');
     });
 
-    test('a release date resolves to the model released that day, not the previous one', () => {
-        for (const { releasedOn, model } of CODEX_AUTO_REVIEW_FALLBACKS) {
-            assert.strictEqual(autoReviewAt(`${releasedOn}T00:00:00.000Z`)?.model, model, releasedOn);
-        }
-    });
-
-    test('a date before the whole table falls back to gpt-5', () => {
-        assert.strictEqual(autoReviewAt('2025-01-01T03:00:00.000Z')?.model, 'gpt-5');
-    });
-
-    test('a timestamp that is not an ISO date falls back to gpt-5', () => {
-        // Date.parse accepts this, so the event survives; only the date prefix fails.
+    test('a timestamp that is not an ISO date resolves the same way', () => {
+        // Date.parse accepts this, so the event survives; the slug never needed
+        // the date, so an odd format cannot push it onto a different rate.
         const state: CodexParseState = { lastModel: CODEX_AUTO_REVIEW_MODEL };
         const line = JSON.stringify({
             timestamp: 'Jul 25, 2026 03:00:00 UTC',
             type: 'event_msg',
             payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 100 } } },
         });
-        assert.strictEqual(parseCodexLine(line, state)?.model, 'gpt-5');
+        assert.strictEqual(parseCodexLine(line, state)?.model, CODEX_AUTO_REVIEW_PRICED_AS);
     });
 
-    test('every fallback target is priceable, so auto-review never lands in n/a', () => {
-        for (const { model } of CODEX_AUTO_REVIEW_FALLBACKS) {
-            assert.ok(resolvePricing(model), model);
-        }
+    test('the resolved model is priceable, so auto-review never lands in n/a', () => {
+        const pricing = resolvePricing(CODEX_AUTO_REVIEW_PRICED_AS);
+        assert.ok(pricing);
+        assert.strictEqual(pricing?.input, 2.5);
+        assert.strictEqual(pricing?.cachedInput, 0.25);
+        assert.strictEqual(pricing?.output, 15);
     });
 
     test('the resolved model drives long-context pricing, which the bare slug cannot', () => {
-        // gpt-5.5 bills above 272K; codex-auto-review has no threshold of its own.
+        // gpt-5.4 bills above 272K; codex-auto-review has no threshold of its own.
         const event = autoReviewAt('2026-07-25T03:00:00.000Z');
         assert.strictEqual(event?.usage.longContextInput, undefined);
 
         const state: CodexParseState = { lastModel: CODEX_AUTO_REVIEW_MODEL };
         const long = parseCodexLine(codexTokenCount('2026-07-25T03:00:01.000Z', 300_000, 0, 100), state);
-        assert.strictEqual(long?.model, 'gpt-5.5');
+        assert.strictEqual(long?.model, CODEX_AUTO_REVIEW_PRICED_AS);
         assert.strictEqual(long?.usage.longContextInput, 300_000);
     });
 
-    test('each line in a rollout spanning a release resolves by its own date', () => {
-        // The slug must survive in state: inheriting the first line's resolution
-        // would bill the whole file at one rate.
+    test('the raw slug survives in parse state rather than the resolved model', () => {
         const state: CodexParseState = {};
         parseCodexLine(JSON.stringify({ type: 'turn_context', payload: { model: CODEX_AUTO_REVIEW_MODEL } }), state);
-        const before = parseCodexLine(codexTokenCount('2026-04-22T23:00:00.000Z', 1000, 0, 100), state);
-        const after = parseCodexLine(codexTokenCount('2026-04-23T01:00:00.000Z', 1000, 0, 100), state);
-        assert.strictEqual(before?.model, 'gpt-5.4');
-        assert.strictEqual(after?.model, 'gpt-5.5');
+        assert.strictEqual(parseCodexLine(codexTokenCount('2026-04-22T23:00:00.000Z', 1000, 0, 100), state)?.model, CODEX_AUTO_REVIEW_PRICED_AS);
         assert.strictEqual(state.lastModel, CODEX_AUTO_REVIEW_MODEL);
     });
 
     test('an ordinary model id is returned untouched', () => {
-        assert.strictEqual(resolveCodexModel('gpt-5.3-codex', '2026-07-25T03:00:00.000Z'), 'gpt-5.3-codex');
-        assert.strictEqual(resolveCodexModel('gpt-5.3-codex', undefined), 'gpt-5.3-codex');
-    });
-
-    test('the table stays newest-first, which the lookup relies on', () => {
-        for (let i = 1; i < CODEX_AUTO_REVIEW_FALLBACKS.length; i++) {
-            assert.ok(
-                CODEX_AUTO_REVIEW_FALLBACKS[i - 1].releasedOn > CODEX_AUTO_REVIEW_FALLBACKS[i].releasedOn,
-                `${CODEX_AUTO_REVIEW_FALLBACKS[i - 1].releasedOn} must sort after ${CODEX_AUTO_REVIEW_FALLBACKS[i].releasedOn}`,
-            );
-        }
+        assert.strictEqual(resolveCodexModel('gpt-5.3-codex'), 'gpt-5.3-codex');
+        assert.strictEqual(resolveCodexModel('gpt-5.5'), 'gpt-5.5');
     });
 });
 
