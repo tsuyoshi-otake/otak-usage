@@ -1,5 +1,6 @@
 {
   "extension.description": "Otak Usage displays estimated API-equivalent costs of Claude Code and OpenAI Codex CLI sessions in the VS Code status bar, with per-model breakdowns for today and the current month.",
+  "capability.untrustedWorkspaces": "Otak Usage reads local CLI data, updates optional CLI configuration, and can run the configured RTK executable. Trust the workspace before enabling these features.",
   "command.togglePeriod": "Toggle Period (Today / This Month)",
   "command.cycleStatusBarView": "Cycle Status Bar View (Today / This Month / Limits)",
   "command.refresh": "Refresh Usage (Clear Cache and Rescan)",

@@ -1,5 +1,6 @@
 import typescriptEslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
+import noInvisibleUnicode from "./eslint-rules/no-invisible-unicode.mjs";
 
 export default [{
     // Flat config adds no implicit ignores beyond node_modules/, so a bare
@@ -11,6 +12,11 @@ export default [{
 }, {
     plugins: {
         "@typescript-eslint": typescriptEslint,
+        otak: {
+            rules: {
+                "no-invisible-unicode": noInvisibleUnicode,
+            },
+        },
     },
 
     languageOptions: {
@@ -29,5 +35,8 @@ export default [{
         eqeqeq: "warn",
         "no-throw-literal": "warn",
         semi: "warn",
+
+        // GlassWorm and Trojan Source payloads are invisible during review.
+        "otak/no-invisible-unicode": "error",
     },
 }];

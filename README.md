@@ -426,6 +426,8 @@ Token counts and cost are month-to-date and reset at the start of each month. RT
 
 ## Security & Privacy
 
+See the [Privacy Notice](PRIVACY.md) for a concise description of the data the extension accesses, stores, and sends.
+
 otak-usage is local by default:
 
 - **Local log reading**: it reads token-count metadata from local Claude Code and Codex CLI logs.

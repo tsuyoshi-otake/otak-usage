@@ -752,7 +752,7 @@ export class I18n {
         }
         let result = template;
         for (const [name, value] of Object.entries(params)) {
-            result = result.replace(new RegExp(`\\{${escapeRegExp(name)}\\}`, 'g'), value);
+            result = result.replaceAll(`{${name}}`, value);
         }
         return result;
     }
@@ -785,8 +785,4 @@ export function resolveSupportedLocale(locale: string | undefined): SupportedLoc
 
 function isSupportedLocale(locale: string): locale is SupportedLocale {
     return SUPPORTED_LOCALES.includes(locale as SupportedLocale);
-}
-
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

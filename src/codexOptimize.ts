@@ -13,6 +13,12 @@
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 
+// These keys are fixed extension-owned identifiers. Keep their assignment
+// patterns static as well, so scanners do not mistake interpolation here for an
+// attacker-controlled regular expression.
+const CODEX_CONTEXT_WINDOW_ASSIGNMENT = /^(\s*)model_context_window\s*=/;
+const CODEX_AUTO_COMPACT_ASSIGNMENT = /^(\s*)model_auto_compact_token_limit\s*=/;
+
 /**
  * Every window is paired with a compact limit at this share of it, so
  * compaction starts with enough room left to write the summary. Presets and the
@@ -175,7 +181,12 @@ function preambleEnd(lines: string[]): number {
 }
 
 function assignmentMatch(line: string, key: string): RegExpMatchArray | null {
-    return line.match(new RegExp(`^(\\s*)${key}\\s*=`));
+    const pattern = key === CODEX_CONTEXT_WINDOW_KEY
+        ? CODEX_CONTEXT_WINDOW_ASSIGNMENT
+        : key === CODEX_AUTO_COMPACT_KEY
+            ? CODEX_AUTO_COMPACT_ASSIGNMENT
+            : undefined;
+    return pattern ? line.match(pattern) : null;
 }
 
 /**

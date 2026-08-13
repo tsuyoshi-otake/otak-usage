@@ -44,6 +44,11 @@ jobs:
       - name: Package VSIX
         run: npm run package:vsix
 
+      # Packaging runs the prepublish compile again. Scan that final output
+      # before uploading or publishing the VSIX to either registry.
+      - name: Scan shipped artifacts for invisible Unicode
+        run: npm run lint:unicode:dist
+
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:

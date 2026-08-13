@@ -2,6 +2,14 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.24.0] - 2026-08-13
+
+### Security
+
+- Added a repository-wide invisible-Unicode scanner and inline ESLint diagnostics for GlassWorm-style tag/variation-selector payloads and Trojan Source controls. The publish workflow separately scans the final compiled files before upload, while legitimate visible Unicode, a leading BOM, and normal emoji presentation selectors remain allowed. An existing runtime NUL delimiter is now represented by a visible source escape with identical behavior, and development-only scanner files are excluded from the VSIX. (#42)
+- Declared Workspace Trust requirements for features that read local CLI state, update optional CLI configuration, or execute the configured RTK command, and documented the extension's local data handling in `PRIVACY.md`. (#41)
+- Replaced scanner-sensitive dynamically constructed regular expressions with static matching and direct placeholder replacement, preserving the existing behavior while avoiding security-scanner false positives. (#41)
+
 ## [1.23.0] - 2026-08-07
 
 ### Changed
