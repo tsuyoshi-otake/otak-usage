@@ -212,7 +212,7 @@ export function tooltipMarkdown(claude: ProviderView, codex: ProviderView, rtk: 
     );
     const hookState = hooks ?? { repositoryName: false, sounds: false };
     parts.push(
-        `[Repository name: ${hookState.repositoryName ? 'On' : 'Off'}](command:otak-usage.toggleRepositoryNameHook "Toggle repository name in conversation history")` +
+        `\n[Repository name: ${hookState.repositoryName ? 'On' : 'Off'}](command:otak-usage.toggleRepositoryNameHook "Toggle repository name in conversation history")` +
         ` | [Hook sounds: ${hookState.sounds ? 'On' : 'Off'}](command:otak-usage.toggleHookSounds "Toggle hook sounds")`,
     );
     return parts.join('\n');

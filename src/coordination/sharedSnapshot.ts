@@ -2,6 +2,7 @@ import { ProviderLimits } from '../limits';
 import { RtkStats } from '../rtk';
 import { DayBuckets } from '../types';
 import { readJsonFile, writeFileAtomic } from './atomicFile';
+import { LeaseFence } from './leaderLock';
 
 export const SNAPSHOT_VERSION = 1;
 
@@ -27,6 +28,8 @@ export interface SharedSnapshot {
     claudeLimits?: ProviderLimits;
     codexLimits?: ProviderLimits;
     rtk?: RtkStats;
+    /** Fencing identity of the leader which produced this snapshot. */
+    fence?: LeaseFence;
 }
 
 export function isSharedSnapshot(raw: unknown): raw is SharedSnapshot {
@@ -34,9 +37,11 @@ export function isSharedSnapshot(raw: unknown): raw is SharedSnapshot {
     return !!s && typeof s === 'object' &&
         s.version === SNAPSHOT_VERSION &&
         typeof s.updatedAtMs === 'number' && Number.isFinite(s.updatedAtMs) &&
+        typeof s.leader === 'string' && s.leader !== '' &&
         typeof s.claudeAvailable === 'boolean' &&
         typeof s.codexAvailable === 'boolean' &&
-        isDayBuckets(s.days);
+        isDayBuckets(s.days) &&
+        (!s.fence || isLeaseFence(s.fence));
 }
 
 /**
@@ -78,4 +83,58 @@ export async function readSharedSnapshot(filePath: string): Promise<SharedSnapsh
 
 export async function writeSharedSnapshot(filePath: string, tag: string, snapshot: SharedSnapshot): Promise<void> {
     await writeFileAtomic(filePath, tag, JSON.stringify(snapshot));
+}
+
+/**
+ * Write a snapshot to an epoch/token-specific immutable artifact. The artifact
+ * is never used as the shared pointer: readers derive the same path from the
+ * currently held lease. This is the important part of fencing — a delayed old
+ * leader can still finish its work, but it can only create its own old artifact
+ * and cannot overwrite the new leader's bytes.
+ *
+ * The callback is checked before and after the write to avoid unnecessary work.
+ * It is not treated as a TOCTOU lock: correctness comes from the unique token
+ * in the artifact name and the reader's exact-fence check.
+ */
+export async function writeFencedSnapshot(
+    filePath: string,
+    tag: string,
+    snapshot: SharedSnapshot,
+    fence: LeaseFence,
+    isCurrent: () => Promise<boolean>,
+): Promise<boolean> {
+    if (!sameFence(snapshot.fence, fence) || !(await isCurrent())) {
+        return false;
+    }
+    const artifactPath = snapshotArtifactPath(filePath, fence);
+    await writeFileAtomic(artifactPath, `${tag}-${fence.epoch}-${fence.leaseToken.slice(0, 12)}`, JSON.stringify(snapshot));
+    return await isCurrent();
+}
+
+/** Read only the immutable artifact belonging to the exact current lease. */
+export async function readFencedSnapshot(filePath: string, fence: LeaseFence): Promise<SharedSnapshot | undefined> {
+    const raw = await readJsonFile(snapshotArtifactPath(filePath, fence));
+    if (!isSharedSnapshot(raw) || !sameFence(raw.fence, fence)) {
+        return undefined;
+    }
+    return raw;
+}
+
+export function snapshotArtifactPath(filePath: string, fence: LeaseFence): string {
+    // Tokens are generated as hex, but keep this safe if another token source is
+    // supplied by an embedding host.
+    const token = fence.leaseToken.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `${filePath}.epoch-${fence.epoch}.${token}.json`;
+}
+
+function isLeaseFence(raw: unknown): raw is LeaseFence {
+    const fence = raw as LeaseFence | undefined;
+    return !!fence && typeof fence === 'object' &&
+        Number.isSafeInteger(fence.epoch) && fence.epoch >= 1 &&
+        typeof fence.holder === 'string' && fence.holder !== '' &&
+        typeof fence.leaseToken === 'string' && fence.leaseToken.length >= 16;
+}
+
+function sameFence(a: LeaseFence | undefined, b: LeaseFence): boolean {
+    return !!a && a.epoch === b.epoch && a.holder === b.holder && a.leaseToken === b.leaseToken;
 }

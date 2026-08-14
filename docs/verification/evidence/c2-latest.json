@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-14T15:19:37.665Z",
+  "covered": 62,
+  "total": 62,
+  "percent": 100,
+  "missing": [],
+  "conditions": [
+    {
+      "id": "T-LCI-TARGET",
+      "source": "types.ts",
+      "expression": "target.longContextInput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "T-LCI-SOURCE",
+      "source": "types.ts",
+      "expression": "source.longContextInput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "T-LCC-TARGET",
+      "source": "types.ts",
+      "expression": "target.longContextCachedInput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "T-LCC-SOURCE",
+      "source": "types.ts",
+      "expression": "source.longContextCachedInput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "T-LCO-TARGET",
+      "source": "types.ts",
+      "expression": "target.longContextOutput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "T-LCO-SOURCE",
+      "source": "types.ts",
+      "expression": "source.longContextOutput is defined",
+      "requirement": "Missing long-context counters behave as zero.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-ORDER-EXACT",
+      "source": "pricing.ts",
+      "expression": "exact order exists",
+      "requirement": "An exact built-in model has a stable display order.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-MATCH-PREFIX",
+      "source": "pricing.ts",
+      "expression": "model starts with pricing key",
+      "requirement": "Dated model identifiers inherit a base price.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-MATCH-FAST-KEY",
+      "source": "pricing.ts",
+      "expression": "key ends with -fast",
+      "requirement": "Only fast pricing keys participate in normalized fast matching.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-MATCH-FAST-MODEL",
+      "source": "pricing.ts",
+      "expression": "model ends with -fast",
+      "requirement": "Only fast model identifiers receive fast prices.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-OVERRIDES",
+      "source": "pricing.ts",
+      "expression": "overrides supplied",
+      "requirement": "Pricing overrides are optional.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-BASE-MISSING",
+      "source": "pricing.ts",
+      "expression": "base pricing is missing",
+      "requirement": "Override-only models are supported and wholly unknown models are rejected.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-OVERRIDE-MISSING",
+      "source": "pricing.ts",
+      "expression": "override pricing is missing",
+      "requirement": "Built-in models do not require an override.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-EFFECTIVE-DAY",
+      "source": "pricing.ts",
+      "expression": "effective day supplied",
+      "requirement": "Scheduled prices apply only when a billing day is known.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-REVISION-ACTIVE",
+      "source": "pricing.ts",
+      "expression": "effective day >= revision day",
+      "requirement": "A revision applies on, not before, its effective day.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-INPUT-MISSING",
+      "source": "pricing.ts",
+      "expression": "input rate is missing",
+      "requirement": "A usable price requires both input and output rates.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-OUTPUT-MISSING",
+      "source": "pricing.ts",
+      "expression": "output rate is missing",
+      "requirement": "A usable price requires both input and output rates.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-LONG-THRESHOLD",
+      "source": "pricing.ts",
+      "expression": "long-context threshold exists",
+      "requirement": "Only models declaring a threshold can be premium requests.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-LONG-ABOVE",
+      "source": "pricing.ts",
+      "expression": "input tokens > threshold",
+      "requirement": "The threshold itself is standard price; premium begins one token above.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "P-COST-PRICED",
+      "source": "pricing.ts",
+      "expression": "resolved pricing exists",
+      "requirement": "Unknown models return no cost.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-DAY-EXISTS",
+      "source": "aggregator.ts",
+      "expression": "day bucket exists",
+      "requirement": "Events on the same day accumulate without replacing prior events.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-MODEL-EXISTS",
+      "source": "aggregator.ts",
+      "expression": "model bucket exists",
+      "requirement": "Events for the same model accumulate; other models remain separate.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-PRUNE-BEFORE",
+      "source": "aggregator.ts",
+      "expression": "day < minimum day",
+      "requirement": "Pruning removes only days strictly before the inclusive boundary.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-ROW-EXISTS",
+      "source": "aggregator.ts",
+      "expression": "summary row exists",
+      "requirement": "One model row accumulates across days.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-DAY-PRICED",
+      "source": "aggregator.ts",
+      "expression": "day cost is defined",
+      "requirement": "Any unpriced day makes the model month cost unknown.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-IS-TODAY",
+      "source": "aggregator.ts",
+      "expression": "bucket day equals today",
+      "requirement": "Today usage excludes every other retained day.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-MONTH-PRICED",
+      "source": "aggregator.ts",
+      "expression": "all model days are priced",
+      "requirement": "Unknown month costs do not enter provider totals.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-KNOWN-ORDER-A",
+      "source": "aggregator.ts",
+      "expression": "left model has built-in order",
+      "requirement": "Known models sort ahead of unknown models.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-KNOWN-ORDER-B",
+      "source": "aggregator.ts",
+      "expression": "right model has built-in order",
+      "requirement": "Known models sort ahead of unknown models.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-ORDER-LESS",
+      "source": "aggregator.ts",
+      "expression": "left unknown model id < right unknown model id",
+      "requirement": "Unknown models have deterministic lexical ordering.",
+      "outcomes": [
+        false,
+        true
+      ]
+    },
+    {
+      "id": "A-ORDER-GREATER",
+      "source": "aggregator.ts",
+      "expression": "left unknown model id > right unknown model id",
+      "requirement": "Unknown models have deterministic lexical ordering.",
+      "outcomes": [
+        false,
+        true
+      ]
+    }
+  ]
+}

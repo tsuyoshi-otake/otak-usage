@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "property": "bucket-key-round-trip",
+  "status": "passed",
+  "seed": 4399142,
+  "replayPath": null,
+  "counterexample": null,
+  "numRuns": 250,
+  "numSkips": 0,
+  "error": null,
+  "replay": "DOMAIN_PBT_SEED=4399142"
+}

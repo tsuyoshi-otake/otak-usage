@@ -1187,6 +1187,7 @@ suite('formatter', () => {
         assert.ok(md.includes('Hook sounds: Off'));
         assert.ok(md.includes('command:otak-usage.toggleRepositoryNameHook'));
         assert.ok(md.includes('command:otak-usage.toggleHookSounds'));
+        assert.match(md, /\n\n\[Repository name:/, 'hook toggles should start in a separate Markdown block');
     });
 
     test('tooltip renders brand icons as sized theme-coloured images when a colour is given', () => {

@@ -2,6 +2,22 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.25.0] - 2026-08-15
+
+### Security
+
+- Added epoch/token fencing for multi-window leadership, immutable per-lease snapshots, exact-fence follower reads, and lease-scoped caches. A suspended former leader can no longer overwrite or publish state as its successor after takeover. The protocol was derived from a TLA+/TLC counterexample and checked across two- and three-actor hardened models. (#43)
+
+### Fixed
+
+- Kept the Repository Name and Hook Sounds controls in their own tooltip block so they cannot render beside the preceding action row. (#43)
+- Added bounded timeouts and injectable protocol boundaries for Claude usage, OTLP telemetry, and RTK subprocess collection, with deterministic failure and recovery behavior. (#43)
+
+### Testing
+
+- Added requirement-derived example tests, deterministic property-based tests with replay evidence, 100% scoped atomic-condition C2 evidence, mutation testing with survivor classification, and protocol-compatible API integration tests. (#43)
+- Added a reproducible TLA+/TLC model suite covering stale writers, rollback, lease boundaries, injected failures, recovery, deadlock, safety, liveness, reachability, and vacuity, plus a requirement-to-evidence traceability audit and explicit residual-risk release decision. (#43)
+
 ## [1.24.0] - 2026-08-13
 
 ### Security

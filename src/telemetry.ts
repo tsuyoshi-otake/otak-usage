@@ -264,7 +264,16 @@ export function metricsUrl(endpoint: string): string {
  * endpoint is blank, or there is nothing to send. Rejects on transport / non-2xx
  * so the caller can log it; never throws synchronously.
  */
-export async function exportTelemetry(config: TelemetryConfig, snapshot: TelemetrySnapshot): Promise<boolean> {
+export interface TelemetryExportOptions {
+    /** Request deadline; injectable so integration tests need not wait ten seconds. */
+    timeoutMs?: number;
+}
+
+export async function exportTelemetry(
+    config: TelemetryConfig,
+    snapshot: TelemetrySnapshot,
+    options: TelemetryExportOptions = {},
+): Promise<boolean> {
     if (!config.enabled || config.endpoint.trim() === '') {
         return false;
     }
@@ -272,11 +281,11 @@ export async function exportTelemetry(config: TelemetryConfig, snapshot: Telemet
     if (!payload) {
         return false;
     }
-    await postJson(metricsUrl(config.endpoint), config.headers, JSON.stringify(payload));
+    await postJson(metricsUrl(config.endpoint), config.headers, JSON.stringify(payload), options.timeoutMs ?? 10_000);
     return true;
 }
 
-function postJson(url: string, headers: Record<string, string>, body: string): Promise<void> {
+function postJson(url: string, headers: Record<string, string>, body: string, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
         let target: URL;
         try {
@@ -295,7 +304,7 @@ function postJson(url: string, headers: Record<string, string>, body: string): P
                     'content-length': Buffer.byteLength(body),
                     ...headers,
                 },
-                timeout: 10_000,
+                timeout: timeoutMs,
             },
             (res) => {
                 const status = res.statusCode ?? 0;

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "mutants": [
+    {
+      "mutantId": "76",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Model rows are unique by provider/model Map key, so a.model can never equal b.model; < and <= are observationally identical.",
+      "evidence": "src/aggregator.ts row Map invariant and domain summary ordering examples"
+    },
+    {
+      "mutantId": "79",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "After the preceding a.model < b.model guard is false, unique model ids imply a.model > b.model; replacing that second guard with true is identical.",
+      "evidence": "src/aggregator.ts unique row key invariant"
+    },
+    {
+      "mutantId": "80",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "For Array.sort, returning -1 for a<b and 0 otherwise induces the same ascending order over unique model ids; the positive branch is redundant for this comparator domain.",
+      "evidence": "domain examples cover both insertion orders and unique lexical model ids"
+    },
+    {
+      "mutantId": "81",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Equality is excluded by unique model rows, therefore > and >= are identical in the second comparator guard.",
+      "evidence": "src/aggregator.ts unique row key invariant"
+    },
+    {
+      "mutantId": "82",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "When the first < guard is false, substituting <= in the second guard yields false for greater ids and 0; the resulting -1/0 comparator still produces the same stable ascending order over unique ids.",
+      "evidence": "domain examples cover reversed lexical insertion and unique row ids"
+    },
+    {
+      "mutantId": "96",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Removing the exact-order early return falls through to longest-prefix search, which selects the same unique exact key and index.",
+      "evidence": "defaultPricingOrder exact and dated-prefix examples"
+    },
+    {
+      "mutantId": "98",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "An empty exact-order branch has the same fallthrough equivalence as mutant 96.",
+      "evidence": "defaultPricingOrder exact and dated-prefix examples"
+    },
+    {
+      "mutantId": "99",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Every built-in pricing key has length greater than one, so initializing bestLen to -1 or +1 admits the same candidates.",
+      "evidence": "DEFAULT_PRICING_KEYS construction in src/pricing.ts"
+    },
+    {
+      "mutantId": "109",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Two distinct equal-length strings cannot both be prefixes of one model; > and >= therefore select the same longest matching key.",
+      "evidence": "longest-prefix lookup invariant and dated model examples"
+    },
+    {
+      "mutantId": "114",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Without base and override pricing, falling through calls withDefaults({}), which returns undefined exactly like the early return.",
+      "evidence": "unknown-model and incomplete-override examples"
+    },
+    {
+      "mutantId": "118",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Removing the no-price block has the same withDefaults({}) fallthrough equivalence as mutant 114.",
+      "evidence": "unknown-model and incomplete-override examples"
+    },
+    {
+      "mutantId": "122",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Removing lookup's exact early return makes longest-prefix lookup select the same exact table entry and revisions.",
+      "evidence": "exact, scheduled-revision, and dated-prefix examples"
+    },
+    {
+      "mutantId": "123",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "An empty exact lookup branch has the same longest-prefix fallthrough equivalence as mutant 122.",
+      "evidence": "exact, scheduled-revision, and dated-prefix examples"
+    },
+    {
+      "mutantId": "124",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "All pricing table keys have length greater than one, so bestLen -1 and +1 choose the same candidate set.",
+      "evidence": "DEFAULT_PRICING and override key requirements"
+    },
+    {
+      "mutantId": "130",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Distinct equal-length keys cannot both prefix the same model, making > and >= identical for longest-prefix replacement.",
+      "evidence": "exact and longest-prefix model examples"
+    },
+    {
+      "mutantId": "142",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "For a missing revision list, the injected string has no from/pricing fields; its comparison is false and resolved pricing remains unchanged just like an empty list.",
+      "evidence": "override-only effective-day example"
+    },
+    {
+      "mutantId": "164",
+      "classification": "equivalent",
+      "highRisk": false,
+      "rationale": "Both model and key are already required to end in -fast; removing that common suffix cannot change whether the model starts with the key's non-fast prefix.",
+      "evidence": "dated fast-model lookup example and matches guards"
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "issue": 43,
+  "entries": [
+    {
+      "id": "REQ-DOM-ORACLE",
+      "requirement": "Domain examples use a requirement-derived oracle independent of production calculations.",
+      "oracle": ["src/test/domain/requirementOracle.ts"],
+      "tests": ["src/test/domain/domainQuality.test.ts"],
+      "pbt": ["example cases and independent expected values"],
+      "tlaActions": ["OmitInput", "DuplicateInput"],
+      "tlaProperties": ["TypeOK"],
+      "implementation": ["src/types.ts", "src/pricing.ts", "src/aggregator.ts", "src/period.ts"],
+      "evidence": ["src/test/domain/evidence/pbt-run-config.json"]
+    },
+    {
+      "id": "REQ-DOM-PBT",
+      "requirement": "PBT is reproducible and persists the seed, replay path, and fully shrunk counterexample on failure.",
+      "oracle": ["src/test/domain/requirementOracle.ts"],
+      "tests": ["src/test/domain/domainQuality.test.ts"],
+      "pbt": ["src/test/domain/pbtEvidence.ts"],
+      "tlaActions": ["DuplicateInput", "OmitInput"],
+      "tlaProperties": ["DuplicateIsIdempotent"],
+      "implementation": ["src/types.ts", "src/pricing.ts", "src/aggregator.ts", "src/period.ts"],
+      "evidence": ["src/test/domain/evidence/pbt-run-config.json", "docs/verification/evidence/pbt-latest.json"]
+    },
+    {
+      "id": "REQ-DOM-C2",
+      "requirement": "Every inventoried atomic domain condition records both true and false outcomes.",
+      "oracle": ["src/test/domain/c2Inventory.ts"],
+      "tests": ["src/test/domain/domainQuality.test.ts"],
+      "pbt": ["generated and boundary examples exercise condition outcomes"],
+      "tlaActions": ["ResourceExhausted"],
+      "tlaProperties": ["TypeOK"],
+      "implementation": ["src/types.ts", "src/pricing.ts", "src/aggregator.ts", "src/period.ts"],
+      "evidence": ["docs/verification/evidence/c2-latest.json"],
+      "atomicConditions": [
+        "T-LCI-TARGET", "T-LCI-SOURCE", "T-LCC-TARGET", "T-LCC-SOURCE", "T-LCO-TARGET", "T-LCO-SOURCE",
+        "P-ORDER-EXACT", "P-MATCH-PREFIX", "P-MATCH-FAST-KEY", "P-MATCH-FAST-MODEL", "P-OVERRIDES",
+        "P-BASE-MISSING", "P-OVERRIDE-MISSING", "P-EFFECTIVE-DAY", "P-REVISION-ACTIVE", "P-INPUT-MISSING",
+        "P-OUTPUT-MISSING", "P-LONG-THRESHOLD", "P-LONG-ABOVE", "P-COST-PRICED", "A-DAY-EXISTS",
+        "A-MODEL-EXISTS", "A-PRUNE-BEFORE", "A-ROW-EXISTS", "A-DAY-PRICED", "A-IS-TODAY",
+        "A-MONTH-PRICED", "A-KNOWN-ORDER-A", "A-KNOWN-ORDER-B", "A-ORDER-LESS", "A-ORDER-GREATER"
+      ]
+    },
+    {
+      "id": "REQ-DOM-MUTATION",
+      "requirement": "Mutation score and every surviving/equivalent mutant are analysed for defect-detection strength.",
+      "oracle": ["src/test/domain/requirementOracle.ts"],
+      "tests": ["src/test/domain/domainQuality.test.ts"],
+      "pbt": ["domain PBT suite selected per test by Stryker"],
+      "tlaActions": ["ResourceExhausted"],
+      "tlaProperties": ["NoForbiddenState"],
+      "implementation": ["stryker.config.mjs", "scripts/domain-quality/analyze-mutation.mjs"],
+      "evidence": ["docs/verification/evidence/mutation.json", "docs/verification/evidence/mutation-analysis.md"]
+    },
+    {
+      "id": "BND-CLAUDE",
+      "requirement": "Claude credentials and OAuth usage HTTP protocol have explicit states, terminal outcomes, deadline, and recovery.",
+      "oracle": ["loopback HTTP contract and independent response fixtures"],
+      "tests": ["src/test/integration/claudeLimits.integration.test.ts"],
+      "pbt": ["not applicable: protocol state examples are deterministic"],
+      "tlaActions": ["RetryableFailure", "Timeout", "OmitInput"],
+      "tlaProperties": ["PersistTerminates"],
+      "implementation": ["src/limits.ts"],
+      "evidence": ["docs/verification/boundaries.md"]
+    },
+    {
+      "id": "BND-CODEX",
+      "requirement": "Codex append-log discovery and bounded tail reads handle omission, truncation, reordering, restart, and resource bounds.",
+      "oracle": ["temporary JSONL fixtures with independently specified last-valid-event semantics"],
+      "tests": ["src/test/integration/codexLimits.integration.test.ts"],
+      "pbt": ["not applicable: filesystem protocol state examples are deterministic"],
+      "tlaActions": ["DuplicateInput", "OmitInput", "Crash", "Recover"],
+      "tlaProperties": ["DuplicateIsIdempotent"],
+      "implementation": ["src/limits.ts"],
+      "evidence": ["docs/verification/boundaries.md"]
+    },
+    {
+      "id": "BND-TELEMETRY",
+      "requirement": "OTLP HTTP export contract covers gate, body, concurrent order, non-2xx, timeout, and caller-driven recovery.",
+      "oracle": ["loopback OTLP/HTTP receiver recording exact request bytes"],
+      "tests": ["src/test/integration/telemetry.integration.test.ts"],
+      "pbt": ["not applicable: wire-contract state examples are deterministic"],
+      "tlaActions": ["StartScan", "RetryableFailure", "Timeout", "Cancel"],
+      "tlaProperties": ["NoStaleExternalEffect"],
+      "implementation": ["src/telemetry.ts"],
+      "evidence": ["docs/verification/boundaries.md"]
+    },
+    {
+      "id": "BND-RTK",
+      "requirement": "RTK subprocess contract bounds time and stdout and handles crash, malformed/partial output, duplicates, and recovery.",
+      "oracle": ["protocol-compatible injected execFile callback"],
+      "tests": ["src/test/integration/rtk.integration.test.ts"],
+      "pbt": ["not applicable: process-protocol state examples are deterministic"],
+      "tlaActions": ["RetryableFailure", "RetryExhausted", "Timeout", "Crash", "Recover", "ResourceExhausted"],
+      "tlaProperties": ["NoForbiddenState"],
+      "implementation": ["src/rtk.ts"],
+      "evidence": ["docs/verification/boundaries.md"]
+    },
+    {
+      "id": "BND-COORDINATION",
+      "requirement": "Leader lifecycle, logical time, lease generation, bounded resources, persistence and external effects are independently modelled.",
+      "oracle": ["spec/coordination/Boundaries.md"],
+      "tests": ["src/test/coordination.test.ts"],
+      "pbt": ["not applicable: exhaustive finite-state exploration"],
+      "tlaActions": ["BeginClaim", "WriteClaim", "SettleClaim", "RenewLease", "TimeTick", "OmitHeartbeat", "StartScan", "FinishScan", "PersistSuccess", "PublishSuccess", "RejectStaleCommit", "ReadSnapshot", "Release", "Dispose"],
+      "tlaProperties": ["TypeOK", "NoForbiddenState", "NoStalePublish", "NoStalePersist", "NoStaleExternalEffect", "FollowerReadProgress"],
+      "implementation": ["src/coordination/leaderLock.ts", "src/coordination/sharedSnapshot.ts", "src/extension.ts"],
+      "evidence": ["spec/coordination/evidence/latest.json", "spec/coordination/AdversarialAudit.md"]
+    },
+    {
+      "id": "FLT-PARTIAL-RETRY",
+      "requirement": "Partial failure and bounded retry/retry exhaustion have explicit terminal ownership and recovery.",
+      "oracle": ["docs/verification/boundaries.md", "spec/coordination/Boundaries.md"],
+      "tests": ["src/test/integration/claudeLimits.integration.test.ts", "src/test/integration/telemetry.integration.test.ts", "src/test/integration/rtk.integration.test.ts"],
+      "pbt": ["not applicable to adapter scheduling policy"],
+      "tlaActions": ["RetryableFailure", "RetryExhausted", "Recover"],
+      "tlaProperties": ["PersistTerminates", "PublishTerminates"],
+      "implementation": ["src/limits.ts", "src/telemetry.ts", "src/rtk.ts"],
+      "evidence": ["docs/verification/boundaries.md", "spec/coordination/evidence/latest.json"]
+    },
+    {
+      "id": "FLT-DUPLICATE-OMISSION-REORDER",
+      "requirement": "Duplicate, missing, and order-reversed inputs do not fabricate progress or double-commit semantic identity.",
+      "oracle": ["independent event fixtures and TLA+ duplicate identity"],
+      "tests": ["src/test/integration/codexLimits.integration.test.ts", "src/test/integration/telemetry.integration.test.ts", "src/test/integration/rtk.integration.test.ts"],
+      "pbt": ["commutativity and aggregation properties"],
+      "tlaActions": ["DuplicateInput", "OmitInput", "PublishSuccess"],
+      "tlaProperties": ["DuplicateIsIdempotent", "SnapshotNeverRollsBack", "CacheNeverRollsBack"],
+      "implementation": ["src/engine.ts", "src/limits.ts", "src/rtk.ts"],
+      "evidence": ["docs/verification/boundaries.md", "spec/coordination/evidence/latest.json"]
+    },
+    {
+      "id": "FLT-CANCEL-TIMEOUT",
+      "requirement": "Cancellation and timeout terminate active work and release bounded resources, or are explicitly non-applicable at adapters without such contracts.",
+      "oracle": ["deadline-controlled test dependencies and boundary N/A inventory"],
+      "tests": ["src/test/integration/claudeLimits.integration.test.ts", "src/test/integration/telemetry.integration.test.ts", "src/test/integration/rtk.integration.test.ts"],
+      "pbt": ["not applicable: logical-time model and deterministic deadlines"],
+      "tlaActions": ["Cancel", "Timeout"],
+      "tlaProperties": ["PersistTerminates", "PublishTerminates"],
+      "implementation": ["src/limits.ts", "src/telemetry.ts", "src/rtk.ts"],
+      "evidence": ["docs/verification/boundaries.md", "spec/coordination/evidence/latest.json"]
+    },
+    {
+      "id": "FLT-CRASH-RESOURCE-RECOVERY",
+      "requirement": "Crash/restart, resource exhaustion, and recovery reach explicit states without hidden terminal work.",
+      "oracle": ["failure injection fixtures and independent lifecycle model"],
+      "tests": ["src/test/integration/codexLimits.integration.test.ts", "src/test/integration/rtk.integration.test.ts", "src/test/coordination.test.ts"],
+      "pbt": ["numeric boundary generation for domain resource values"],
+      "tlaActions": ["Crash", "Recover", "ResourceExhausted", "Dispose"],
+      "tlaProperties": ["NoPublishAfterDispose", "NoForbiddenState"],
+      "implementation": ["src/coordination/leaderLock.ts", "src/limits.ts", "src/rtk.ts"],
+      "evidence": ["docs/verification/boundaries.md", "spec/coordination/evidence/latest.json"]
+    },
+    {
+      "id": "FORMAL-SAFETY-LIVENESS",
+      "requirement": "Safety, liveness, reachability, deadlock, vacuity, actor counts and boundary constants are inspected with exact TLC metrics and unexplored scope.",
+      "oracle": ["spec/coordination/Boundaries.md"],
+      "tests": ["scripts/tlc/run-tlc.ps1"],
+      "pbt": ["not applicable: explicit-state breadth-first search"],
+      "tlaActions": ["BeginClaim", "WriteClaim", "SettleClaim", "RenewLease", "TimeTick", "OmitHeartbeat", "StartScan", "FinishScan", "DuplicateInput", "ResourceExhausted", "OmitInput", "PersistSuccess", "PublishSuccess", "RejectStaleCommit", "RetryableFailure", "RetryExhausted", "Timeout", "Cancel", "Crash", "Recover", "Dispose", "Release", "ReadSnapshot"],
+      "tlaProperties": ["TypeOK", "NoForbiddenState", "NoSupersededPublish", "SnapshotNeverRollsBack", "CacheNeverRollsBack", "FollowerReadProgress", "PersistTerminates", "PublishTerminates"],
+      "implementation": ["spec/coordination/Coordination.tla"],
+      "evidence": ["spec/coordination/evidence/latest.json", "spec/coordination/evidence/latest.md", "spec/coordination/AdversarialAudit.md"]
+    }
+  ]
+}

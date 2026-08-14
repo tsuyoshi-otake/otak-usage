@@ -2,6 +2,10 @@
 .vscode-test/**
 .github/**
 .codex/**
+docs/**
+spec/**
+domain-quality-evidence/**
+stryker.config.mjs
 eslint-rules/**
 scripts/**
 src/**

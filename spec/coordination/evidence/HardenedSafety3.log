@@ -1,0 +1,6 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 46 and seed 4304 with 1 worker on 16 cores with 14014MB heap and 64MB offheap memory [pid: 20160] (Windows 11 10.0 amd64, Microsoft 11.0.31 x86_64, MSBDiskFPSet, DiskStateQueue).
+Model checking completed. No error has been found.
+5345193 states generated, 526544 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 31.
+Finished in 20s at (2026-08-15 00:20:32)

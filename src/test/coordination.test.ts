@@ -6,9 +6,10 @@ import * as vscode from 'vscode';
 import { OtakUsageApi } from '../extension';
 import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from '../coordination/alertSnooze';
 import { readJsonFile, writeFileAtomic } from '../coordination/atomicFile';
+import { fencedCacheKey, makeFencedCacheRecord, readFencedCacheRecord } from '../coordination/fencedCache';
 import { groupKey, lockPathFor, snapshotPathFor } from '../coordination/group';
 import { LEASE_MS, LeaderLock, isLockRecord, lockIsStale } from '../coordination/leaderLock';
-import { SNAPSHOT_VERSION, SharedSnapshot, isSharedSnapshot, readSharedSnapshot, writeSharedSnapshot } from '../coordination/sharedSnapshot';
+import { SNAPSHOT_VERSION, SharedSnapshot, isSharedSnapshot, readFencedSnapshot, readSharedSnapshot, snapshotArtifactPath, writeFencedSnapshot, writeSharedSnapshot } from '../coordination/sharedSnapshot';
 import { emptyUsage } from '../types';
 
 /** Claims settle fast enough for tests without removing the read-back entirely. */
@@ -93,7 +94,7 @@ suite('coordination: leader lock', () => {
     });
 
     test('a heartbeat from the future counts as live rather than stealable', () => {
-        const record = { version: 1, holder: 'x', pid: 1, host: 'h', heartbeatMs: NOW + 60_000 };
+        const record = { version: 2, holder: 'x', pid: 1, host: 'h', heartbeatMs: NOW + 60_000, epoch: 1, leaseToken: '0123456789abcdef' };
         assert.strictEqual(lockIsStale(record, NOW), false);
         assert.strictEqual(lockIsStale({ ...record, heartbeatMs: NOW - LEASE_MS }, NOW), true);
         assert.strictEqual(lockIsStale({ ...record, heartbeatMs: NOW - LEASE_MS + 1 }, NOW), false);
@@ -125,7 +126,9 @@ suite('coordination: leader lock', () => {
         const b = lockIn(dir, 'window-b');
         await a.acquire(NOW);
         a.releaseSync();
-        assert.strictEqual(fs.existsSync(path.join(dir, 'test.lock')), false);
+        // Release is a fenced heartbeat marker, not an unlink: unlinking after
+        // a check could delete a successor's lock during a takeover race.
+        assert.strictEqual(fs.existsSync(path.join(dir, 'test.lock')), true);
         await b.acquire(NOW + 1);
         const c = lockIn(dir, 'window-c');
         await c.acquire(NOW + LEASE_MS + 1); // c takes it from b
@@ -173,6 +176,31 @@ suite('coordination: leader lock', () => {
         }
     });
 
+    test('every claim gets a new fencing token and epoch', async () => {
+        const dir = tempDir();
+        const a = lockIn(dir, 'window-a');
+        const b = lockIn(dir, 'window-b');
+        assert.strictEqual(await a.acquire(NOW), true);
+        const first = a.fence;
+        assert.ok(first);
+        assert.strictEqual(await b.acquire(NOW + LEASE_MS), true);
+        const second = b.fence;
+        assert.ok(second);
+        assert.ok(second.epoch > first.epoch);
+        assert.notStrictEqual(second.leaseToken, first.leaseToken);
+        assert.strictEqual(await a.isCurrent(NOW + LEASE_MS + 1), false);
+    });
+
+    test('an old holder cannot release a newer claim with the same instance id', async () => {
+        const dir = tempDir();
+        const first = lockIn(dir, 'same-instance');
+        const second = lockIn(dir, 'same-instance');
+        assert.strictEqual(await first.acquire(NOW), true);
+        assert.strictEqual(await second.steal(NOW + 1), true);
+        await first.release();
+        assert.strictEqual(await second.isCurrent(NOW + 2), true);
+    });
+
     test('a corrupt lock file is treated as no lock at all', async () => {
         const dir = tempDir();
         fs.writeFileSync(path.join(dir, 'test.lock'), '{ not json', 'utf8');
@@ -210,6 +238,40 @@ suite('coordination: shared snapshot', () => {
         assert.deepStrictEqual(await readSharedSnapshot(target), published);
     });
 
+    test('a delayed old leader is fenced to its own immutable artifact', async () => {
+        const dir = tempDir();
+        const target = path.join(dir, 'snap.json');
+        const first = lockIn(dir, 'window-a');
+        const second = lockIn(dir, 'window-b');
+        assert.strictEqual(await first.acquire(NOW), true);
+        const firstFence = first.fence;
+        assert.ok(firstFence);
+        assert.strictEqual(await second.acquire(NOW + LEASE_MS), true);
+        const secondFence = second.fence;
+        assert.ok(secondFence);
+
+        const oldSnapshot = snapshot({ leader: 'window-a', fence: firstFence });
+        const newSnapshot = snapshot({ leader: 'window-b', fence: secondFence, updatedAtMs: NOW + LEASE_MS });
+        // The old leader finishes after takeover. Its artifact must not be
+        // readable as the current leader's snapshot.
+        assert.strictEqual(await writeFencedSnapshot(target, 'old', oldSnapshot, firstFence, () => Promise.resolve(false)), false);
+        assert.strictEqual(await writeFencedSnapshot(target, 'new', newSnapshot, secondFence, () => second.isCurrent(NOW + LEASE_MS + 1)), true);
+        assert.deepStrictEqual(await readFencedSnapshot(target, secondFence), newSnapshot);
+        assert.strictEqual(await readFencedSnapshot(target, firstFence), undefined);
+        assert.ok(fs.existsSync(snapshotArtifactPath(target, secondFence)));
+    });
+
+    test('fenced writer refuses a mismatched snapshot identity', async () => {
+        const dir = tempDir();
+        const target = path.join(dir, 'snap.json');
+        const lock = lockIn(dir, 'window-a');
+        assert.strictEqual(await lock.acquire(NOW), true);
+        const fence = lock.fence;
+        assert.ok(fence);
+        assert.strictEqual(await writeFencedSnapshot(target, 'bad', snapshot({ fence: { ...fence, epoch: fence.epoch + 1 } }), fence, () => lock.isCurrent(NOW)), false);
+        assert.strictEqual(await readFencedSnapshot(target, fence), undefined);
+    });
+
     test('a publish leaves no temp file behind', async () => {
         const dir = tempDir();
         await writeSharedSnapshot(path.join(dir, 'snap.json'), 'pid', snapshot());
@@ -244,6 +306,25 @@ suite('coordination: shared snapshot', () => {
         await writeFileAtomic(target, 'writer-2', '{"b":2}');
         assert.deepStrictEqual(await readJsonFile(target), { b: 2 });
         assert.deepStrictEqual(fs.readdirSync(dir), ['file.json']);
+    });
+});
+
+suite('coordination: fenced cache', () => {
+    test('only an exact group and lease identity can restore a cache', () => {
+        const fence = { holder: 'window-a', epoch: 3, leaseToken: '0123456789abcdef0123456789abcdef' };
+        const cache = { version: 7, files: {}, days: {} };
+        const record = makeFencedCacheRecord('group-a', fence, cache);
+        assert.deepStrictEqual(readFencedCacheRecord(record, 'group-a', fence), cache);
+        assert.strictEqual(readFencedCacheRecord(record, 'group-b', fence), undefined);
+        assert.strictEqual(readFencedCacheRecord(record, 'group-a', { ...fence, epoch: 4 }), undefined);
+        assert.strictEqual(readFencedCacheRecord(record, 'group-a', { ...fence, leaseToken: `${fence.leaseToken}ff` }), undefined);
+    });
+
+    test('different claims use different immutable cache keys', () => {
+        const first = { holder: 'window-a', epoch: 1, leaseToken: '0123456789abcdef0123456789abcdef' };
+        const next = { holder: 'window-b', epoch: 2, leaseToken: 'fedcba9876543210fedcba9876543210' };
+        assert.notStrictEqual(fencedCacheKey('group-a', first), fencedCacheKey('group-a', next));
+        assert.notStrictEqual(fencedCacheKey('group-a', first), fencedCacheKey('group-b', first));
     });
 });
 
@@ -301,16 +382,18 @@ suite('coordination: the running extension', () => {
         }, 'the extension never took the scan lock');
         assert.ok(state.lockPath);
 
+        const observer = new LeaderLock(state.lockPath, 'second-window', SETTLE_MS);
+        const current = await waitFor(() => observer.readCurrent(), 'the leader lock was not readable');
+        const fence = { holder: current.holder, epoch: current.epoch, leaseToken: current.leaseToken };
         const snapshot = await waitFor(
-            () => readSharedSnapshot(state.snapshotPath!),
+            () => readFencedSnapshot(state.snapshotPath!, fence),
             'the leader never published a snapshot',
         );
         assert.strictEqual(snapshot.version, SNAPSHOT_VERSION);
         assert.ok(snapshot.updatedAtMs > 0);
 
-        const secondWindow = new LeaderLock(state.lockPath, 'second-window', SETTLE_MS);
         assert.strictEqual(
-            await secondWindow.acquire(Date.now()),
+            await observer.acquire(Date.now()),
             false,
             'a second window must follow the running one instead of scanning too',
         );

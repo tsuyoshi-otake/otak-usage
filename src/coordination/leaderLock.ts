@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import * as crypto from 'crypto';
 import * as os from 'os';
 import { readJsonFile, writeFileAtomic } from './atomicFile';
 import { delay } from './delay';
@@ -27,7 +28,16 @@ export const LEASE_MS = 3 * HEARTBEAT_MS;
  */
 export const CLAIM_SETTLE_MS = 250;
 
-export const LOCK_VERSION = 1;
+/** Version 1 records did not carry a fencing token and are deliberately ignored. */
+export const LOCK_VERSION = 2;
+
+export interface LeaseFence {
+    /** Monotonically increasing claim number for this lock path. */
+    epoch: number;
+    /** Unpredictable token which identifies this particular claim. */
+    leaseToken: string;
+    holder: string;
+}
 
 /** What a leader publishes about itself. Everything but `holder` is diagnostic. */
 export interface LockRecord {
@@ -38,6 +48,10 @@ export interface LockRecord {
     host: string;
     /** Epoch ms of the holder's last renewal. */
     heartbeatMs: number;
+    epoch: number;
+    leaseToken: string;
+    /** A voluntary release is represented in the holder's own heartbeat file. */
+    released?: boolean;
 }
 
 export function isLockRecord(raw: unknown): raw is LockRecord {
@@ -45,7 +59,9 @@ export function isLockRecord(raw: unknown): raw is LockRecord {
     return !!r && typeof r === 'object' &&
         r.version === LOCK_VERSION &&
         typeof r.holder === 'string' && r.holder !== '' &&
-        typeof r.heartbeatMs === 'number' && Number.isFinite(r.heartbeatMs);
+        typeof r.heartbeatMs === 'number' && Number.isFinite(r.heartbeatMs) &&
+        Number.isSafeInteger(r.epoch) && r.epoch >= 1 &&
+        typeof r.leaseToken === 'string' && r.leaseToken.length >= 16;
 }
 
 /**
@@ -70,6 +86,8 @@ export function lockIsStale(record: LockRecord, nowMs: number, leaseMs: number =
  */
 export class LeaderLock {
     private held = false;
+    private currentFence: LeaseFence | undefined;
+    private previousFence: LeaseFence | undefined;
     private readonly tag: string;
 
     constructor(
@@ -84,6 +102,16 @@ export class LeaderLock {
         return this.held;
     }
 
+    /** The epoch/token needed to fence writes made by this claim. */
+    get fence(): LeaseFence | undefined {
+        return this.held && this.currentFence ? { ...this.currentFence } : undefined;
+    }
+
+    /** The exact predecessor observed by this claim, used only to bootstrap its cache. */
+    get predecessorFence(): LeaseFence | undefined {
+        return this.held && this.previousFence ? { ...this.previousFence } : undefined;
+    }
+
     /**
      * Become the leader unless another window holds a live lease. Idempotent
      * while held. Throws when the lock file cannot be written at all, which the
@@ -93,7 +121,15 @@ export class LeaderLock {
         const current = await this.read();
         if (current && current.holder !== this.instanceId && !lockIsStale(current, nowMs)) {
             this.held = false;
+            this.currentFence = undefined;
+            this.previousFence = undefined;
             return false;
+        }
+        if (current && current.holder === this.instanceId && !lockIsStale(current, nowMs)) {
+            this.held = true;
+            this.currentFence = fenceOf(current);
+            this.previousFence = undefined;
+            return true;
         }
         return this.claim(nowMs);
     }
@@ -113,20 +149,27 @@ export class LeaderLock {
      */
     async renew(nowMs: number): Promise<boolean> {
         const current = await this.read();
-        if (current && current.holder !== this.instanceId) {
+        // A holder may renew after the nominal deadline as long as nobody has
+        // claimed a newer epoch yet. This closes the ordinary slow-heartbeat
+        // race without allowing an old holder to revive itself after takeover:
+        // the exact epoch/token comparison below fails once ownership moved.
+        if (!current || current.released || !this.currentFence || !sameFence(current, this.currentFence)) {
             this.held = false;
+            this.currentFence = undefined;
+            this.previousFence = undefined;
             return false;
         }
-        // The record may be gone (a stale-lock sweep, a cleaned storage
-        // directory); rewriting it re-establishes the same holder.
+        // Heartbeats are written to an epoch-specific file, never back to the
+        // shared lock pointer. Therefore a delayed old holder cannot overwrite
+        // a successor's pointer between this read and the write.
         try {
-            await this.write(nowMs);
+            await this.writeHeartbeat(nowMs, this.currentFence);
         } catch (err) {
             // Losing one heartbeat to a contended rename is survivable as long
             // as the lease already on disk is still ours and still current —
             // the next heartbeat retries. Anything else is a real failure.
             const after = await this.read();
-            if (!after || after.holder !== this.instanceId || lockIsStale(after, nowMs)) {
+            if (!after || !this.currentFence || !sameFence(after, this.currentFence) || lockIsStale(after, nowMs)) {
                 throw err;
             }
         }
@@ -139,12 +182,17 @@ export class LeaderLock {
         if (!this.held) {
             return;
         }
+        const fence = this.currentFence;
+        if (!fence) {
+            this.held = false;
+            return;
+        }
         this.held = false;
         const current = await this.read();
-        if (current && current.holder !== this.instanceId) {
+        if (current && !sameFence(current, fence)) {
             return; // already someone else's — deleting it would evict them
         }
-        await fsp.unlink(this.lockPath).catch(() => undefined);
+        await this.writeReleaseMarker(fence);
     }
 
     /**
@@ -155,22 +203,37 @@ export class LeaderLock {
         if (!this.held) {
             return;
         }
+        const fence = this.currentFence;
+        if (!fence) {
+            this.held = false;
+            return;
+        }
         this.held = false;
         try {
             const raw: unknown = JSON.parse(fs.readFileSync(this.lockPath, 'utf8'));
-            if (isLockRecord(raw) && raw.holder !== this.instanceId) {
+            if (isLockRecord(raw) && !sameFence(raw, fence)) {
                 return;
             }
-            fs.unlinkSync(this.lockPath);
+            fs.writeFileSync(this.releaseMarkerPath(fence), JSON.stringify({
+                epoch: fence.epoch,
+                leaseToken: fence.leaseToken,
+                heartbeatMs: 0,
+                released: true,
+            }), 'utf8');
         } catch {
             // Nothing readable to release.
         }
     }
 
     private async claim(nowMs: number): Promise<boolean> {
+        const observed = await this.read();
+        const predecessor = observed ? fenceOf(observed) : undefined;
+        const epoch = observed && Number.isSafeInteger(observed.epoch) ? observed.epoch + 1 : 1;
+        const leaseToken = crypto.randomBytes(24).toString('hex');
+        const fence: LeaseFence = { epoch, leaseToken, holder: this.instanceId };
         let writeError: unknown;
         try {
-            await this.write(nowMs);
+            await this.writeClaim(nowMs, fence);
         } catch (err) {
             // Simultaneous claims can collide in the filesystem itself rather
             // than in the file's contents. Losing that collision is losing the
@@ -182,7 +245,9 @@ export class LeaderLock {
             await delay(this.settleMs);
         }
         const current = await this.read();
-        this.held = current?.holder === this.instanceId;
+        this.held = !!current && sameFence(current, fence);
+        this.currentFence = this.held ? fence : undefined;
+        this.previousFence = this.held ? predecessor : undefined;
         if (this.held) {
             return true;
         }
@@ -192,19 +257,92 @@ export class LeaderLock {
         return false;
     }
 
-    private async write(nowMs: number): Promise<void> {
+    private async writeClaim(nowMs: number, fence: LeaseFence): Promise<void> {
+        await this.writeHeartbeat(nowMs, fence);
         const record: LockRecord = {
             version: LOCK_VERSION,
             holder: this.instanceId,
             pid: process.pid,
             host: os.hostname(),
             heartbeatMs: nowMs,
+            epoch: fence.epoch,
+            leaseToken: fence.leaseToken,
         };
         await writeFileAtomic(this.lockPath, this.tag, JSON.stringify(record));
     }
 
-    private async read(): Promise<LockRecord | undefined> {
-        const raw = await readJsonFile(this.lockPath);
-        return isLockRecord(raw) ? raw : undefined;
+    private async writeHeartbeat(nowMs: number, fence: LeaseFence): Promise<void> {
+        await writeFileAtomic(this.heartbeatPath(fence), `${this.tag}-${fence.epoch}-${fence.leaseToken.slice(0, 12)}-heartbeat`, JSON.stringify({
+            epoch: fence.epoch,
+            leaseToken: fence.leaseToken,
+            heartbeatMs: nowMs,
+            released: false,
+        }));
     }
+
+    private async writeReleaseMarker(fence: LeaseFence): Promise<void> {
+        await writeFileAtomic(this.releaseMarkerPath(fence), `${this.tag}-${fence.epoch}-${fence.leaseToken.slice(0, 12)}-release`, JSON.stringify({
+            epoch: fence.epoch,
+            leaseToken: fence.leaseToken,
+            heartbeatMs: 0,
+            released: true,
+        }));
+    }
+
+    private heartbeatPath(fence: LeaseFence): string {
+        return `${this.lockPath}.epoch-${fence.epoch}.${fence.leaseToken}.heartbeat`;
+    }
+
+    private releaseMarkerPath(fence: LeaseFence): string {
+        return `${this.lockPath}.epoch-${fence.epoch}.${fence.leaseToken}.released`;
+    }
+
+    async readCurrent(): Promise<LockRecord | undefined> {
+        const raw = await readJsonFile(this.lockPath);
+        if (!isLockRecord(raw)) {
+            return undefined;
+        }
+        const release = await readJsonFile(this.releaseMarkerPath(fenceOf(raw)));
+        if (isHeartbeat(release, raw) && release.released) {
+            return { ...raw, heartbeatMs: 0, released: true };
+        }
+        const heartbeat = await readJsonFile(this.heartbeatPath(fenceOf(raw)));
+        if (isHeartbeat(heartbeat, raw)) {
+            return { ...raw, heartbeatMs: heartbeat.heartbeatMs, released: heartbeat.released };
+        }
+        return raw;
+    }
+
+    /** True only when the on-disk claim is still exactly ours. */
+    async isCurrent(nowMs: number = Date.now()): Promise<boolean> {
+        const current = await this.readCurrent();
+        return !!current && !current.released && !!this.currentFence && sameFence(current, this.currentFence) && !lockIsStale(current, nowMs);
+    }
+
+    private async read(): Promise<LockRecord | undefined> {
+        return this.readCurrent();
+    }
+}
+
+function fenceOf(record: LockRecord): LeaseFence {
+    return { epoch: record.epoch, leaseToken: record.leaseToken, holder: record.holder };
+}
+
+function sameFence(record: LockRecord, fence: LeaseFence): boolean {
+    return record.holder === fence.holder && record.epoch === fence.epoch && record.leaseToken === fence.leaseToken;
+}
+
+interface HeartbeatRecord {
+    epoch: number;
+    leaseToken: string;
+    heartbeatMs: number;
+    released: boolean;
+}
+
+function isHeartbeat(raw: unknown, lock: LockRecord): raw is HeartbeatRecord {
+    const heartbeat = raw as HeartbeatRecord | undefined;
+    return !!heartbeat && typeof heartbeat === 'object' &&
+        heartbeat.epoch === lock.epoch && heartbeat.leaseToken === lock.leaseToken &&
+        typeof heartbeat.heartbeatMs === 'number' && Number.isFinite(heartbeat.heartbeatMs) &&
+        typeof heartbeat.released === 'boolean';
 }

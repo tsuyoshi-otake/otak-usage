@@ -14,6 +14,13 @@ export interface RtkStats {
     allTime: RtkPeriodStats;
 }
 
+export interface FetchRtkStatsOptions {
+    /** Injectable process boundary for deterministic contract and failure tests. */
+    execFileFn?: typeof execFile;
+    timeoutMs?: number;
+    maxBuffer?: number;
+}
+
 export function emptyRtkPeriod(): RtkPeriodStats {
     return { commands: 0, inputTokens: 0, outputTokens: 0, savedTokens: 0 };
 }
@@ -91,13 +98,22 @@ function addPeriod(target: RtkPeriodStats, e: Record<string, unknown>): void {
  * binary is missing, times out, or prints something unparseable — the caller
  * treats that as "rtk not available" and hides the segment.
  */
-export function fetchRtkStats(rtkPath: string | undefined, todayKey: string): Promise<RtkStats | undefined> {
+export function fetchRtkStats(
+    rtkPath: string | undefined,
+    todayKey: string,
+    options: FetchRtkStatsOptions = {},
+): Promise<RtkStats | undefined> {
     const exe = rtkPath && rtkPath.trim() !== '' ? rtkPath.trim() : 'rtk';
+    const exec = options.execFileFn ?? execFile;
     return new Promise((resolve) => {
-        execFile(
+        exec(
             exe,
             ['gain', '--daily', '--format', 'json'],
-            { timeout: 15_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true },
+            {
+                timeout: options.timeoutMs ?? 15_000,
+                maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024,
+                windowsHide: true,
+            },
             (err, stdout) => {
                 resolve(err ? undefined : parseRtkGain(stdout, todayKey));
             },

@@ -15,8 +15,9 @@ import { ScanTargets, scanAll } from './engine';
 import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
 import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from './coordination/alertSnooze';
+import { FENCED_CACHE_PREFIX, fencedCacheGroupPrefix, fencedCacheKey, makeFencedCacheRecord, readFencedCacheRecord } from './coordination/fencedCache';
 import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
-import { SNAPSHOT_VERSION, SharedSnapshot, readSharedSnapshot, writeSharedSnapshot } from './coordination/sharedSnapshot';
+import { SNAPSHOT_VERSION, SharedSnapshot, readFencedSnapshot, writeFencedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { unscannedRemoteLabel } from './remoteHost';
@@ -1227,8 +1228,11 @@ class UsageController implements vscode.Disposable {
         this.lastTargets = targets;
         const changed = await scanAll(this.cache, targets, now, this.scanIndex);
         this.initialScanDone = true;
-        if (changed) {
-            await this.saveCache();
+        if (!(await this.confirmLeadership())) {
+            return;
+        }
+        if (changed && !(await this.saveCache())) {
+            return;
         }
         await this.renderAndCheckAlert();
         await this.checkFastMode(now);
@@ -1243,8 +1247,16 @@ class UsageController implements vscode.Disposable {
      * once per machine, in the leader.
      */
     private async followerTick(): Promise<void> {
-        const snapshot = await readSharedSnapshot(this.snapshotPath);
-        if (!snapshot) {
+        const lock = this.lock;
+        const current = await lock?.readCurrent();
+        if (!lock || !current || current.released) {
+            return;
+        }
+        const fence = { epoch: current.epoch, leaseToken: current.leaseToken, holder: current.holder };
+        const snapshot = await readFencedSnapshot(this.snapshotPath, fence);
+        const after = await lock.readCurrent();
+        if (!snapshot || !after || after.released ||
+            after.epoch !== fence.epoch || after.leaseToken !== fence.leaseToken || after.holder !== fence.holder) {
             return; // leader has not published yet; keep the current display
         }
         this.sharedDays = snapshot.days;
@@ -1263,7 +1275,9 @@ class UsageController implements vscode.Disposable {
 
     /** Publish what the other windows need, skipping writes that change nothing. */
     private async publishSnapshot(): Promise<void> {
-        if (!this.leader || !this.initialScanDone || this.snapshotPath === '') {
+        const lock = this.lock;
+        const fence = lock?.fence;
+        if (!this.leader || !lock || !fence || !this.initialScanDone || this.snapshotPath === '') {
             return;
         }
         const snapshot: SharedSnapshot = {
@@ -1276,6 +1290,7 @@ class UsageController implements vscode.Disposable {
             claudeLimits: this.lastClaudeLimits,
             codexLimits: this.lastCodexLimits,
             rtk: this.lastRtkStats,
+            fence,
         };
         // updatedAtMs moves every time; compare everything else so an idle
         // machine stops rewriting the file (and the followers stop re-rendering).
@@ -1284,8 +1299,18 @@ class UsageController implements vscode.Disposable {
             return;
         }
         try {
-            await writeSharedSnapshot(this.snapshotPath, `${process.pid}`, snapshot);
-            this.lastPublished = payload;
+            const committed = await writeFencedSnapshot(
+                this.snapshotPath,
+                `${process.pid}`,
+                snapshot,
+                fence,
+                () => lock.isCurrent(),
+            );
+            if (committed) {
+                this.lastPublished = payload;
+            } else {
+                this.setLeader(false);
+            }
         } catch (err) {
             console.error('otak-usage: publishing the usage snapshot failed', err);
         }
@@ -1813,7 +1838,7 @@ class UsageController implements vscode.Disposable {
         this.scanIndex.reset();
         this.initialScanDone = false;
         this.lastPublished = '';
-        await this.context.globalState.update(CACHE_KEY, undefined);
+        await this.clearPersistedCaches();
         this.statusBarItem.text = '$(loading~spin) usage';
         await this.tick();
     }
@@ -1830,6 +1855,26 @@ class UsageController implements vscode.Disposable {
     }
 
     private loadCache(): void {
+        const fence = this.lock?.fence;
+        if (fence && this.lockGroup !== '') {
+            const candidates = [fence, this.lock?.predecessorFence].filter(candidate => candidate !== undefined);
+            for (const candidate of candidates) {
+                const raw = this.context.globalState.get<unknown>(fencedCacheKey(this.lockGroup, candidate));
+                const cached = readFencedCacheRecord(raw, this.lockGroup, candidate);
+                if (cached) {
+                    this.cache = cached;
+                    return;
+                }
+            }
+            // One-time migration from the pre-fencing cache. It is accepted
+            // only when no current/predecessor artifact exists, then removed
+            // immediately after the first fenced save.
+            const legacy = this.context.globalState.get<unknown>(CACHE_KEY);
+            if (isValidCache(legacy)) {
+                this.cache = legacy;
+            }
+            return;
+        }
         const raw = this.context.globalState.get<unknown>(CACHE_KEY);
         if (isValidCache(raw)) {
             this.cache = raw;
@@ -1846,8 +1891,50 @@ class UsageController implements vscode.Disposable {
         this.limitAlertState = isValidLimitAlertState(raw) ? raw : undefined;
     }
 
-    private async saveCache(): Promise<void> {
-        await this.context.globalState.update(CACHE_KEY, this.cache);
+    private async confirmLeadership(): Promise<boolean> {
+        if (!this.lock) {
+            return this.leader;
+        }
+        if (this.leader && await this.lock.isCurrent()) {
+            return true;
+        }
+        this.setLeader(false);
+        return false;
+    }
+
+    private async saveCache(): Promise<boolean> {
+        const lock = this.lock;
+        const fence = lock?.fence;
+        if (!lock || !fence || this.lockGroup === '') {
+            await this.context.globalState.update(CACHE_KEY, this.cache);
+            return true;
+        }
+        if (!(await lock.isCurrent())) {
+            this.setLeader(false);
+            return false;
+        }
+        const key = fencedCacheKey(this.lockGroup, fence);
+        await this.context.globalState.update(key, makeFencedCacheRecord(this.lockGroup, fence, this.cache));
+        if (!(await lock.isCurrent())) {
+            // This key is unique to the stale lease, so cleanup cannot delete a
+            // successor's cache. A crash here is still safe: future readers use
+            // only their exact current/predecessor fencing identity.
+            await this.context.globalState.update(key, undefined);
+            this.setLeader(false);
+            return false;
+        }
+        const groupPrefix = fencedCacheGroupPrefix(this.lockGroup);
+        const oldKeys = this.context.globalState.keys().filter(candidate =>
+            candidate.startsWith(groupPrefix) && candidate !== key && cacheEpoch(candidate) < fence.epoch,
+        );
+        await Promise.all(oldKeys.map(candidate => this.context.globalState.update(candidate, undefined)));
+        await this.context.globalState.update(CACHE_KEY, undefined);
+        return true;
+    }
+
+    private async clearPersistedCaches(): Promise<void> {
+        const keys = this.context.globalState.keys().filter(key => key === CACHE_KEY || key.startsWith(`${FENCED_CACHE_PREFIX}.`));
+        await Promise.all(keys.map(key => this.context.globalState.update(key, undefined)));
     }
 }
 
@@ -1859,6 +1946,12 @@ function tooltipIconColor(): string {
     const kind = vscode.window.activeColorTheme.kind;
     const dark = kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast;
     return dark ? '#cccccc' : '#3b3b3b';
+}
+
+function cacheEpoch(key: string): number {
+    const parts = key.split('.');
+    const value = Number(parts.at(-2));
+    return Number.isSafeInteger(value) && value >= 1 ? value : Number.POSITIVE_INFINITY;
 }
 
 function firstNonEmpty(...values: (string | undefined)[]): string | undefined {

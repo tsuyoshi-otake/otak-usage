@@ -78,7 +78,12 @@ interface ClaudeCredentials {
  * On macOS the credentials live in the Keychain instead of the file, in
  * which case Claude limits are simply unavailable.
  */
-export async function fetchClaudeLimits(claudeDir: string, nowMs: number, fetchFn: typeof fetch = fetch): Promise<ProviderLimits | undefined> {
+export async function fetchClaudeLimits(
+    claudeDir: string,
+    nowMs: number,
+    fetchFn: typeof fetch = fetch,
+    timeoutMs = 10_000,
+): Promise<ProviderLimits | undefined> {
     const cred = await readClaudeCredentials(claudeDir);
     if (!cred || (cred.expiresAt !== undefined && cred.expiresAt <= nowMs)) {
         return undefined;
@@ -90,7 +95,7 @@ export async function fetchClaudeLimits(claudeDir: string, nowMs: number, fetchF
                 'Authorization': `Bearer ${cred.accessToken}`,
                 'anthropic-beta': CLAUDE_OAUTH_BETA,
             },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
             return undefined;

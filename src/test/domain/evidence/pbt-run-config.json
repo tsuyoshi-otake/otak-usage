@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "defaultSeed": 4399142,
+  "defaultNumRuns": 250,
+  "seedEnvironmentVariable": "DOMAIN_PBT_SEED",
+  "replayPathEnvironmentVariable": "DOMAIN_PBT_PATH",
+  "failureArtifactDirectoryEnvironmentVariable": "DOMAIN_PBT_EVIDENCE_DIR",
+  "defaultFailureArtifactDirectory": "domain-quality-evidence/pbt",
+  "note": "On failure pbtEvidence.ts stores fast-check's final shrunk counterexample, seed and replay path as JSON before throwing. Override seed/path to replay an archived failure."
+}

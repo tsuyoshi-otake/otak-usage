@@ -1,0 +1,6 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 41 and seed 4301 with 1 worker on 16 cores with 14014MB heap and 64MB offheap memory [pid: 40436] (Windows 11 10.0 amd64, Microsoft 11.0.31 x86_64, MSBDiskFPSet, DiskStateQueue).
+Error: Invariant NoSupersededPublish is violated.
+9110 states generated, 2138 distinct states found, 923 states left on queue.
+The depth of the complete state graph search is 10.
+Finished in 00s at (2026-08-15 00:19:47)

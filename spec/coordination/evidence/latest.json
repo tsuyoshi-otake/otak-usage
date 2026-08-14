@@ -1,0 +1,947 @@
+{
+  "issue": 43,
+  "generatedAtUtc": "2026-08-14T15:20:45.9125975Z",
+  "suitePassed": true,
+  "fullSuite": true,
+  "vacuityAudit": {
+    "method": "TLC action coverage; every required Action must have at least one invocation in the suite",
+    "requiredActions": [
+      "BeginClaim",
+      "WriteClaim",
+      "SettleClaim",
+      "RenewLease",
+      "TimeTick",
+      "OmitHeartbeat",
+      "StartScan",
+      "FinishScan",
+      "DuplicateInput",
+      "ResourceExhausted",
+      "OmitInput",
+      "PersistSuccess",
+      "PublishSuccess",
+      "RejectStaleCommit",
+      "RetryableFailure",
+      "RetryExhausted",
+      "Timeout",
+      "Cancel",
+      "Crash",
+      "Recover",
+      "Dispose",
+      "Release",
+      "ReadSnapshot"
+    ],
+    "actionsWithZeroInvocations": []
+  },
+  "unexploredScope": [
+    "More than 3 actors",
+    "LeaseTicks greater than 1 and non-cyclic real wall-clock histories",
+    "More than 2 lease epochs, 2 source versions, 1 retry, 2 injected failures, or 1 concurrent external operation",
+    "Filesystem and scheduler implementation semantics below the atomic-action abstraction",
+    "Probabilistic collision absence (TLC fingerprints are not a mathematical proof of collision freedom)"
+  ],
+  "runs": [
+    {
+      "config": "CurrentStaleLeader.cfg",
+      "expectedOutcome": "counterexample",
+      "observedOutcome": "counterexample",
+      "expectationMet": true,
+      "exitCode": 12,
+      "exploration": "breadth-first explicit-state until expected counterexample (remaining graph intentionally unexplored)",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4301,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "2",
+        "LeaseTicks": "1",
+        "MaxRetries": "0",
+        "MaxEpoch": "2",
+        "MaxVersion": "2",
+        "FailureBudget": "0",
+        "MaxInflight": "1",
+        "FencingEnabled": "FALSE"
+      },
+      "generatedStates": 9110,
+      "distinctStates": 2138,
+      "remainingStates": 923,
+      "diameter": 10,
+      "diameterMeaning": "TLC search depth at first counterexample; not full graph diameter",
+      "deadlockChecked": false,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 2,
+          "invocations": 2
+        },
+        "BeginClaim": {
+          "newStates": 152,
+          "invocations": 253
+        },
+        "WriteClaim": {
+          "newStates": 96,
+          "invocations": 226
+        },
+        "SettleClaim": {
+          "newStates": 164,
+          "invocations": 258
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 234
+        },
+        "TimeTick": {
+          "newStates": 173,
+          "invocations": 1223
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 503
+        },
+        "StartScan": {
+          "newStates": 124,
+          "invocations": 190
+        },
+        "FinishScan": {
+          "newStates": 76,
+          "invocations": 106
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 105
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 206
+        },
+        "OmitInput": {
+          "newStates": 71,
+          "invocations": 105
+        },
+        "PersistSuccess": {
+          "newStates": 94,
+          "invocations": 184
+        },
+        "PublishSuccess": {
+          "newStates": 49,
+          "invocations": 111
+        },
+        "RejectStaleCommit": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryableFailure": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 103,
+          "invocations": 301
+        },
+        "Cancel": {
+          "newStates": 75,
+          "invocations": 814
+        },
+        "Crash": {
+          "newStates": 501,
+          "invocations": 1610
+        },
+        "Recover": {
+          "newStates": 0,
+          "invocations": 449
+        },
+        "Dispose": {
+          "newStates": 385,
+          "invocations": 2059
+        },
+        "Release": {
+          "newStates": 61,
+          "invocations": 197
+        },
+        "ReadSnapshot": {
+          "newStates": 13,
+          "invocations": 13
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "1f910fe00ba502fc842e0c8d7ca0e572a74ec2fa67ebf277676c166a307693a1"
+    },
+    {
+      "config": "CurrentRollback.cfg",
+      "expectedOutcome": "counterexample",
+      "observedOutcome": "counterexample",
+      "expectationMet": true,
+      "exitCode": 12,
+      "exploration": "breadth-first explicit-state until expected counterexample (remaining graph intentionally unexplored)",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4302,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "2",
+        "LeaseTicks": "1",
+        "MaxRetries": "0",
+        "MaxEpoch": "2",
+        "MaxVersion": "2",
+        "FailureBudget": "0",
+        "MaxInflight": "1",
+        "FencingEnabled": "FALSE"
+      },
+      "generatedStates": 56163,
+      "distinctStates": 13210,
+      "remainingStates": 5976,
+      "diameter": 13,
+      "diameterMeaning": "TLC search depth at first counterexample; not full graph diameter",
+      "deadlockChecked": false,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 2,
+          "invocations": 2
+        },
+        "BeginClaim": {
+          "newStates": 813,
+          "invocations": 1397
+        },
+        "WriteClaim": {
+          "newStates": 429,
+          "invocations": 996
+        },
+        "SettleClaim": {
+          "newStates": 715,
+          "invocations": 1200
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 1186
+        },
+        "TimeTick": {
+          "newStates": 712,
+          "invocations": 7245
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 3682
+        },
+        "StartScan": {
+          "newStates": 855,
+          "invocations": 1315
+        },
+        "FinishScan": {
+          "newStates": 410,
+          "invocations": 654
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 653
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 1600
+        },
+        "OmitInput": {
+          "newStates": 426,
+          "invocations": 653
+        },
+        "PersistSuccess": {
+          "newStates": 575,
+          "invocations": 1201
+        },
+        "PublishSuccess": {
+          "newStates": 493,
+          "invocations": 956
+        },
+        "RejectStaleCommit": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryableFailure": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 991,
+          "invocations": 2330
+        },
+        "Cancel": {
+          "newStates": 324,
+          "invocations": 4781
+        },
+        "Crash": {
+          "newStates": 3092,
+          "invocations": 9493
+        },
+        "Recover": {
+          "newStates": 0,
+          "invocations": 2720
+        },
+        "Dispose": {
+          "newStates": 2430,
+          "invocations": 12213
+        },
+        "Release": {
+          "newStates": 556,
+          "invocations": 1345
+        },
+        "ReadSnapshot": {
+          "newStates": 388,
+          "invocations": 616
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "4461467b8a3b65dab184dbc62a0aefb4e8a654eb1d38f3b25f13d9436be1ec7d"
+    },
+    {
+      "config": "HardenedSafety2.cfg",
+      "expectedOutcome": "pass",
+      "observedOutcome": "pass",
+      "expectationMet": true,
+      "exitCode": 0,
+      "exploration": "complete breadth-first explicit-state within finite config",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4303,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "2",
+        "LeaseTicks": "1",
+        "MaxRetries": "1",
+        "MaxEpoch": "2",
+        "MaxVersion": "2",
+        "FailureBudget": "1",
+        "MaxInflight": "1",
+        "FencingEnabled": "TRUE"
+      },
+      "generatedStates": 4769005,
+      "distinctStates": 622512,
+      "remainingStates": 0,
+      "diameter": 37,
+      "diameterMeaning": "TLC complete-state-graph search depth",
+      "deadlockChecked": true,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 1,
+          "invocations": 1
+        },
+        "BeginClaim": {
+          "newStates": 5067,
+          "invocations": 8928
+        },
+        "WriteClaim": {
+          "newStates": 4167,
+          "invocations": 10230
+        },
+        "SettleClaim": {
+          "newStates": 8284,
+          "invocations": 15426
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 107178
+        },
+        "TimeTick": {
+          "newStates": 36161,
+          "invocations": 622512
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 314190
+        },
+        "StartScan": {
+          "newStates": 35259,
+          "invocations": 54348
+        },
+        "FinishScan": {
+          "newStates": 5973,
+          "invocations": 16680
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 54348
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 324534
+        },
+        "OmitInput": {
+          "newStates": 34125,
+          "invocations": 54348
+        },
+        "PersistSuccess": {
+          "newStates": 16362,
+          "invocations": 35112
+        },
+        "PublishSuccess": {
+          "newStates": 7764,
+          "invocations": 33720
+        },
+        "RejectStaleCommit": {
+          "newStates": 14471,
+          "invocations": 134766
+        },
+        "RetryableFailure": {
+          "newStates": 36114,
+          "invocations": 57276
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 44021,
+          "invocations": 257946
+        },
+        "Cancel": {
+          "newStates": 2462,
+          "invocations": 385266
+        },
+        "Crash": {
+          "newStates": 178215,
+          "invocations": 740598
+        },
+        "Recover": {
+          "newStates": 692,
+          "invocations": 299088
+        },
+        "Dispose": {
+          "newStates": 108147,
+          "invocations": 1039686
+        },
+        "Release": {
+          "newStates": 14817,
+          "invocations": 56244
+        },
+        "ReadSnapshot": {
+          "newStates": 70410,
+          "invocations": 146580
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "10a33576669a2962668d4fec4440448396b0629ac9bec0d4af651a1137d04405"
+    },
+    {
+      "config": "HardenedSafety3.cfg",
+      "expectedOutcome": "pass",
+      "observedOutcome": "pass",
+      "expectationMet": true,
+      "exitCode": 0,
+      "exploration": "complete breadth-first explicit-state within finite config",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4304,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b, c}",
+        "MaxTime": "1",
+        "LeaseTicks": "1",
+        "MaxRetries": "0",
+        "MaxEpoch": "2",
+        "MaxVersion": "1",
+        "FailureBudget": "0",
+        "MaxInflight": "1",
+        "FencingEnabled": "TRUE"
+      },
+      "generatedStates": 5345193,
+      "distinctStates": 526544,
+      "remainingStates": 0,
+      "diameter": 31,
+      "diameterMeaning": "TLC complete-state-graph search depth",
+      "deadlockChecked": true,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 1,
+          "invocations": 1
+        },
+        "BeginClaim": {
+          "newStates": 5126,
+          "invocations": 13200
+        },
+        "WriteClaim": {
+          "newStates": 5168,
+          "invocations": 15840
+        },
+        "SettleClaim": {
+          "newStates": 11104,
+          "invocations": 24576
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 98016
+        },
+        "TimeTick": {
+          "newStates": 31803,
+          "invocations": 526544
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 323040
+        },
+        "StartScan": {
+          "newStates": 37816,
+          "invocations": 72300
+        },
+        "FinishScan": {
+          "newStates": 2022,
+          "invocations": 7776
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 72300
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 419064
+        },
+        "OmitInput": {
+          "newStates": 35424,
+          "invocations": 72300
+        },
+        "PersistSuccess": {
+          "newStates": 14092,
+          "invocations": 26268
+        },
+        "PublishSuccess": {
+          "newStates": 6206,
+          "invocations": 25500
+        },
+        "RejectStaleCommit": {
+          "newStates": 10164,
+          "invocations": 121488
+        },
+        "RetryableFailure": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 20064,
+          "invocations": 245556
+        },
+        "Cancel": {
+          "newStates": 3246,
+          "invocations": 477024
+        },
+        "Crash": {
+          "newStates": 157034,
+          "invocations": 922896
+        },
+        "Recover": {
+          "newStates": 648,
+          "invocations": 368388
+        },
+        "Dispose": {
+          "newStates": 110346,
+          "invocations": 1291284
+        },
+        "Release": {
+          "newStates": 15044,
+          "invocations": 77484
+        },
+        "ReadSnapshot": {
+          "newStates": 61236,
+          "invocations": 144348
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "3b07c3531c25f42c26ec26b2bc6a906115dc02cc9a5c6dbbe4c7bc53c5393f62"
+    },
+    {
+      "config": "LeaseBoundaryZero.cfg",
+      "expectedOutcome": "pass",
+      "observedOutcome": "pass",
+      "expectationMet": true,
+      "exitCode": 0,
+      "exploration": "complete breadth-first explicit-state within finite config",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4305,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "1",
+        "LeaseTicks": "0",
+        "MaxRetries": "0",
+        "MaxEpoch": "2",
+        "MaxVersion": "1",
+        "FailureBudget": "0",
+        "MaxInflight": "1",
+        "FencingEnabled": "TRUE"
+      },
+      "generatedStates": 1433,
+      "distinctStates": 256,
+      "remainingStates": 0,
+      "diameter": 9,
+      "diameterMeaning": "TLC complete-state-graph search depth",
+      "deadlockChecked": true,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 1,
+          "invocations": 1
+        },
+        "BeginClaim": {
+          "newStates": 30,
+          "invocations": 52
+        },
+        "WriteClaim": {
+          "newStates": 36,
+          "invocations": 52
+        },
+        "SettleClaim": {
+          "newStates": 44,
+          "invocations": 68
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "TimeTick": {
+          "newStates": 1,
+          "invocations": 256
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "StartScan": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "FinishScan": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 68
+        },
+        "OmitInput": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "PersistSuccess": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "PublishSuccess": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RejectStaleCommit": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryableFailure": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Cancel": {
+          "newStates": 0,
+          "invocations": 152
+        },
+        "Crash": {
+          "newStates": 72,
+          "invocations": 272
+        },
+        "Recover": {
+          "newStates": 0,
+          "invocations": 120
+        },
+        "Dispose": {
+          "newStates": 72,
+          "invocations": 392
+        },
+        "Release": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "ReadSnapshot": {
+          "newStates": 0,
+          "invocations": 0
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "e71a259b8ded5198623d8e10934fcc35f4cdb590fed52f5b6b01cd21a272efde"
+    },
+    {
+      "config": "FailureRecovery.cfg",
+      "expectedOutcome": "pass",
+      "observedOutcome": "pass",
+      "expectationMet": true,
+      "exitCode": 0,
+      "exploration": "complete breadth-first explicit-state within finite config",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4306,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "1",
+        "LeaseTicks": "1",
+        "MaxRetries": "1",
+        "MaxEpoch": "2",
+        "MaxVersion": "1",
+        "FailureBudget": "2",
+        "MaxInflight": "1",
+        "FencingEnabled": "TRUE"
+      },
+      "generatedStates": 1522449,
+      "distinctStates": 192464,
+      "remainingStates": 0,
+      "diameter": 33,
+      "diameterMeaning": "TLC complete-state-graph search depth",
+      "deadlockChecked": true,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 1,
+          "invocations": 1
+        },
+        "BeginClaim": {
+          "newStates": 2010,
+          "invocations": 3604
+        },
+        "WriteClaim": {
+          "newStates": 1542,
+          "invocations": 4320
+        },
+        "SettleClaim": {
+          "newStates": 3472,
+          "invocations": 6460
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 33992
+        },
+        "TimeTick": {
+          "newStates": 10279,
+          "invocations": 192464
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 105964
+        },
+        "StartScan": {
+          "newStates": 11324,
+          "invocations": 17808
+        },
+        "FinishScan": {
+          "newStates": 866,
+          "invocations": 2856
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 17808
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 98264
+        },
+        "OmitInput": {
+          "newStates": 10916,
+          "invocations": 17808
+        },
+        "PersistSuccess": {
+          "newStates": 4426,
+          "invocations": 11352
+        },
+        "PublishSuccess": {
+          "newStates": 2146,
+          "invocations": 10776
+        },
+        "RejectStaleCommit": {
+          "newStates": 4207,
+          "invocations": 47484
+        },
+        "RetryableFailure": {
+          "newStates": 16394,
+          "invocations": 26868
+        },
+        "RetryExhausted": {
+          "newStates": 4066,
+          "invocations": 10800
+        },
+        "Timeout": {
+          "newStates": 11934,
+          "invocations": 87420
+        },
+        "Cancel": {
+          "newStates": 1092,
+          "invocations": 129664
+        },
+        "Crash": {
+          "newStates": 52367,
+          "invocations": 236512
+        },
+        "Recover": {
+          "newStates": 1322,
+          "invocations": 88304
+        },
+        "Dispose": {
+          "newStates": 32579,
+          "invocations": 324816
+        },
+        "Release": {
+          "newStates": 4893,
+          "invocations": 18544
+        },
+        "ReadSnapshot": {
+          "newStates": 16628,
+          "invocations": 28560
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "6a57aa439730719a066356ba56f2ce4c11efc4fd0f99cc9ca35c44d07bfa59d8"
+    },
+    {
+      "config": "Liveness.cfg",
+      "expectedOutcome": "pass",
+      "observedOutcome": "pass",
+      "expectationMet": true,
+      "exitCode": 0,
+      "exploration": "complete breadth-first explicit-state within finite config",
+      "tlcVersion": "2.19 of 08 August 2024 (rev: 5a47802)",
+      "javaVersion": "openjdk version \"11.0.31\" 2026-04-21 LTS | OpenJDK Runtime Environment Microsoft-13870636 (build 11.0.31+11-LTS) | OpenJDK 64-Bit Server VM Microsoft-13870636 (build 11.0.31+11-LTS, mixed mode, sharing)",
+      "seed": 4307,
+      "workers": 1,
+      "constants": {
+        "Actors": "{a, b}",
+        "MaxTime": "1",
+        "LeaseTicks": "1",
+        "MaxRetries": "0",
+        "MaxEpoch": "1",
+        "MaxVersion": "1",
+        "FailureBudget": "0",
+        "MaxInflight": "1",
+        "FencingEnabled": "TRUE"
+      },
+      "generatedStates": 15833,
+      "distinctStates": 2304,
+      "remainingStates": 0,
+      "diameter": 20,
+      "diameterMeaning": "TLC complete-state-graph search depth",
+      "deadlockChecked": true,
+      "actionCoverage": {
+        "Init": {
+          "newStates": 1,
+          "invocations": 1
+        },
+        "BeginClaim": {
+          "newStates": 10,
+          "invocations": 18
+        },
+        "WriteClaim": {
+          "newStates": 12,
+          "invocations": 18
+        },
+        "SettleClaim": {
+          "newStates": 24,
+          "invocations": 32
+        },
+        "RenewLease": {
+          "newStates": 0,
+          "invocations": 536
+        },
+        "TimeTick": {
+          "newStates": 169,
+          "invocations": 2450
+        },
+        "OmitHeartbeat": {
+          "newStates": 0,
+          "invocations": 952
+        },
+        "StartScan": {
+          "newStates": 120,
+          "invocations": 184
+        },
+        "FinishScan": {
+          "newStates": 36,
+          "invocations": 80
+        },
+        "DuplicateInput": {
+          "newStates": 0,
+          "invocations": 192
+        },
+        "ResourceExhausted": {
+          "newStates": 0,
+          "invocations": 1416
+        },
+        "OmitInput": {
+          "newStates": 120,
+          "invocations": 192
+        },
+        "PersistSuccess": {
+          "newStates": 84,
+          "invocations": 168
+        },
+        "PublishSuccess": {
+          "newStates": 36,
+          "invocations": 168
+        },
+        "RejectStaleCommit": {
+          "newStates": 60,
+          "invocations": 240
+        },
+        "RetryableFailure": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "RetryExhausted": {
+          "newStates": 0,
+          "invocations": 0
+        },
+        "Timeout": {
+          "newStates": 144,
+          "invocations": 768
+        },
+        "Cancel": {
+          "newStates": 12,
+          "invocations": 1322
+        },
+        "Crash": {
+          "newStates": 732,
+          "invocations": 2828
+        },
+        "Recover": {
+          "newStates": 0,
+          "invocations": 1220
+        },
+        "Dispose": {
+          "newStates": 480,
+          "invocations": 4048
+        },
+        "Release": {
+          "newStates": 60,
+          "invocations": 184
+        },
+        "ReadSnapshot": {
+          "newStates": 204,
+          "invocations": 404
+        }
+      },
+      "specSha256": "72aec973ba4c33ac05759cfa0f8d0b099a90cc1b2aecd5e84046bda5a5ba6a2a",
+      "configSha256": "5b6235e9f1e0dd49c96b925073c11951f530b521c17ce7d5b8846e128cd02f85"
+    }
+  ]
+}
