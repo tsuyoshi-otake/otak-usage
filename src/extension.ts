@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
-import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
 import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
@@ -37,7 +37,15 @@ const CODEX_OPTIMIZE_APPLIED_KEY = 'otakUsage.codexOptimizeApplied';
 const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
-const CODEX_CONTEXT_DEFAULT_MIGRATED_KEY = 'otakUsage.codexContextDefaultMigrated';
+const CODEX_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.codexContextDefaultMigration';
+const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigration';
+/**
+ * Bumped every time the shipped context defaults move, so each installation
+ * runs the migration once per move. Generation 1 was the boolean-flagged move
+ * off 272k/250k; an installation that ran it records nothing here and is picked
+ * up by the `0` fallback below.
+ */
+const CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
 const REMOTE_HOST_HINT_KEY = 'otakUsage.remoteHostHintShown';
@@ -346,9 +354,9 @@ class UsageController implements vscode.Disposable {
      * through, so the window keeps the old behaviour and scans for itself.
      */
     private async startCoordination(): Promise<void> {
-        // Before any window can reconcile config.toml, so the leader's
-        // activation sync already writes the migrated values.
-        await this.migrateCodexContextDefaults();
+        // Before any window can reconcile config.toml or settings.json, so the
+        // leader's activation sync already writes the migrated values.
+        await this.migrateContextDefaults();
         try {
             const dir = this.context.globalStorageUri.fsPath;
             await fsp.mkdir(dir, { recursive: true });
@@ -623,18 +631,25 @@ class UsageController implements vscode.Disposable {
     }
 
     /**
-     * One-time move off the original 272k/250k Codex default. Changing the
-     * shipped values on its own would never reach a user whose settings already
-     * hold the old numbers, and would quietly change what a half-configured
-     * pair means. See
-     * `planCodexContextDefaultMigration` for the rules; this only carries the
-     * plan out and records that it ran.
+     * Reconciles both providers' context settings with the defaults this
+     * version ships, once per default move. Changing the shipped values on
+     * their own would never reach an installation whose settings already hold
+     * the old numbers, and would quietly change what a half-configured pair
+     * means. See `planCodexContextDefaultMigration` and
+     * `planClaudeContextDefaultMigration` for the rules; this only carries the
+     * plans out and records that they ran.
      *
-     * A write VS Code refuses leaves the flag unset, so the next activation
-     * tries again rather than half-migrating the user for good.
+     * The two sides are flagged separately, so a write VS Code refuses leaves
+     * that provider's flag behind and the next activation retries it alone
+     * rather than half-migrating the user for good.
      */
+    private async migrateContextDefaults(): Promise<void> {
+        await this.migrateCodexContextDefaults();
+        await this.migrateClaudeContextDefaults();
+    }
+
     private async migrateCodexContextDefaults(): Promise<void> {
-        if (this.context.globalState.get<boolean>(CODEX_CONTEXT_DEFAULT_MIGRATED_KEY, false)) {
+        if (this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CONTEXT_DEFAULT_MIGRATION_GENERATION) {
             return;
         }
         const config = this.config();
@@ -653,7 +668,30 @@ class UsageController implements vscode.Disposable {
             console.error('otak-usage: could not migrate the Codex context defaults', err);
             return;
         }
-        await this.context.globalState.update(CODEX_CONTEXT_DEFAULT_MIGRATED_KEY, true);
+        await this.context.globalState.update(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, CONTEXT_DEFAULT_MIGRATION_GENERATION);
+    }
+
+    private async migrateClaudeContextDefaults(): Promise<void> {
+        if (this.context.globalState.get<number>(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CONTEXT_DEFAULT_MIGRATION_GENERATION) {
+            return;
+        }
+        const config = this.config();
+        const plan = planClaudeContextDefaultMigration(
+            config.inspect<number>('claudeContextWindow')?.globalValue,
+            config.inspect<number>('claudeAutoCompactPercent')?.globalValue,
+        );
+        try {
+            for (const key of plan.clear) {
+                await config.update(key, undefined, vscode.ConfigurationTarget.Global);
+            }
+            for (const [key, value] of Object.entries(plan.write) as [ClaudeContextSettingKey, number][]) {
+                await config.update(key, value, vscode.ConfigurationTarget.Global);
+            }
+        } catch (err) {
+            console.error('otak-usage: could not migrate the Claude context defaults', err);
+            return;
+        }
+        await this.context.globalState.update(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, CONTEXT_DEFAULT_MIGRATION_GENERATION);
     }
 
     private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {

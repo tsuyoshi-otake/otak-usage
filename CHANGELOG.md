@@ -2,6 +2,16 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.0] - 2026-08-19
+
+### Changed
+
+- **Both providers now share a 250k context window and compact at 85% of it — 212.5k tokens**, up from 1.23.0's 240k / 90% / 216k. The working window grows by 10k, compaction starts 3.5k earlier, and the summary gets 37.5k instead of 24k. Claude and Codex still move together, so a session behaves the same whichever CLI it runs on. (#44)
+- 212.5k remains **above the 200k input tokens at which Anthropic charges the long-context rate**, the same trade 1.23.0 made — the wider working window is taken in exchange. Set `otakUsage.claudeAutoCompactPercent` to 80 (or the window to 230k at 85%) to go back to compacting on standard pricing. The 250k window is still below OpenAI's 272k threshold, so the Codex side is unaffected. (#44)
+- The 85% ratio applies to every Codex preset and to the Custom flow's suggested limit: the **272k** preset now pairs with 231.2k instead of 244.8k, and the Optimize picker lists **250k** where it listed 240k. Claude's preset is now **250k / 85%**. (#44)
+- **Both providers now migrate on upgrade**, where earlier default moves only ever migrated Codex. Settings holding a pair this extension previously shipped as its default are cleared so the current default applies — Codex's 250k/230k, 272k/250k, 200k/184k, 230k/195.5k and 240k/216k, and Claude's 200k/92%, 230k/85% and 240k/90%. Everything else is treated as a chosen configuration and kept exactly as it is, with a half-configured pair's unset half pinned to the default it used to inherit so its meaning does not change. The migration is recorded per provider and per default move, so it runs once and retries only the side that failed. (#44)
+- A pair the current picker offers is a choice, not a default: Codex's **272k / 231.2k** survives the migration untouched. The retired 272k / 250k pair does not — pick the **272k** preset again to get the larger window back. (#44)
+
 ## [1.25.0] - 2026-08-15
 
 ### Security

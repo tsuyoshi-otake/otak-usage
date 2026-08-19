@@ -14,14 +14,14 @@ export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 /**
  * The working window both providers are pinned to. Current Claude models offer
  * far more, but pinning the window is what makes compaction land on a fixed
- * token count instead of a share of whatever model happens to be active. 240k
- * paired with the shared compact share below triggers at 216k, leaving 24k to
- * write the summary. That trigger sits above the 200k input tokens at which
+ * token count instead of a share of whatever model happens to be active. 250k
+ * paired with the shared compact share below triggers at 212.5k, leaving 37.5k
+ * to write the summary. That trigger sits above the 200k input tokens at which
  * Anthropic switches to the long-context rate — the larger working window is
  * taken in exchange. `DEFAULT_CODEX_CONTEXT_WINDOW` is the same number, so the
  * two providers behave alike regardless of which one a session runs on.
  */
-export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 240000;
+export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 250000;
 
 /**
  * Claude Code compacts at this share of the managed window, leaving the rest to
@@ -29,7 +29,7 @@ export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 240000;
  * window (`CODEX_AUTO_COMPACT_RATIO`), so both providers compact at the same
  * point even though one is configured in percent and the other in tokens.
  */
-export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
+export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
 
 export interface ClaudeOptimizeValues {
     contextWindow: number;
@@ -37,16 +37,99 @@ export interface ClaudeOptimizeValues {
 }
 
 export interface ClaudeOptimizePreset extends ClaudeOptimizeValues {
-    id: '240k';
+    id: '250k';
 }
 
 export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
     {
-        id: '240k',
+        id: '250k',
         contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
     },
 ];
+
+/**
+ * The pair that shipped as the default immediately before the current one. An
+ * unset setting used to mean exactly this, so the migration reads a missing key
+ * as this value and pins it when the rest of the pair was chosen by hand.
+ */
+export const PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW = 240000;
+export const PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
+
+/**
+ * Every pair otak-usage has ever shipped as its Claude default, oldest first.
+ * Holding one of these numbers proves nothing about intent — it is what an
+ * installation was handed — so the migration clears such a pair and lets the
+ * current default take over. The release that managed the percentage alone left
+ * the window unset, which reads as the previous default and so is covered by
+ * the last entry.
+ */
+export const SHIPPED_CLAUDE_CONTEXT_DEFAULTS: readonly ClaudeOptimizeValues[] = [
+    { contextWindow: 200000, autoCompactPercent: 92 },
+    { contextWindow: 230000, autoCompactPercent: 85 },
+    {
+        contextWindow: PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW,
+        autoCompactPercent: PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
+    },
+];
+
+/** Whether a pair is one this extension once shipped rather than a choice. */
+export function isShippedClaudeContextDefault(values: ClaudeOptimizeValues): boolean {
+    return SHIPPED_CLAUDE_CONTEXT_DEFAULTS.some((shipped) =>
+        shipped.contextWindow === values.contextWindow &&
+        shipped.autoCompactPercent === values.autoCompactPercent,
+    );
+}
+
+export type ClaudeContextSettingKey = 'claudeContextWindow' | 'claudeAutoCompactPercent';
+
+/**
+ * What the one-time default migration has to write, given the values a user
+ * currently has in their global settings (`undefined` when a key is unset).
+ */
+export interface ClaudeContextDefaultMigration {
+    /** Global values to remove so the new manifest defaults take over. */
+    clear: readonly ClaudeContextSettingKey[];
+    /** Global values to write so an existing configuration keeps its meaning. */
+    write: Partial<Record<ClaudeContextSettingKey, number>>;
+}
+
+/**
+ * The Claude counterpart of `planCodexContextDefaultMigration`, following the
+ * same rules so both providers move together: a pair this extension once
+ * shipped is cleared so the current default applies, and a chosen pair is left
+ * alone with any unset half pinned to the previous default.
+ */
+export function planClaudeContextDefaultMigration(
+    contextWindow: unknown,
+    autoCompactPercent: unknown,
+): ClaudeContextDefaultMigration {
+    const effective: ClaudeOptimizeValues = {
+        contextWindow: normalizeClaudeTokenLimit(contextWindow, PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW),
+        autoCompactPercent: normalizeClaudeAutoCompactPercent(
+            autoCompactPercent,
+            PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
+        ),
+    };
+    if (isShippedClaudeContextDefault(effective)) {
+        const clear: ClaudeContextSettingKey[] = [];
+        if (contextWindow !== undefined) {
+            clear.push('claudeContextWindow');
+        }
+        if (autoCompactPercent !== undefined) {
+            clear.push('claudeAutoCompactPercent');
+        }
+        return { clear, write: {} };
+    }
+    const write: Partial<Record<ClaudeContextSettingKey, number>> = {};
+    if (contextWindow === undefined) {
+        write.claudeContextWindow = PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW;
+    }
+    if (autoCompactPercent === undefined) {
+        write.claudeAutoCompactPercent = PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT;
+    }
+    return { clear: [], write };
+}
 
 /** Tokens at which Claude Code starts compacting, for display only. */
 export function claudeAutoCompactTokenLimit(values: ClaudeOptimizeValues): number {

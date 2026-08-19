@@ -1,8 +1,8 @@
 import * as assert from 'assert';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
-import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeOptimizeBackupV2, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
-import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, SHIPPED_CLAUDE_CONTEXT_DEFAULTS, ClaudeOptimizeBackupV2, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
+import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, SHIPPED_CODEX_CONTEXT_DEFAULTS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { CODEX_DEFAULT_REASONING_EFFORTS, CODEX_ENABLED_REASONING_EFFORTS_KEY, CODEX_PERSISTED_ATOM_STATE_KEY, MementoLike, addCodexMaxReasoningEffort, syncCodexMaxReasoningEffort } from '../codexModelFeatures';
 import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
@@ -498,20 +498,20 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers stable 240k and 272k preset pairs, default first', () => {
+    test('offers stable 250k and 272k preset pairs, default first', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '240k', contextWindow: 240000, autoCompactLimit: 216000 },
-            { id: '272k', contextWindow: 272000, autoCompactLimit: 244800 },
+            { id: '250k', contextWindow: 250000, autoCompactLimit: 212500 },
+            { id: '272k', contextWindow: 272000, autoCompactLimit: 231200 },
         ]);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 240000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 216000);
-        assert.strictEqual(matchingCodexOptimizePreset(240000, 216000)?.id, '240k');
-        assert.strictEqual(matchingCodexOptimizePreset(240000, 180000), undefined);
-        assert.strictEqual(suggestedCodexAutoCompactLimit(240000), 216000);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 250000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 212500);
+        assert.strictEqual(matchingCodexOptimizePreset(250000, 212500)?.id, '250k');
+        assert.strictEqual(matchingCodexOptimizePreset(250000, 180000), undefined);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(250000), 212500);
     });
 
-    test('compacts every preset at the shared 90% of its window', () => {
-        assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.9);
+    test('compacts every preset at the shared 85% of its window', () => {
+        assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.85);
         // Both providers compact at the same share of their window.
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT / 100, CODEX_AUTO_COMPACT_RATIO);
         for (const preset of CODEX_OPTIMIZE_PRESETS) {
@@ -522,16 +522,39 @@ suite('codex optimize', () => {
             );
         }
         // A custom window gets the same treatment, rounded down to an integer.
-        assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 360000);
+        assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 340000);
         assert.strictEqual(suggestedCodexAutoCompactLimit(1), 1);
     });
 
-    suite('one-time default migration', () => {
-        test('clears settings that still read as the old 272k default', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, 250000), {
-                clear: ['codexContextWindow', 'codexAutoCompactLimit'],
-                write: {},
-            });
+    suite('shipped-default migration', () => {
+        test('covers every default this extension has shipped, oldest first', () => {
+            assert.deepStrictEqual(SHIPPED_CODEX_CONTEXT_DEFAULTS, [
+                { contextWindow: 250000, autoCompactLimit: 230000 },
+                { contextWindow: 272000, autoCompactLimit: 250000 },
+                { contextWindow: 200000, autoCompactLimit: 184000 },
+                { contextWindow: 230000, autoCompactLimit: 195500 },
+                { contextWindow: 240000, autoCompactLimit: 216000 },
+            ]);
+        });
+
+        test('clears any pair this extension once shipped as its default', () => {
+            for (const shipped of SHIPPED_CODEX_CONTEXT_DEFAULTS) {
+                assert.deepStrictEqual(
+                    planCodexContextDefaultMigration(shipped.contextWindow, shipped.autoCompactLimit),
+                    { clear: ['codexContextWindow', 'codexAutoCompactLimit'], write: {} },
+                    shipped.contextWindow + ' / ' + shipped.autoCompactLimit + ' must migrate',
+                );
+            }
+        });
+
+        test('leaves every pair the current picker offers untouched', () => {
+            for (const preset of CODEX_OPTIMIZE_PRESETS) {
+                assert.deepStrictEqual(
+                    planCodexContextDefaultMigration(preset.contextWindow, preset.autoCompactLimit),
+                    { clear: [], write: {} },
+                    preset.id + ' must survive the migration',
+                );
+            }
         });
 
         test('writes nothing when neither value was ever set', () => {
@@ -541,25 +564,25 @@ suite('codex optimize', () => {
             });
         });
 
-        test('clears a half-written pair whose other half was the old default', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, undefined), {
+        test('clears a half-written pair whose other half was the previous default', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(240000, undefined), {
                 clear: ['codexContextWindow'],
                 write: {},
             });
-            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 250000), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 216000), {
                 clear: ['codexAutoCompactLimit'],
                 write: {},
             });
         });
 
-        test('leaves chosen values alone and pins the unset half to its old default', () => {
+        test('leaves chosen values alone and pins the unset half to the previous default', () => {
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, undefined), {
                 clear: [],
-                write: { codexAutoCompactLimit: 250000 },
+                write: { codexAutoCompactLimit: 216000 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 120000), {
                 clear: [],
-                write: { codexContextWindow: 272000 },
+                write: { codexContextWindow: 240000 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, 380000), {
                 clear: [],
@@ -567,8 +590,8 @@ suite('codex optimize', () => {
             });
         });
 
-        test('treats an unusable stored value as the old default and clears it', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 250000), {
+        test('treats an unusable stored value as the previous default and clears it', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 216000), {
                 clear: ['codexContextWindow', 'codexAutoCompactLimit'],
                 write: {},
             });
@@ -806,19 +829,85 @@ suite('optional hooks', () => {
 });
 
 suite('claude optimize', () => {
-    const values = { contextWindow: 240000, autoCompactPercent: 90 };
+    const values = { contextWindow: 250000, autoCompactPercent: 85 };
 
-    test('offers a 240k preset that compacts at 216k, leaving 24k for the summary', () => {
+    test('offers a 250k preset that compacts at 212.5k, leaving 37.5k for the summary', () => {
         assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
-            { id: '240k', contextWindow: 240000, autoCompactPercent: 90 },
+            { id: '250k', contextWindow: 250000, autoCompactPercent: 85 },
         ]);
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 240000);
-        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 90);
-        assert.strictEqual(claudeAutoCompactTokenLimit(values), 216000);
-        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 24000);
-        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '240k');
-        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 85 }), undefined);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 250000);
+        assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 212500);
+        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 37500);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '250k');
+        assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 90 }), undefined);
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, contextWindow: 200000 }), undefined);
+    });
+
+    suite('shipped-default migration', () => {
+        test('covers every default this extension has shipped, oldest first', () => {
+            assert.deepStrictEqual(SHIPPED_CLAUDE_CONTEXT_DEFAULTS, [
+                { contextWindow: 200000, autoCompactPercent: 92 },
+                { contextWindow: 230000, autoCompactPercent: 85 },
+                { contextWindow: 240000, autoCompactPercent: 90 },
+            ]);
+        });
+
+        test('clears any pair this extension once shipped as its default', () => {
+            for (const shipped of SHIPPED_CLAUDE_CONTEXT_DEFAULTS) {
+                assert.deepStrictEqual(
+                    planClaudeContextDefaultMigration(shipped.contextWindow, shipped.autoCompactPercent),
+                    { clear: ['claudeContextWindow', 'claudeAutoCompactPercent'], write: {} },
+                    shipped.contextWindow + ' / ' + shipped.autoCompactPercent + ' must migrate',
+                );
+            }
+        });
+
+        test('leaves the preset the current picker offers untouched', () => {
+            for (const preset of CLAUDE_OPTIMIZE_PRESETS) {
+                assert.deepStrictEqual(
+                    planClaudeContextDefaultMigration(preset.contextWindow, preset.autoCompactPercent),
+                    { clear: [], write: {} },
+                    preset.id + ' must survive the migration',
+                );
+            }
+        });
+
+        test('writes nothing when neither value was ever set', () => {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, undefined), {
+                clear: [],
+                write: {},
+            });
+        });
+
+        test('clears the percentage-only release, whose window was never written', () => {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 90), {
+                clear: ['claudeAutoCompactPercent'],
+                write: {},
+            });
+        });
+
+        test('leaves chosen values alone and pins the unset half to the previous default', () => {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(1000000, undefined), {
+                clear: [],
+                write: { claudeAutoCompactPercent: 90 },
+            });
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 70), {
+                clear: [],
+                write: { claudeContextWindow: 240000 },
+            });
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(1000000, 70), {
+                clear: [],
+                write: {},
+            });
+        });
+
+        test('treats an out-of-range percentage as the previous default and clears it', () => {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(240000, 0), {
+                clear: ['claudeContextWindow', 'claudeAutoCompactPercent'],
+                write: {},
+            });
+        });
     });
 
     test('matches the Codex window so both providers behave alike', () => {
@@ -855,8 +944,8 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
         assert.strictEqual(parsed.autoCompactEnabled, true);
         assert.strictEqual(parsed.env.EXISTING, 'keep-me');
-        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '240000');
-        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '90');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '250000');
+        assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
         assert.ok(applied.includes('\n    "permissions"'));
 
         const restored = JSON.parse(restoreClaudeOptimizeJson(applied, backup));
@@ -921,7 +1010,7 @@ suite('claude optimize', () => {
             autoCompactPercent: { present: true, value: '80' },
         });
         const applied = JSON.parse(applyClaudeOptimizeJson(current, values));
-        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '240000');
+        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '250000');
         const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), adopted));
         assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
         assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '80');
