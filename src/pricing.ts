@@ -31,7 +31,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 /**
  * Verified against the official pricing pages:
  * - Claude prices on 2026-07-25: https://platform.claude.com/docs/en/about-claude/pricing
- * - OpenAI prices on 2026-07-10: https://developers.openai.com/api/docs/pricing
+ * - OpenAI prices on 2026-08-23: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -70,12 +70,13 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
+    // The GPT-5.6 family is listed at its launch prices; the 2026-07-30 cut
+    // (Terra, Luna) and the 2026-08-21 cut (Sol and its alias) live in
+    // DEFAULT_PRICING_REVISIONS so earlier days keep costing what they did.
     'gpt-5.6-sol': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
-    // Terra and Luna are listed at their launch prices; the 2026-07-30 price cut
-    // lives in DEFAULT_PRICING_REVISIONS so earlier days keep costing what they did.
     'gpt-5.6-terra': { input: 2.5, cachedInput: 0.25, output: 15, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.6-luna': { input: 1, cachedInput: 0.1, output: 6, ...GPT_LONG_CONTEXT_PRICING },
-    // The unsuffixed alias routes to GPT-5.6 Sol.
+    // The unsuffixed alias routes to GPT-5.6 Sol, so it tracks Sol's revisions.
     'gpt-5.6': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.5-pro': { input: 30, output: 180, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-5.5': { input: 5, cachedInput: 0.5, output: 30, ...GPT_LONG_CONTEXT_PRICING },
@@ -121,12 +122,22 @@ const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: P
     'claude-sonnet-5': [
         { from: '2026-09-01', pricing: { input: 3, output: 15 } },
     ],
-    // 2026-07-30 price cut: Luna -80%, Terra -20%. Sol was left unchanged.
+    // 2026-07-30 price cut: Luna -80%, Terra -20%. Sol was left out of that one.
     'gpt-5.6-terra': [
         { from: '2026-07-30', pricing: { input: 2, cachedInput: 0.2, output: 12 } },
     ],
     'gpt-5.6-luna': [
         { from: '2026-07-30', pricing: { input: 0.2, cachedInput: 0.02, output: 1.2 } },
+    ],
+    // 2026-08-21 Sol price cut: input -20%, output -33%, announced as
+    // promotional pricing held at least through 2026-11-21. The long-context
+    // multipliers are unchanged, so above 272K tokens Sol bills $8 input /
+    // $0.80 cached input / $30 output per million.
+    'gpt-5.6-sol': [
+        { from: '2026-08-21', pricing: { input: 4, cachedInput: 0.4, output: 20 } },
+    ],
+    'gpt-5.6': [
+        { from: '2026-08-21', pricing: { input: 4, cachedInput: 0.4, output: 20 } },
     ],
 };
 

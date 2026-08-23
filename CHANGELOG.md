@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.1] - 2026-08-23
+
+### Fixed
+
+- The 2026-08-21 GPT-5.6 Sol price cut is now applied: from that day on, Sol and the unsuffixed `gpt-5.6` alias bill at $4.00 input / $0.40 cached input / $20.00 output per million tokens (was $5.00 / $0.50 / $30.00). Days before 2026-08-21 keep the launch prices, so history is not repriced. The long-context multipliers above 272K input tokens are unchanged, which puts a long-context request at $8.00 / $0.80 / $30.00. Terra and Luna keep the prices their 2026-07-30 cut set. (#5)
+
 ## [1.26.0] - 2026-08-19
 
 ### Changed

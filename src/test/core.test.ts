@@ -188,6 +188,45 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('gpt-5.6', undefined, '2026-07-30')?.input, 5);
     });
 
+    test('gpt-5.6 sol and its alias resolve launch and post-2026-08-21 prices', () => {
+        for (const model of ['gpt-5.6-sol', 'gpt-5.6', 'gpt-5.6-sol-20260710']) {
+            const launch = resolvePricing(model, undefined, '2026-08-20');
+            assert.strictEqual(launch?.input, 5, model);
+            assert.strictEqual(launch?.cachedInput, 0.5, model);
+            assert.strictEqual(launch?.output, 30, model);
+
+            const cut = resolvePricing(model, undefined, '2026-08-21');
+            assert.strictEqual(cut?.input, 4, model);
+            assert.strictEqual(cut?.cachedInput, 0.4, model);
+            assert.strictEqual(cut?.output, 20, model);
+            // The long-context premium is untouched by the cut.
+            assert.strictEqual(cut?.longContextThreshold, 272_000, model);
+            assert.strictEqual(cut?.longContextInputMultiplier, 2, model);
+            assert.strictEqual(cut?.longContextOutputMultiplier, 1.5, model);
+        }
+
+        // Terra and Luna keep their 2026-07-30 prices across Sol's cut.
+        assert.strictEqual(resolvePricing('gpt-5.6-terra', undefined, '2026-08-21')?.output, 12);
+        assert.strictEqual(resolvePricing('gpt-5.6-luna', undefined, '2026-08-21')?.output, 1.2);
+    });
+
+    test('gpt-5.6 sol costs a day at the price in force on it', () => {
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        // Launch: 0.1*$5 + 0.2*$0.5 + 0.1*$30 = $3.60.
+        assert.ok(Math.abs((calcCost('gpt-5.6-sol', usage, undefined, '2026-08-20') ?? 0) - 3.6) < 1e-12);
+        // From 2026-08-21: 0.1*$4 + 0.2*$0.4 + 0.1*$20 = $2.48.
+        assert.ok(Math.abs((calcCost('gpt-5.6-sol', usage, undefined, '2026-08-21') ?? 0) - 2.48) < 1e-12);
+
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCachedInput: usage.cachedInput,
+            longContextOutput: usage.output,
+        };
+        // Above 272K: input and cached input 2x, output 1.5x -> $0.8 + $0.16 + $3 = $3.96.
+        assert.ok(Math.abs((calcCost('gpt-5.6-sol', longUsage, undefined, '2026-08-21') ?? 0) - 3.96) < 1e-12);
+    });
+
     test('gpt-5.6 long-context premium applies to the full request', () => {
         const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
         assert.ok(Math.abs((calcCost('gpt-5.6-sol', usage) ?? 0) - 3.6) < 1e-12);
