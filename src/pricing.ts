@@ -30,7 +30,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-07-25: https://platform.claude.com/docs/en/about-claude/pricing
+ * - Claude prices on 2026-09-02: https://platform.claude.com/docs/en/about-claude/pricing
  * - OpenAI prices on 2026-08-23: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
@@ -40,6 +40,9 @@ const GPT_LONG_CONTEXT_PRICING = {
  */
 export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Anthropic (Claude Code)
+    // Fable 5.1 keeps Fable 5's input/output and cache-write rates, but cuts
+    // cache reads from $1.00 to $0.25 per million tokens.
+    'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25 },
     'claude-fable-5': { input: 10, output: 50 },
     'claude-mythos-5': { input: 10, output: 50 },
     // Claude 4.6 and later bill their full 1M context window at standard rates,

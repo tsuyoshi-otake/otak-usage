@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.2] - 2026-09-02
+
+### Fixed
+
+- Added explicit Claude Fable 5.1 pricing for the `claude-fable-5-1` model ID: $10 input / $50 output / $12.50 five-minute cache write / $20 one-hour cache write / $0.25 cache read per million tokens. Previously it matched the older `claude-fable-5` prefix and overestimated cache reads at $1.00 per million tokens. Dated or suffixed IDs resolve to the same entry, and Fable 5.1 appears ahead of Fable 5 in model breakdowns. (#45)
+- Excluded local `.claude/` workspace state from VSIX packages, matching the existing `.codex/` exclusion.
+
 ## [1.26.1] - 2026-08-23
 
 ### Fixed

@@ -73,6 +73,28 @@ suite('pricing', () => {
         assert.ok(Math.abs((standard?.cacheRead ?? 0) - 0.3) < 1e-12);
     });
 
+    test('claude fable 5.1 resolves published cache prices, variants and cost', () => {
+        const p = resolvePricing('claude-fable-5-1');
+        assert.strictEqual(p?.input, 10);
+        assert.strictEqual(p?.output, 50);
+        assert.strictEqual(p?.cacheWrite, 12.5);
+        assert.strictEqual(p?.cacheWrite1h, 20);
+        assert.strictEqual(p?.cacheRead, 0.25);
+        assert.strictEqual(p?.longContextThreshold, undefined);
+        assert.strictEqual(resolvePricing('claude-fable-5-1-20260901')?.cacheRead, 0.25);
+        assert.strictEqual(resolvePricing('claude-fable-5')?.cacheRead, 1);
+
+        const usage = {
+            ...emptyUsage(),
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 1_000_000,
+            cacheWrite5m: 1_000_000,
+            cacheWrite1h: 1_000_000,
+        };
+        assert.strictEqual(calcCost('claude-fable-5-1', usage), 92.75);
+    });
+
     test('claude opus 5 resolves standard, variant and fast-mode prices', () => {
         const p = resolvePricing('claude-opus-5');
         assert.strictEqual(p?.input, 5);
@@ -330,6 +352,7 @@ suite('aggregator', () => {
 
         addEvent(days, ev(10, 'claude-haiku-4-5', 1_000_000));
         addEvent(days, ev(10, 'claude-fable-5', 1));
+        addEvent(days, ev(10, 'claude-fable-5-1', 1));
         addEvent(days, ev(10, 'claude-opus-4-8', 1_000));
         addEvent(days, ev(10, 'claude-opus-5', 1_000));
 
@@ -342,6 +365,7 @@ suite('aggregator', () => {
             'z-future-model',
         ]);
         assert.deepStrictEqual(s.claude.models.map((row) => row.model), [
+            'claude-fable-5-1',
             'claude-fable-5',
             'claude-opus-5',
             'claude-opus-4-8',
