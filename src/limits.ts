@@ -30,6 +30,14 @@ export interface ProviderLimits {
 }
 
 /**
+ * Codex snapshots are last-seen-in-log. After this age they are treated as
+ * unknown rather than as a live remaining-%, even when `resetsAt` is still
+ * in the future. Claude snapshots use fetch time as `asOfMs`, so they stay
+ * inside the bound whenever the OAuth call succeeded.
+ */
+export const LIMITS_FRESHNESS_MS = 6 * 60 * 60 * 1000;
+
+/**
  * A window whose reset time has already passed carries no information about
  * the new window — treat it as fully available instead of showing a stale
  * (typically alarming) percentage. Codex snapshots come from the last session
@@ -37,6 +45,9 @@ export interface ProviderLimits {
  */
 export function effectiveLimits(limits: ProviderLimits | undefined, nowMs: number): ProviderLimits | undefined {
     if (!limits) {
+        return undefined;
+    }
+    if (nowMs - limits.asOfMs > LIMITS_FRESHNESS_MS) {
         return undefined;
     }
     const primary = effectiveWindow(limits.primary, nowMs);
