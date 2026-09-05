@@ -13,6 +13,7 @@ All notable changes to the "otak-usage" extension will be documented in this fil
 ### Changed
 
 - Pull requests and pushes to `main` now run lint and `xvfb-run npm test` in addition to the existing security scan. (#51, #55)
+- The fenced-cache identity test now uses `emptyCache()` so it tracks `CACHE_VERSION` (v8 after the accounting walk / anon-key bump) instead of a hardcoded v7.
 
 ## [1.26.3] - 2026-09-05
 

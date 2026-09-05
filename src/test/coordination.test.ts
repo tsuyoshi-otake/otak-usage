@@ -10,6 +10,7 @@ import { fencedCacheKey, makeFencedCacheRecord, readFencedCacheRecord } from '..
 import { groupKey, lockPathFor, snapshotPathFor } from '../coordination/group';
 import { LEASE_MS, LeaderLock, isLockRecord, lockIsStale } from '../coordination/leaderLock';
 import { SNAPSHOT_VERSION, SharedSnapshot, isSharedSnapshot, readFencedSnapshot, readSharedSnapshot, snapshotArtifactPath, writeFencedSnapshot, writeSharedSnapshot } from '../coordination/sharedSnapshot';
+import { emptyCache } from '../cache';
 import { emptyUsage } from '../types';
 
 /** Claims settle fast enough for tests without removing the read-back entirely. */
@@ -312,7 +313,7 @@ suite('coordination: shared snapshot', () => {
 suite('coordination: fenced cache', () => {
     test('only an exact group and lease identity can restore a cache', () => {
         const fence = { holder: 'window-a', epoch: 3, leaseToken: '0123456789abcdef0123456789abcdef' };
-        const cache = { version: 7, files: {}, days: {} };
+        const cache = emptyCache();
         const record = makeFencedCacheRecord('group-a', fence, cache);
         assert.deepStrictEqual(readFencedCacheRecord(record, 'group-a', fence), cache);
         assert.strictEqual(readFencedCacheRecord(record, 'group-b', fence), undefined);
