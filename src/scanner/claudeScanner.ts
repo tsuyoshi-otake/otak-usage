@@ -95,12 +95,12 @@ export function parseClaudeLine(line: string): ClaudeParseResult | undefined {
         cacheWrite1h,
         output: usage.output_tokens ?? 0,
     };
-    const dedupeKey = typeof msg.id === 'string' && typeof rec.requestId === 'string'
-        ? `${msg.id}:${rec.requestId}`
-        : undefined;
     // Fast mode is billed at premium rates — keep it as a separate
     // "<model>-fast" SKU for pricing and the per-model breakdown.
     const model = usage.speed === 'fast' ? msg.model + FAST_SUFFIX : msg.model;
+    const dedupeKey = typeof msg.id === 'string' && typeof rec.requestId === 'string'
+        ? `${msg.id}:${rec.requestId}`
+        : `anon:${rec.timestamp}:${model}:${tokenUsage.input}:${tokenUsage.cacheRead}:${tokenUsage.cacheWrite5m}:${tokenUsage.cacheWrite1h}:${tokenUsage.output}`;
     return {
         event: { provider: 'claude', model, timestamp, usage: tokenUsage },
         dedupeKey,

@@ -5,10 +5,11 @@ import { resolveCodexModel } from './codexAutoReview';
 import { ScanIndex, ScannedFile } from './scanIndex';
 
 /**
- * List Codex rollout files for the current month plus the previous month
- * (previous-month files filtered by mtime >= minMtimeMs, to catch sessions
- * that started before the month boundary but continued past it). Session
- * directories are date-structured: <codexHome>/sessions/YYYY/MM/DD/rollout-*.jsonl.
+ * List Codex rollout files under sessions/YYYY/MM. The current calendar month
+ * is listed in full; older month folders keep only files with
+ * mtime >= minMtimeMs (month start for accounting, or a tighter window for
+ * rate-limit tails). A session that began two or more months ago and is still
+ * being appended stays visible as long as its file mtime moved this month.
  */
 export async function listCodexFiles(codexHome: string, nowMs: number, minMtimeMs: number): Promise<ScannedFile[]> {
     const out: ScannedFile[] = [];
@@ -29,14 +30,30 @@ export async function* iterCodexFiles(
     index: ScanIndex = new ScanIndex(),
 ): AsyncGenerator<ScannedFile> {
     const now = new Date(nowMs);
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    yield* walkMonth(monthDir(codexHome, now), 0, index, nowMs);
-    yield* walkMonth(monthDir(codexHome, prev), minMtimeMs, index, nowMs);
-}
-
-function monthDir(codexHome: string, d: Date): string {
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return path.join(codexHome, 'sessions', String(d.getFullYear()), mm);
+    const currentYear = String(now.getFullYear());
+    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const sessionsRoot = path.join(codexHome, 'sessions');
+    const years = await index.listDir(sessionsRoot, nowMs);
+    if (!years) {
+        return;
+    }
+    for (const year of years.dirs) {
+        if (!/^\d{4}$/.test(year)) {
+            continue;
+        }
+        const yearDir = path.join(sessionsRoot, year);
+        const months = await index.listDir(yearDir, nowMs);
+        if (!months) {
+            continue;
+        }
+        for (const month of months.dirs) {
+            if (!/^\d{2}$/.test(month)) {
+                continue;
+            }
+            const floor = year === currentYear && month === currentMonth ? 0 : minMtimeMs;
+            yield* walkMonth(path.join(yearDir, month), floor, index, nowMs);
+        }
+    }
 }
 
 async function* walkMonth(dir: string, minMtimeMs: number, index: ScanIndex, nowMs: number): AsyncGenerator<ScannedFile> {

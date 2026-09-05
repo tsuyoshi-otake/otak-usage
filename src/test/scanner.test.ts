@@ -17,7 +17,7 @@ import { resolvePricing } from '../pricing';
 import { UsageEvent } from '../types';
 import { parseClaudeLine } from '../scanner/claudeScanner';
 import { CODEX_AUTO_REVIEW_MODEL, CODEX_AUTO_REVIEW_PRICED_AS, resolveCodexModel } from '../scanner/codexAutoReview';
-import { CodexParseState, parseCodexLine } from '../scanner/codexScanner';
+import { CodexParseState, listCodexFiles, parseCodexLine } from '../scanner/codexScanner';
 import { readNewLines, visitNewLines } from '../scanner/jsonlReader';
 
 function claudeLine(opts: { id: string; requestId: string; model?: string; iso: string; output?: number; speed?: string }): string {
@@ -94,6 +94,17 @@ suite('parseClaudeLine', () => {
         assert.strictEqual(r?.event.model, 'claude-opus-4-8-fast');
         const normal = parseClaudeLine(claudeLine({ id: 'm', requestId: 'r', iso: '2026-06-10T03:00:00.000Z', speed: 'standard' }));
         assert.strictEqual(normal?.event.model, 'claude-opus-4-8');
+    });
+
+    test('id-less usage lines still get a fallback identity', () => {
+        const rec = JSON.parse(claudeLine({ id: 'm', requestId: 'r', iso: '2026-06-10T03:00:00.000Z', output: 10 }));
+        delete rec.message.id;
+        delete rec.requestId;
+        const line = JSON.stringify(rec);
+        const first = parseClaudeLine(line);
+        const second = parseClaudeLine(line);
+        assert.ok(first?.dedupeKey?.startsWith('anon:'));
+        assert.strictEqual(first?.dedupeKey, second?.dedupeKey);
     });
 
     test('skips non-assistant, synthetic, and garbage lines', () => {
@@ -339,6 +350,57 @@ suite('engine.scanAll', () => {
         assert.strictEqual(await scanAll(cache, { claudeDir, codexHome }, nowMs), true);
         assert.strictEqual(cache.days[day]['codex/gpt-5.5'].output, 60);
 
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('ingests a Codex rollout that still lives under a two-month-old session folder', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'otak-usage-eng-'));
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        const now = new Date(nowMs);
+        const older = new Date(now.getFullYear(), now.getMonth() - 2, 15);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const codexHome = path.join(root, 'codex');
+        const dayDir = path.join(
+            codexHome,
+            'sessions',
+            String(older.getFullYear()),
+            pad(older.getMonth() + 1),
+            pad(older.getDate()),
+        );
+        fs.mkdirSync(dayDir, { recursive: true });
+        const codexFile = path.join(dayDir, 'rollout-old-month.jsonl');
+        fs.writeFileSync(
+            codexFile,
+            JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }) + '\n' +
+            codexTokenCount(iso, 1000, 600, 50) + '\n',
+        );
+        const listed = await listCodexFiles(codexHome, nowMs, new Date(now.getFullYear(), now.getMonth(), 1).getTime());
+        assert.strictEqual(listed.length, 1);
+        assert.strictEqual(listed[0].path, codexFile);
+
+        const cache = emptyCache();
+        await scanAll(cache, { codexHome }, nowMs);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['codex/gpt-5.5'].output, 50);
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    test('counts identical id-less Claude lines once in a single ingest pass', async () => {
+        const { root, claudeDir, claudeFile } = claudeFixture();
+        const nowMs = Date.now();
+        const iso = new Date(nowMs).toISOString();
+        const rec = JSON.parse(claudeLine({ id: 'm', requestId: 'r', iso, output: 20 }));
+        delete rec.message.id;
+        delete rec.requestId;
+        const line = JSON.stringify(rec);
+        fs.writeFileSync(claudeFile, `${line}\n${line}\n`);
+
+        const cache = emptyCache();
+        await scanAll(cache, { claudeDir }, nowMs);
+        const day = Object.keys(cache.days)[0];
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].output, 20);
+        assert.strictEqual(cache.days[day]['claude/claude-opus-4-8'].input, 100);
         fs.rmSync(root, { recursive: true, force: true });
     });
 
