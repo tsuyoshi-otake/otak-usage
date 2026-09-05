@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Added explicit GPT-6 Astra pricing for the Codex / OpenAI model ID `gpt-6-astra`: $10 input / $1 cached input / $50 output per million tokens, with the published 272K long-context multipliers (2x input and cache, 1.5x output). Dated `gpt-6-astra-*` snapshots resolve to the same entry. Official docs list no unsuffixed `gpt-6` alias, so that id stays unknown. (#56)
+
 ## [1.26.2] - 2026-09-02
 
 ### Fixed

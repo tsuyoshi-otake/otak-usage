@@ -31,7 +31,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 /**
  * Verified against the official pricing pages:
  * - Claude prices on 2026-09-02: https://platform.claude.com/docs/en/about-claude/pricing
- * - OpenAI prices on 2026-08-23: https://developers.openai.com/api/docs/pricing
+ * - OpenAI prices on 2026-09-05: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -73,6 +73,11 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
+    // GPT-6 Astra: official model id / snapshot is gpt-6-astra only
+    // (https://developers.openai.com/api/docs/models/gpt-6-astra).
+    // Standard short-context rates and the 272K long-context multipliers are
+    // published on the OpenAI pricing page (verified 2026-09-05).
+    'gpt-6-astra': { input: 10, cachedInput: 1, output: 50, ...GPT_LONG_CONTEXT_PRICING },
     // The GPT-5.6 family is listed at its launch prices; the 2026-07-30 cut
     // (Terra, Luna) and the 2026-08-21 cut (Sol and its alias) live in
     // DEFAULT_PRICING_REVISIONS so earlier days keep costing what they did.
