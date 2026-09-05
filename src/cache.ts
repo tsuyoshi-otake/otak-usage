@@ -13,9 +13,12 @@ import { DayBuckets, TokenUsage } from './types';
  * v7: `codex-auto-review` bills flat as gpt-5.4, so history ingested under the
  * previous date-based resolution has to be re-attributed out of its gpt-5.5 and
  * gpt-5.x-codex buckets.
+ * v8: Claude lines without message.id+requestId get a fallback identity, and
+ * Codex listing walks every sessions/YYYY/MM folder (mtime-filtered) so a
+ * long-lived rollout is not dropped after two calendar months.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 7;
+export const CACHE_VERSION = 8;
 
 /**
  * A record that may still be superseded. Claude logs a streaming partial
