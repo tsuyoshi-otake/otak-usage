@@ -2,6 +2,18 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.4] - 2026-09-05
+
+### Fixed
+
+- Managed Claude/Codex config and hooks files are now replaced with a sibling temp file plus rename, so another window cannot read a half-written `settings.json`, `config.toml`, or `hooks.json`. Automatic optimize and hook sync refuse the write after the lease fence is lost; an explicit Optimize still works from any window. (#47, #49, #52)
+- Codex listing walks older `sessions/YYYY/MM` folders and keeps a rollout whose mtime moved this month, so a session that started two or more months ago is still counted. Claude usage lines without `message.id` / `requestId` get a timestamp-and-token fallback key so they are counted once on replay instead of being dropped or double-counted. (#48, #53)
+- Codex rate-limit snapshots older than six hours are treated as unknown rather than shown as a live remaining percentage. README now states local-calendar days, that freshness bound, and that opt-in OTLP payloads omit session identifiers. (#50, #54)
+
+### Changed
+
+- Pull requests and pushes to `main` now run lint and `xvfb-run npm test` in addition to the existing security scan. (#51, #55)
+
 ## [1.26.3] - 2026-09-05
 
 ### Added
