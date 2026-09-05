@@ -127,13 +127,21 @@ suite('limits: staleness clamp', () => {
         const stale: ProviderLimits = {
             primary: { usedPercent: 100, resetsAtMs: NOW_MS - 1000, windowMinutes: 10080 },
             secondary: { usedPercent: 19, resetsAtMs: NOW_MS + 1000 },
-            asOfMs: NOW_MS - 6 * 3600_000,
+            asOfMs: NOW_MS - 1_000,
         };
         const effective = effectiveLimits(stale, NOW_MS);
         assert.strictEqual(effective?.primary?.usedPercent, 0);
         assert.strictEqual(effective?.primary?.resetsAtMs, undefined);
         assert.strictEqual(effective?.primary?.windowMinutes, 10080);
         assert.strictEqual(effective?.secondary?.usedPercent, 19);
+    });
+
+    test('drops a snapshot whose asOfMs is older than the freshness bound', () => {
+        const stale: ProviderLimits = {
+            primary: { usedPercent: 91, resetsAtMs: NOW_MS + 3_600_000, windowMinutes: 300 },
+            asOfMs: NOW_MS - 7 * 3600_000,
+        };
+        assert.strictEqual(effectiveLimits(stale, NOW_MS), undefined);
     });
 
     test('passes fresh limits through and undefined stays undefined', () => {

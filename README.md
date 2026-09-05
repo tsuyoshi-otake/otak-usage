@@ -310,7 +310,7 @@ The warning fires once per off → on transition (for Claude, at most once per d
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `otakUsage.period` | `today` | Aggregation period shown in the status bar: `today` or `month`. |
+| `otakUsage.period` | `today` | Aggregation period shown in the status bar: `today` or `month`. Both use the **local calendar** (local midnight / local month start), not UTC days. |
 | `otakUsage.updateIntervalSeconds` | `60` | How often to rescan usage logs, in seconds. Minimum: `10`. |
 | `otakUsage.alertMode` | `both` | What triggers desktop notifications: `off`, `cost` (the daily USD total), `limit` (a rate-limit window percentage), or `both`. |
 | `otakUsage.dailyAlertThresholdUsd` | `10` | Daily combined Claude + Codex cost threshold in USD. Set to `0` to disable the cost alert. |
@@ -385,7 +385,7 @@ Limits (max)
 7d · 8% used · resets 07-15 14:00
 ```
 
-- **Codex CLI**: read entirely locally. Rollout session logs already contain the server-reported `rate_limits` snapshot on every turn; the extension reads the tail of the most recent log. Because the snapshot dates from your last Codex activity, a window whose reset time has already passed is shown as 0% used rather than a stale value.
+- **Codex CLI**: read entirely locally. Rollout session logs already contain the server-reported `rate_limits` snapshot on every turn; the extension reads the tail of the most recent log. A window whose reset time has already passed is shown as 0% used. A snapshot older than **6 hours** (`asOfMs`) is treated as unknown — idle days do not keep showing the last session's high percentage.
 - **Claude Code**: local logs carry no rate-limit data, so the extension calls the Anthropic usage endpoint — the same source as the CLI's `/usage` command — authenticated with the OAuth token Claude Code stores in `.credentials.json`. The token is read-only: it is never refreshed, written, or sent anywhere except `api.anthropic.com`. If the credentials file is absent (for example on macOS, where Claude Code uses the Keychain) or the token has expired, Claude limits are simply omitted.
 
 Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself. Each provider is shown with its brand logo (Claude / OpenAI, shipped as an icon font) followed by its **5-hour window** percentage, so both providers read on the same scale; a snapshot without 5-hour data falls back to its weekly window.
@@ -412,7 +412,7 @@ The built-in table records the date it was last checked against official pricing
 
 ## Telemetry
 
-Telemetry is off by default. When `otakUsage.telemetry.enabled` is `true`, every refresh exports aggregate metrics as OTLP/JSON to the configured OTLP/HTTP endpoint. No OpenTelemetry SDK dependency is added; the extension posts plain OTLP/JSON.
+Telemetry is off by default. When `otakUsage.telemetry.enabled` is `true`, every refresh exports aggregate metrics as OTLP/JSON to the configured OTLP/HTTP endpoint. No OpenTelemetry SDK dependency is added; the extension posts plain OTLP/JSON. Payloads do not include session identifiers, log paths, or tokens; `service.instance.id` is sent only when you set `otakUsage.telemetry.serviceInstanceId`.
 
 Labels follow the OpenTelemetry [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
 
