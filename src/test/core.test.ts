@@ -162,6 +162,34 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('claude-opus-4-6-20260101-fast')?.output, 150);
     });
 
+    test('gpt-6-astra resolves official Standard and long-context prices', () => {
+        const p = resolvePricing('gpt-6-astra');
+        assert.strictEqual(p?.input, 10);
+        assert.strictEqual(p?.cachedInput, 1);
+        assert.strictEqual(p?.output, 50);
+        assert.strictEqual(p?.cacheWrite, 12.5);
+        assert.strictEqual(p?.longContextThreshold, 272_000);
+        assert.strictEqual(p?.longContextInputMultiplier, 2);
+        assert.strictEqual(p?.longContextOutputMultiplier, 1.5);
+        // Dated snapshots share the explicit Astra entry.
+        assert.strictEqual(resolvePricing('gpt-6-astra-20260903')?.input, 10);
+        // Official docs list only gpt-6-astra — do not invent a gpt-6 alias.
+        assert.strictEqual(resolvePricing('gpt-6'), undefined);
+
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        // 0.1*$10 + 0.2*$1 + 0.1*$50 = $6.20
+        assert.ok(Math.abs((calcCost('gpt-6-astra', usage) ?? 0) - 6.2) < 1e-12);
+
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCachedInput: usage.cachedInput,
+            longContextOutput: usage.output,
+        };
+        // 2x input/cache, 1.5x output: $2 + $0.40 + $7.50 = $9.90
+        assert.ok(Math.abs((calcCost('gpt-6-astra', longUsage) ?? 0) - 9.9) < 1e-12);
+    });
+
     test('gpt-5.4 family resolves per official prices', () => {
         assert.strictEqual(resolvePricing('gpt-5.4-pro')?.input, 30);
         assert.strictEqual(resolvePricing('gpt-5.4-pro')?.output, 180);
@@ -345,6 +373,7 @@ suite('aggregator', () => {
     test('model breakdowns are newest-first with unknown models last', () => {
         const days: DayBuckets = {};
         addEvent(days, ev(10, 'gpt-5.4', 1_000_000, 'codex'));
+        addEvent(days, ev(10, 'gpt-6-astra', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.6-sol-20260710', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.5', 1_000, 'codex'));
         addEvent(days, ev(10, 'z-future-model', 10_000_000, 'codex'));
@@ -358,6 +387,7 @@ suite('aggregator', () => {
 
         const s = summarize(days, '2026-07-10');
         assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
+            'gpt-6-astra',
             'gpt-5.6-sol-20260710',
             'gpt-5.5',
             'gpt-5.4',

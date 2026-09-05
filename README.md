@@ -404,7 +404,7 @@ Disabling `otakUsage.showRateLimits` hides everything, reverts the click to the 
 
 - **Claude Code**: each assistant message records input, output, cache-read, and cache-write token counts. Cost is calculated from input, output, cache reads, 5-minute cache writes, and 1-hour cache writes. Fast-mode responses are tracked as `<model>-fast` and priced separately when a matching table entry exists.
 - **Codex CLI**: each turn records `last_token_usage`. Cost is calculated from uncached input, cached input, and output tokens. Reasoning tokens are already included in output tokens. For GPT models with long-context pricing, the extension evaluates each turn independently and applies the published input/output multipliers when total input exceeds 272K tokens.
-- **Pricing lookup**: built-in tables cover Claude Fable/Mythos/Opus/Sonnet/Haiku families plus GPT-5.x, Codex, o-series, and GPT-4.x models. Exact match is tried first, then longest-prefix match, so dated model IDs resolve to their base entry.
+- **Pricing lookup**: built-in tables cover Claude Fable/Mythos/Opus/Sonnet/Haiku families plus GPT-6 Astra, GPT-5.x, Codex, o-series, and GPT-4.x models. Exact match is tried first, then longest-prefix match, so dated model IDs resolve to their base entry.
 - **`codex-auto-review`**: Codex labels its automatic code-review turns with this slug, which is not a billable OpenAI model id and carries no published price. OpenAI's usage dashboard reports these requests under GPT-5.4, so they are billed at gpt-5.4's rates on every date and appear in the model breakdown as `gpt-5.4`.
 - **Overrides**: use `otakUsage.pricingOverrides` when a model is missing or a price changes. Unknown models count as $0 and appear as `n/a` per model until configured.
 
