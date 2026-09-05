@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.6] - 2026-09-05
+
+### Added
+
+- Codex context optimization now also pins Astra's experimental context management in `config.toml` as `[features.context_management] experimental_mode = true`. The same Optimize toggle still owns the window keys; turning it off removes the flag as well.
+
 ## [1.26.5] - 2026-09-05
 
 ### Added

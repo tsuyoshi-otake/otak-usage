@@ -726,7 +726,7 @@ class UsageController implements vscode.Disposable {
             },
             {
                 label: `${!optimizeEnabled ? '$(check) ' : ''}$(circle-slash) Turn Off`,
-                description: 'Remove the two context optimization keys from Codex config.toml.',
+                description: 'Remove the context window keys and experimental context-management flag from Codex config.toml.',
                 disable: true,
             },
         );
@@ -955,8 +955,9 @@ class UsageController implements vscode.Disposable {
 
     /**
      * Reconcile `~/.codex/config.toml` with the optimize toggle. When enabled,
-     * pin the two managed keys to the configured values; when it is turned off
-     * (a previously-applied → off transition), remove them again. Leaves the
+     * pin the two window keys to the configured values and turn on Astra's
+     * experimental context-management flag; when it is turned off (a
+     * previously-applied → off transition), remove them again. Leaves the
      * file untouched while the toggle is and stays off, so a user's own manual
      * values are never removed unless they opted in first.
      */

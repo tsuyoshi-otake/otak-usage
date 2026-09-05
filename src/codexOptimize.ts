@@ -1,23 +1,32 @@
 /**
  * Optimization toggle for the Codex CLI's context settings. When enabled, the
  * extension keeps two top-level keys in `~/.codex/config.toml` pinned to the
- * configured values; when disabled it removes those keys again.
+ * configured values and turns on Astra's experimental context-management
+ * feature; when disabled it removes those keys and that flag again.
  *
  * Editing is done in place on the raw TOML text so the rest of the file — and
  * its ordering, comments, and unrelated keys — is preserved. TOML forbids
  * duplicate keys, so an existing occurrence is rewritten rather than appended.
- * Only the file preamble (everything before the first `[table]` header) is
- * touched, since both keys are top-level Codex settings.
+ * The window keys live in the file preamble (everything before the first
+ * `[table]` header). The context-management flag is a table setting, so that
+ * pass may also edit `[features]` / `[features.context_management]`.
  */
 
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
+export const CODEX_CONTEXT_MANAGEMENT_TABLE = 'features.context_management';
+export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
 
 // These keys are fixed extension-owned identifiers. Keep their assignment
 // patterns static as well, so scanners do not mistake interpolation here for an
 // attacker-controlled regular expression.
 const CODEX_CONTEXT_WINDOW_ASSIGNMENT = /^(\s*)model_context_window\s*=/;
 const CODEX_AUTO_COMPACT_ASSIGNMENT = /^(\s*)model_auto_compact_token_limit\s*=/;
+const TABLE_HEADER = /^\s*\[([^\]]+)\]/;
+const EXPERIMENTAL_MODE_ASSIGNMENT = /^(\s*)experimental_mode\s*=/;
+const NESTED_EXPERIMENTAL_MODE_ASSIGNMENT = /^(\s*)context_management\s*\.\s*experimental_mode\s*=/;
+const DOTTED_EXPERIMENTAL_MODE_ASSIGNMENT = /^(\s*)features\s*\.\s*context_management\s*\.\s*experimental_mode\s*=/;
+const GENERIC_ASSIGNMENT = /^\s*[^#;[\s][^=]*=/;
 
 /**
  * Every window is paired with a compact limit at this share of it, so
@@ -216,9 +225,141 @@ function assignmentMatch(line: string, key: string): RegExpMatchArray | null {
     return pattern ? line.match(pattern) : null;
 }
 
+function tableName(line: string): string | undefined {
+    const header = line.match(TABLE_HEADER);
+    return header ? header[1].trim() : undefined;
+}
+
+function experimentalModeAssignment(line: string, table: string): RegExpMatchArray | null {
+    if (table === CODEX_CONTEXT_MANAGEMENT_TABLE) {
+        return line.match(EXPERIMENTAL_MODE_ASSIGNMENT);
+    }
+    if (table === 'features') {
+        return line.match(NESTED_EXPERIMENTAL_MODE_ASSIGNMENT);
+    }
+    if (table === '') {
+        return line.match(DOTTED_EXPERIMENTAL_MODE_ASSIGNMENT);
+    }
+    return null;
+}
+
+function rewriteExperimentalMode(indent: string, table: string): string {
+    if (table === CODEX_CONTEXT_MANAGEMENT_TABLE) {
+        return `${indent}${CODEX_EXPERIMENTAL_MODE_KEY} = true`;
+    }
+    if (table === 'features') {
+        return `${indent}context_management.experimental_mode = true`;
+    }
+    return `${indent}features.context_management.experimental_mode = true`;
+}
+
+function firstTrailingEmpty(lines: string[]): number {
+    let i = lines.length;
+    while (i > 0 && lines[i - 1] === '') {
+        i--;
+    }
+    return i;
+}
+
+/** Index of the table after `[features]`, or the first trailing empty line. */
+function featuresInsertAt(lines: string[]): number | undefined {
+    let table = '';
+    let seenFeatures = false;
+    for (let i = 0; i < lines.length; i++) {
+        const name = tableName(lines[i]);
+        if (name === undefined) {
+            continue;
+        }
+        if (name === 'features') {
+            table = name;
+            seenFeatures = true;
+            continue;
+        }
+        if (seenFeatures && table === 'features') {
+            return i;
+        }
+        table = name;
+    }
+    return seenFeatures ? firstTrailingEmpty(lines) : undefined;
+}
+
+function applyCodexContextManagement(lines: string[]): void {
+    let table = '';
+    let contextMgmtHeader = -1;
+    let rewritten = false;
+    for (let i = 0; i < lines.length; i++) {
+        const name = tableName(lines[i]);
+        if (name !== undefined) {
+            table = name;
+            if (name === CODEX_CONTEXT_MANAGEMENT_TABLE) {
+                contextMgmtHeader = i;
+            }
+            continue;
+        }
+        const m = experimentalModeAssignment(lines[i], table);
+        if (m) {
+            lines[i] = rewriteExperimentalMode(m[1], table);
+            rewritten = true;
+        }
+    }
+    if (rewritten) {
+        return;
+    }
+    if (contextMgmtHeader >= 0) {
+        lines.splice(contextMgmtHeader + 1, 0, `${CODEX_EXPERIMENTAL_MODE_KEY} = true`);
+        return;
+    }
+    const insertAt = featuresInsertAt(lines) ?? firstTrailingEmpty(lines);
+    lines.splice(insertAt, 0, `[${CODEX_CONTEXT_MANAGEMENT_TABLE}]`, `${CODEX_EXPERIMENTAL_MODE_KEY} = true`);
+}
+
+function removeCodexContextManagement(lines: string[]): void {
+    const drop = new Set<number>();
+    let table = '';
+    let header = -1;
+    let otherAssignments = false;
+
+    const flush = (): void => {
+        if (header >= 0 && !otherAssignments) {
+            drop.add(header);
+        }
+        header = -1;
+        otherAssignments = false;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const name = tableName(lines[i]);
+        if (name !== undefined) {
+            flush();
+            table = name;
+            if (name === CODEX_CONTEXT_MANAGEMENT_TABLE) {
+                header = i;
+            }
+            continue;
+        }
+        if (experimentalModeAssignment(lines[i], table)) {
+            drop.add(i);
+            continue;
+        }
+        if (header >= 0 && GENERIC_ASSIGNMENT.test(lines[i])) {
+            otherAssignments = true;
+        }
+    }
+    flush();
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+        if (drop.has(i)) {
+            lines.splice(i, 1);
+        }
+    }
+}
+
 /**
- * Return `text` with the two managed keys set to the given values. Existing
- * top-level occurrences are rewritten; missing keys are inserted at the top.
+ * Return `text` with the two managed keys set to the given values and Astra's
+ * experimental context-management flag pinned on. Existing occurrences are
+ * rewritten; missing window keys are inserted at the top, and a missing
+ * `[features.context_management]` table is inserted after `[features]` (or at
+ * the end of the file).
  */
 export function applyCodexOptimizeToml(text: string, values: CodexOptimizeValues): string {
     const eol = detectEol(text);
@@ -244,10 +385,11 @@ export function applyCodexOptimizeToml(text: string, values: CodexOptimizeValues
     if (toInsert.length > 0) {
         lines.splice(0, 0, ...toInsert);
     }
+    applyCodexContextManagement(lines);
     return lines.join(eol);
 }
 
-/** Return `text` with the two managed keys removed from the preamble. */
+/** Return `text` with the managed window keys and context-management flag removed. */
 export function removeCodexOptimizeToml(text: string): string {
     const eol = detectEol(text);
     const lines = text.split(/\r?\n/);
@@ -261,5 +403,6 @@ export function removeCodexOptimizeToml(text: string): string {
             kept.push(lines[i]);
         }
     }
+    removeCodexContextManagement(kept);
     return kept.join(eol);
 }
