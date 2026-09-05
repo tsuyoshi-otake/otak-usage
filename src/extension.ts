@@ -24,7 +24,7 @@ import { ScanIndex } from './scanner/scanIndex';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { unscannedRemoteLabel } from './remoteHost';
 import { I18n } from './i18n';
-import { ProviderLimits, effectiveLimits, fetchClaudeLimits, readCodexLimits, recentCodexFiles } from './limits';
+import { ProviderLimits, effectiveLimits, fetchClaudeLimits, fetchCodexBankedResets, readCodexLimits, recentCodexFiles, scopedWindowSlug, withCodexBankedResets } from './limits';
 import { Period, dayKey, startOfMonth } from './period';
 import { PricingOverrides } from './pricing';
 import { RtkStats, fetchRtkStats } from './rtk';
@@ -141,6 +141,7 @@ class UsageController implements vscode.Disposable {
     private lastCodexLimits: ProviderLimits | undefined;
     private limitsFetching = false;
     private lastClaudeLimitsFetchMs = 0;
+    private lastCodexBankedFetchMs = 0;
     private lastViews: { claude: ProviderView; codex: ProviderView; rtk: RtkView } | undefined;
     private lastSummaries: Record<Provider, ProviderSummary> | undefined;
     private dailyAlertState: DailyAlertState | undefined;
@@ -1419,12 +1420,11 @@ class UsageController implements vscode.Disposable {
     }
 
     /**
-     * Claude limits come from a network endpoint that rate-limits eagerly
-     * (observed 429s at once-a-minute polling alongside Claude Code's own
-     * /usage calls) — poll at most every 5 minutes; the last snapshot is
-     * kept on failure.
+     * Claude and Codex usage endpoints rate-limit eagerly (observed 429s at
+     * once-a-minute polling alongside the CLIs' own /usage calls) — poll at
+     * most every 5 minutes; the last snapshot is kept on failure.
      */
-    private static readonly CLAUDE_LIMITS_MIN_INTERVAL_MS = 300_000;
+    private static readonly USAGE_LIMITS_MIN_INTERVAL_MS = 300_000;
 
     private async refreshLimits(nowMs: number): Promise<void> {
         if (this.limitsFetching) {
@@ -1442,25 +1442,32 @@ class UsageController implements vscode.Disposable {
             }
             const { claudeDir, codexHome } = this.lastTargets;
             const fetchClaude = claudeDir !== undefined
-                && nowMs - this.lastClaudeLimitsFetchMs >= UsageController.CLAUDE_LIMITS_MIN_INTERVAL_MS;
+                && nowMs - this.lastClaudeLimitsFetchMs >= UsageController.USAGE_LIMITS_MIN_INTERVAL_MS;
             if (fetchClaude) {
                 this.lastClaudeLimitsFetchMs = nowMs;
             }
-            const [claude, codex] = await Promise.all([
+            const fetchCodexBanked = codexHome !== undefined
+                && nowMs - this.lastCodexBankedFetchMs >= UsageController.USAGE_LIMITS_MIN_INTERVAL_MS;
+            if (fetchCodexBanked) {
+                this.lastCodexBankedFetchMs = nowMs;
+            }
+            const [claude, codex, bankedResets] = await Promise.all([
                 fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs) : Promise.resolve(undefined),
                 codexHome
                     ? readCodexLimits(codexHome, nowMs, recentCodexFiles(this.cache.files, codexHome, nowMs))
                     : Promise.resolve(undefined),
+                fetchCodexBanked ? fetchCodexBankedResets(codexHome!) : Promise.resolve(undefined),
             ]);
             // A failed fetch keeps the previous snapshot; effectiveLimits()
             // neutralizes windows whose reset time has since passed.
             if (claude) {
                 this.lastClaudeLimits = claude;
             }
-            if (codex) {
-                this.lastCodexLimits = codex;
+            const nextCodex = withCodexBankedResets(codex, this.lastCodexLimits, bankedResets, nowMs);
+            if (nextCodex) {
+                this.lastCodexLimits = nextCodex;
             }
-            if (claude || codex) {
+            if (claude || nextCodex) {
                 this.render();
             }
             await this.maybeDefaultToLimitsMode();
@@ -1604,7 +1611,7 @@ class UsageController implements vscode.Disposable {
         tooltip.supportThemeIcons = true;
         tooltip.supportHtml = true; // provider icons use inline data-URI images
 
-        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings', 'otak-usage.toggleRepositoryNameHook', 'otak-usage.toggleHookSounds'] };
+        tooltip.isTrusted = { enabledCommands: ['otak-usage.copyUsage', 'otak-usage.configureCodexOptimization', 'workbench.action.openSettings', 'otak-usage.toggleRepositoryNameHook', 'otak-usage.toggleHookSounds', 'vscode.open'] };
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.show();
         // Everything a follower renders is settled by the time we render it
@@ -1708,6 +1715,16 @@ class UsageController implements vscode.Disposable {
                         resetsAtMs: window.resetsAtMs,
                     });
                 }
+            }
+            for (const window of view.limits.scoped ?? []) {
+                const slug = scopedWindowSlug(window.label ?? 'scoped');
+                windows.push({
+                    id: `${prefix}:scoped:${slug}`,
+                    provider,
+                    window: limitWindowLabel(window, '7d'),
+                    usedPercent: window.usedPercent,
+                    resetsAtMs: window.resetsAtMs,
+                });
             }
         };
         add('Claude', 'claude', views.claude);

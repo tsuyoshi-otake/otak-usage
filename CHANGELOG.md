@@ -2,6 +2,14 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.5] - 2026-09-05
+
+### Added
+
+- Claude rate limits now include the model-scoped weekly Fable window from the same `/api/oauth/usage` payload the 5-hour and all-models bars already use. The tooltip and copied summary list it as `7d Fable`, limit alerts fire for it on its own, and the status-bar percentage follows whichever weekly window is more used.
+- Codex limits now show the banked rate-limit reset count from ChatGPT's `/wham/usage` endpoint (the same source as Codex `/usage`). The tooltip and copied summary list it as `Banked resets · N`. Tokens are not refreshed or redeemed.
+- The tooltip Limits heading (and Codex banked-reset row) opens the official usage page in the browser. Status-bar hovers cannot follow a bare `https://` URL, so the link goes through `vscode.open`.
+
 ## [1.26.4] - 2026-09-05
 
 ### Fixed

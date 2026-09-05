@@ -15,6 +15,18 @@ export const RTK_ICON = '$(zap)';
 // the status-bar codicons, which track the status-bar text size.
 const TOOLTIP_ICON_SIZE = 18;
 
+/** Official usage pages opened from the tooltip Limits header. */
+export const CLAUDE_USAGE_PAGE = 'https://claude.ai/settings/usage';
+export const CODEX_USAGE_PAGE = 'https://chatgpt.com/';
+
+/**
+ * Status-bar hovers do not follow bare https links. `vscode.open` is the
+ * command that actually launches the browser from a trusted MarkdownString.
+ */
+export function markdownOpenCommand(href: string): string {
+    return `command:vscode.open?${encodeURIComponent(JSON.stringify(href))}`;
+}
+
 const DEFAULT_I18N = new I18n('en');
 
 export function formatCost(v: number): string {
@@ -148,10 +160,22 @@ export function detectSubscriptionMode(claude: ProviderLimits | undefined, codex
  * Prefer the provider's longer subscription window for a comparable status-bar
  * view. Providers conventionally place it in `secondary`; weekly-only Codex
  * plans report that same long window in `primary`, which remains the fallback.
- * The tooltip still shows every available window in full.
+ * Claude model-scoped weeklies (Fable and later named sub-caps) sit on that
+ * same cycle, so the most used of those numbers is what the bar shows — the
+ * tooltip still lists every window in full.
  */
 function statusBarUsedPercent(limits: ProviderLimits | undefined): number | undefined {
-    return limits?.secondary?.usedPercent ?? limits?.primary?.usedPercent;
+    const weekly: number[] = [];
+    if (limits?.secondary) {
+        weekly.push(limits.secondary.usedPercent);
+    }
+    for (const window of limits?.scoped ?? []) {
+        weekly.push(window.usedPercent);
+    }
+    if (weekly.length > 0) {
+        return Math.max(...weekly);
+    }
+    return limits?.primary?.usedPercent;
 }
 
 /**
@@ -162,16 +186,14 @@ function statusBarUsedPercent(limits: ProviderLimits | undefined): number | unde
  */
 export function limitWindowLabel(window: LimitWindow, fallback: string): string {
     const minutes = window.windowMinutes;
-    if (minutes === undefined || minutes <= 0) {
-        return fallback;
-    }
-    if (minutes % 1440 === 0) {
-        return `${minutes / 1440}d`;
-    }
-    if (minutes % 60 === 0) {
-        return `${minutes / 60}h`;
-    }
-    return `${minutes}m`;
+    const duration = minutes === undefined || minutes <= 0
+        ? fallback
+        : minutes % 1440 === 0
+            ? `${minutes / 1440}d`
+            : minutes % 60 === 0
+                ? `${minutes / 60}h`
+                : `${minutes}m`;
+    return window.label ? `${duration} ${window.label}` : duration;
 }
 
 function periodCost(view: ProviderView, period: Period): number {
@@ -250,11 +272,12 @@ export function clipboardText(claude: ProviderView, codex: ProviderView, rtk: Rt
         const limits = view.limits;
         if (limits) {
             const rows: string[] = [];
-            for (const [fallback, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
-                if (window) {
-                    const reset = window.resetsAtMs === undefined ? '' : ` (resets ${formatResetTime(window.resetsAtMs, now)})`;
-                    rows.push(`    ${limitWindowLabel(window, fallback)} ${Math.round(window.usedPercent)}% used${reset}`);
-                }
+            for (const { fallback, window } of listedLimitWindows(limits)) {
+                const reset = window.resetsAtMs === undefined ? '' : ` (resets ${formatResetTime(window.resetsAtMs, now)})`;
+                rows.push(`    ${limitWindowLabel(window, fallback)} ${Math.round(window.usedPercent)}% used${reset}`);
+            }
+            if (limits.bankedResets !== undefined) {
+                rows.push(`    banked resets ${limits.bankedResets}`);
             }
             if (rows.length > 0) {
                 lines.push(`  limits${limits.planType ? ` (${limits.planType})` : ''}:`);
@@ -330,7 +353,8 @@ function providerColumn(title: string, icon: string, view: ProviderView, i18n: I
     if (!view.available) {
         return { header, limits: [], usage: [`_${i18n.t('tooltip.logDirectoryNotFound')}_`], total: undefined };
     }
-    const limits = limitRows(view.limits, updatedAt, i18n);
+    const usageUrl = title === 'Claude Code' ? CLAUDE_USAGE_PAGE : title === 'Codex CLI' ? CODEX_USAGE_PAGE : undefined;
+    const limits = limitRows(view.limits, updatedAt, i18n, usageUrl);
     const models = view.summary.models;
     if (models.length === 0) {
         return { header, limits, usage: [`_${i18n.t('tooltip.noUsageThisMonth')}_`], total: undefined };
@@ -354,28 +378,45 @@ function providerColumn(title: string, icon: string, view: ProviderView, i18n: I
  * Lines are joined with `separator` — a Markdown hard break ("  \n") for
  * standalone use, or `<br>` when embedded inside a table cell.
  */
-export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N, separator = '  \n'): string | undefined {
-    const rows = limitRows(limits, now, i18n);
+export function limitsLines(limits: ProviderLimits | undefined, now: Date, i18n = DEFAULT_I18N, separator = '  \n', usageUrl?: string): string | undefined {
+    const rows = limitRows(limits, now, i18n, usageUrl);
     return rows.length === 0 ? undefined : rows.join(separator);
 }
 
-function limitRows(limits: ProviderLimits | undefined, now: Date, i18n: I18n): string[] {
+function listedLimitWindows(limits: ProviderLimits): Array<{ fallback: string; window: LimitWindow }> {
+    const rows: Array<{ fallback: string; window: LimitWindow }> = [];
+    if (limits.primary) {
+        rows.push({ fallback: '5h', window: limits.primary });
+    }
+    if (limits.secondary) {
+        rows.push({ fallback: '7d', window: limits.secondary });
+    }
+    for (const window of limits.scoped ?? []) {
+        rows.push({ fallback: '7d', window });
+    }
+    return rows;
+}
+
+function limitRows(limits: ProviderLimits | undefined, now: Date, i18n: I18n, usageUrl?: string): string[] {
     if (!limits) {
         return [];
     }
     const rows: string[] = [];
-    for (const [fallback, window] of [['5h', limits.primary], ['7d', limits.secondary]] as const) {
-        if (!window) {
-            continue;
-        }
+    for (const { fallback, window } of listedLimitWindows(limits)) {
         const used = i18n.t('tooltip.limitUsed', { pct: String(Math.round(window.usedPercent)) });
         rows.push(`${limitWindowLabel(window, fallback)} · **${used}**${resetSuffix(window, now, i18n)}`);
+    }
+    if (limits.bankedResets !== undefined) {
+        const banked = `${i18n.t('tooltip.bankedResets')} · **${limits.bankedResets}**`;
+        rows.push(usageUrl ? `[${banked}](${markdownOpenCommand(usageUrl)})` : banked);
     }
     if (rows.length === 0) {
         return [];
     }
     const plan = limits.planType ? ` (${limits.planType})` : '';
-    return [`$(dashboard) **${i18n.t('tooltip.limits')}**${plan}`, ...rows];
+    const heading = `$(dashboard) **${i18n.t('tooltip.limits')}**`;
+    const title = usageUrl ? `[${heading}](${markdownOpenCommand(usageUrl)})` : heading;
+    return [`${title}${plan}`, ...rows];
 }
 
 function resetSuffix(window: LimitWindow, now: Date, i18n: I18n): string {

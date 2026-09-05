@@ -36,6 +36,12 @@ suite('API integration: Claude limits', () => {
                 json: async () => ({
                     seven_day: { utilization: 37, resets_at: '2026-08-20T00:00:00Z' },
                     five_hour: { utilization: 12, resets_at: '2026-08-14T05:00:00Z' },
+                    limits: [{
+                        kind: 'weekly_scoped',
+                        percent: 68,
+                        resets_at: '2026-08-20T00:00:00Z',
+                        scope: { model: { display_name: 'Fable' } },
+                    }],
                 }),
             } as Response;
         }) as typeof fetch;
@@ -44,6 +50,8 @@ suite('API integration: Claude limits', () => {
         assert.strictEqual(calls, 1);
         assert.strictEqual(result?.primary?.usedPercent, 12);
         assert.strictEqual(result?.secondary?.usedPercent, 37);
+        assert.strictEqual(result?.scoped?.[0].label, 'Fable');
+        assert.strictEqual(result?.scoped?.[0].usedPercent, 68);
         assert.strictEqual(result?.planType, 'max');
     });
 

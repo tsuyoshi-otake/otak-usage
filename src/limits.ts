@@ -11,6 +11,11 @@ export interface LimitWindow {
     resetsAtMs?: number;
     /** window length in minutes (300 = 5h, 10080 = 7d); undefined when unreported */
     windowMinutes?: number;
+    /**
+     * Server-supplied name for a model-scoped window (e.g. "Fable"). Shared
+     * session / all-models windows leave this unset.
+     */
+    label?: string;
 }
 
 /** Subscription rate-limit snapshot for one provider. */
@@ -23,6 +28,16 @@ export interface ProviderLimits {
     primary?: LimitWindow;
     /** long window (Claude "7-day", Codex secondary / 10080 min) */
     secondary?: LimitWindow;
+    /**
+     * Model-scoped weekly windows from Claude's usage endpoint (Fable, and any
+     * later named sub-cap). Empty / omitted when the account has none.
+     */
+    scoped?: LimitWindow[];
+    /**
+     * Codex banked rate-limit resets still available to redeem. Omitted when
+     * the account did not report a count (API-key plans, failed fetch).
+     */
+    bankedResets?: number;
     /** subscription plan, e.g. "max" (Claude) or "pro" (Codex) */
     planType?: string;
     /** when this snapshot was produced (epoch ms) */
@@ -52,10 +67,19 @@ export function effectiveLimits(limits: ProviderLimits | undefined, nowMs: numbe
     }
     const primary = effectiveWindow(limits.primary, nowMs);
     const secondary = effectiveWindow(limits.secondary, nowMs);
-    if (!primary && !secondary) {
+    const scoped = limits.scoped
+        ?.map((window) => effectiveWindow(window, nowMs))
+        .filter((window): window is LimitWindow => window !== undefined);
+    if (!primary && !secondary && (!scoped || scoped.length === 0) && limits.bankedResets === undefined) {
         return undefined;
     }
-    return { ...limits, primary, secondary };
+    const next = { ...limits, primary, secondary };
+    if (scoped && scoped.length > 0) {
+        next.scoped = scoped;
+    } else {
+        delete next.scoped;
+    }
+    return next;
 }
 
 function effectiveWindow(window: LimitWindow | undefined, nowMs: number): LimitWindow | undefined {
@@ -63,7 +87,7 @@ function effectiveWindow(window: LimitWindow | undefined, nowMs: number): LimitW
         return undefined;
     }
     if (window.resetsAtMs !== undefined && window.resetsAtMs <= nowMs) {
-        return { usedPercent: 0, windowMinutes: window.windowMinutes };
+        return { usedPercent: 0, windowMinutes: window.windowMinutes, label: window.label };
     }
     return window;
 }
@@ -136,27 +160,131 @@ async function readClaudeCredentials(claudeDir: string): Promise<ClaudeCredentia
     };
 }
 
-/** Parse the /api/oauth/usage response body ({ five_hour, seven_day, ... }). */
+/** Parse the /api/oauth/usage response body ({ five_hour, seven_day, limits, ... }). */
 export function parseClaudeUsageResponse(body: unknown, nowMs: number, planType?: string): ProviderLimits | undefined {
     const b = body as any;
-    const primary = windowFromClaude(b?.five_hour, 300);
-    const secondary = windowFromClaude(b?.seven_day, 10080);
-    if (!primary && !secondary) {
+    let primary = windowFromClaude(b?.five_hour, 300);
+    let secondary = windowFromClaude(b?.seven_day, 10080);
+    const fromLimits = windowsFromClaudeLimitsArray(b?.limits);
+    if (!primary && fromLimits.session) {
+        primary = fromLimits.session;
+    }
+    if (!secondary && fromLimits.weeklyAll) {
+        secondary = fromLimits.weeklyAll;
+    }
+    const scoped = scopedWindowsFromClaude(b, fromLimits.scoped);
+    if (!primary && !secondary && scoped.length === 0) {
         return undefined;
     }
-    return { primary, secondary, planType, asOfMs: nowMs };
+    return {
+        primary,
+        secondary,
+        scoped: scoped.length > 0 ? scoped : undefined,
+        planType,
+        asOfMs: nowMs,
+    };
 }
 
-function windowFromClaude(w: any, windowMinutes: number): LimitWindow | undefined {
-    if (typeof w?.utilization !== 'number') {
+/**
+ * Stable id fragment for a scoped window, used in limit-alert records
+ * (`claude:scoped:fable`). Display names stay as the server sent them.
+ */
+export function scopedWindowSlug(label: string): string {
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return slug || 'scoped';
+}
+
+function windowFromClaude(w: any, windowMinutes: number, label?: string): LimitWindow | undefined {
+    const used = usedPercentFromClaude(w);
+    if (used === undefined) {
         return undefined;
     }
-    const resets = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN;
+    const resets = typeof w?.resets_at === 'string' ? Date.parse(w.resets_at) : NaN;
     return {
-        usedPercent: w.utilization,
+        usedPercent: used,
         resetsAtMs: Number.isNaN(resets) ? undefined : resets,
         windowMinutes,
+        label,
     };
+}
+
+function usedPercentFromClaude(w: any): number | undefined {
+    if (typeof w?.percent === 'number') {
+        return w.percent;
+    }
+    if (typeof w?.utilization === 'number') {
+        return w.utilization;
+    }
+    return undefined;
+}
+
+function windowsFromClaudeLimitsArray(limits: unknown): {
+    session?: LimitWindow;
+    weeklyAll?: LimitWindow;
+    scoped: LimitWindow[];
+} {
+    const scoped: LimitWindow[] = [];
+    let session: LimitWindow | undefined;
+    let weeklyAll: LimitWindow | undefined;
+    if (!Array.isArray(limits)) {
+        return { scoped };
+    }
+    for (const entry of limits) {
+        const kind = typeof entry?.kind === 'string' ? entry.kind : '';
+        if (kind === 'session') {
+            session = session ?? windowFromClaude(entry, 300);
+            continue;
+        }
+        if (kind === 'weekly_all') {
+            weeklyAll = weeklyAll ?? windowFromClaude(entry, 10080);
+            continue;
+        }
+        if (kind !== 'weekly_scoped') {
+            continue;
+        }
+        const name = typeof entry?.scope?.model?.display_name === 'string'
+            ? entry.scope.model.display_name
+            : '';
+        if (name === '') {
+            continue;
+        }
+        const window = windowFromClaude(entry, 10080, name);
+        if (window) {
+            scoped.push(window);
+        }
+    }
+    return { session, weeklyAll, scoped };
+}
+
+function scopedWindowsFromClaude(body: any, fromLimits: LimitWindow[]): LimitWindow[] {
+    const seen = new Set<string>();
+    const out: LimitWindow[] = [];
+    const add = (window: LimitWindow | undefined): void => {
+        const key = (window?.label ?? '').toLowerCase();
+        if (!window || key === '' || seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        out.push(window);
+    };
+    for (const window of fromLimits) {
+        add(window);
+    }
+    if (Array.isArray(body?.model_scoped)) {
+        for (const entry of body.model_scoped) {
+            const name = typeof entry?.display_name === 'string'
+                ? entry.display_name
+                : typeof entry?.scope?.model?.display_name === 'string'
+                    ? entry.scope.model.display_name
+                    : '';
+            if (name === '') {
+                continue;
+            }
+            add(windowFromClaude(entry, 10080, name));
+        }
+    }
+    add(windowFromClaude(body?.seven_day_fable, 10080, 'Fable'));
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,15 +397,110 @@ export function parseCodexRateLimitLine(line: string): ProviderLimits | undefine
     }
     const primary = windowFromCodex(rl.primary);
     const secondary = windowFromCodex(rl.secondary);
-    if (!primary && !secondary) {
+    const bankedResets = bankedResetsFromUnknown(rl);
+    if (!primary && !secondary && bankedResets === undefined) {
         return undefined;
     }
     return {
         primary,
         secondary,
+        bankedResets,
         planType: typeof rl.plan_type === 'string' ? rl.plan_type : undefined,
         asOfMs,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Codex CLI — banked resets from the ChatGPT usage endpoint
+// ---------------------------------------------------------------------------
+
+const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
+
+interface CodexCredentials {
+    accessToken: string;
+    accountId: string;
+}
+
+/**
+ * Banked reset count is not written into rollout logs, so query the same
+ * ChatGPT usage endpoint Codex's /usage screen uses. Never refreshes the
+ * token (that is Codex CLI's job); a missing or rejected credential yields
+ * undefined.
+ */
+export async function fetchCodexBankedResets(
+    codexHome: string,
+    fetchFn: typeof fetch = fetch,
+    timeoutMs = 10_000,
+): Promise<number | undefined> {
+    const cred = await readCodexCredentials(codexHome);
+    if (!cred) {
+        return undefined;
+    }
+    let body: unknown;
+    try {
+        const res = await fetchFn(CODEX_USAGE_URL, {
+            headers: {
+                Authorization: `Bearer ${cred.accessToken}`,
+                'ChatGPT-Account-Id': cred.accountId,
+            },
+            signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) {
+            return undefined;
+        }
+        body = await res.json();
+    } catch {
+        return undefined;
+    }
+    return bankedResetsFromUnknown(body);
+}
+
+async function readCodexCredentials(codexHome: string): Promise<CodexCredentials | undefined> {
+    let raw: any;
+    try {
+        raw = JSON.parse(await fsp.readFile(path.join(codexHome, 'auth.json'), 'utf8'));
+    } catch {
+        return undefined;
+    }
+    const tokens = raw?.tokens;
+    const accessToken = typeof tokens?.access_token === 'string' ? tokens.access_token : undefined;
+    const accountId = typeof tokens?.account_id === 'string' ? tokens.account_id : undefined;
+    if (!accessToken || accessToken === '' || !accountId || accountId === '') {
+        return undefined;
+    }
+    return { accessToken, accountId };
+}
+
+/**
+ * Overlay a fetched banked-reset count on the latest Codex snapshot. A failed
+ * or skipped fetch keeps the previous count; a successful 0 is stored as 0.
+ */
+export function withCodexBankedResets(
+    latest: ProviderLimits | undefined,
+    previous: ProviderLimits | undefined,
+    fetched: number | undefined,
+    nowMs: number,
+): ProviderLimits | undefined {
+    const count = fetched ?? latest?.bankedResets ?? previous?.bankedResets;
+    if (latest) {
+        return count === undefined ? latest : { ...latest, bankedResets: count };
+    }
+    if (count === undefined) {
+        return previous;
+    }
+    return { ...(previous ?? { asOfMs: nowMs }), bankedResets: count };
+}
+
+/** Read available_count from a usage payload or a rollout rate_limits object. */
+export function bankedResetsFromUnknown(body: unknown): number | undefined {
+    const b = body as any;
+    const n = b?.rate_limit_reset_credits?.available_count
+        ?? b?.rateLimitResetCredits?.availableCount
+        ?? b?.available_count;
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) {
+        return undefined;
+    }
+    return Math.floor(n);
 }
 
 function windowFromCodex(w: any): LimitWindow | undefined {

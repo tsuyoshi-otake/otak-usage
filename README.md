@@ -74,7 +74,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 
 - **Two providers, one glance**: Claude Code (`~/.claude/projects/**/*.jsonl`) and OpenAI Codex CLI (`~/.codex/sessions/**/rollout-*.jsonl`) roll up into one status-bar total. Either provider can be used on its own.
 - **Per-model cost breakdowns**: the tooltip and copied summary show token usage and API-equivalent USD by provider, model, and period. In the tooltip, Claude Code and Codex sit side by side (with their brand logos) and RTK savings follow below.
-- **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses. The status bar uses each provider's longer window for an apples-to-apples view, falling back to the shorter window when necessary.
+- **Subscription rate limits**: the tooltip shows how much of each provider's 5-hour and weekly rate-limit windows is used, with reset times and plan type — Codex from local session logs plus the ChatGPT usage endpoint for the banked reset count, Claude Code from the same Anthropic endpoint the CLI's `/usage` command uses (including the Fable weekly window). The status bar uses each provider's longer window for an apples-to-apples view, falling back to the shorter window when necessary.
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
@@ -95,7 +95,7 @@ On each refresh, otak-usage:
 2. Streams current-month JSONL logs from the available providers.
 3. Deduplicates transcript records and normalizes token counters.
 4. Applies built-in pricing plus any `otakUsage.pricingOverrides`.
-5. Reads the latest Codex rate-limit snapshot from the session logs and, when `otakUsage.showRateLimits` is enabled, fetches Claude Code limits from the Anthropic usage endpoint.
+5. Reads the latest Codex rate-limit snapshot from the session logs and, when `otakUsage.showRateLimits` is enabled, fetches Claude Code limits from the Anthropic usage endpoint and the Codex banked-reset count from ChatGPT's usage endpoint.
 6. Updates the status bar, tooltip, and copied summary data.
 7. Optionally reads RTK aggregate savings and exports OpenTelemetry metrics.
 
@@ -126,7 +126,7 @@ serialization the extension does on every save.
 
 VS Code runs an extension host per window, so ten open windows would otherwise
 mean ten copies of everything above reading the same files — plus ten calls to
-the Anthropic usage endpoint, ten `rtk` child processes, ten OpenTelemetry
+the Anthropic and ChatGPT usage endpoints, ten `rtk` child processes, ten OpenTelemetry
 exports of the same numbers, and ten popups for one cost alert.
 
 Instead the windows elect one of themselves. The leader scans and publishes the
@@ -317,7 +317,7 @@ The warning fires once per off → on transition (for Claude, at most once per d
 | `otakUsage.limitAlertThresholdPercent` | `80` | Subscription rate-limit alert threshold, as a percentage (0–100). Fires when any shown Claude or Codex 5-hour or weekly window reaches this utilization. Set to `0` to disable the limit alert. |
 | `otakUsage.showClaude` | `true` | Include Claude Code usage in the status bar, tooltip, and copied summary. |
 | `otakUsage.showCodex` | `true` | Include Codex CLI usage in the status bar, tooltip, and copied summary. |
-| `otakUsage.showRateLimits` | `true` | Show subscription rate-limit usage (5-hour and weekly windows) in the tooltip. See [Subscription Rate Limits](#subscription-rate-limits). |
+| `otakUsage.showRateLimits` | `true` | Show subscription rate-limit usage (5-hour and weekly windows, Claude Fable, and Codex banked resets) in the tooltip. See [Subscription Rate Limits](#subscription-rate-limits). |
 | `otakUsage.statusBarMode` | `cost` | What the status-bar item shows: `cost` (API-equivalent cost only), `limits` (each provider's longer available rate-limit window percentage, falling back to cost until a snapshot is available), or `costAndLimits` (both). Requires `showRateLimits` for the limit modes. On first run, if a subscription plan is detected (Claude Pro/Max or a Codex plan), otak-usage sets this to `limits` once; any choice you make afterwards is final. |
 | `otakUsage.showRtk` | `true` | Show the RTK token-savings tooltip table. It is hidden automatically when `rtk` is unavailable. |
 | `otakUsage.rtkPath` | `""` | Path to the `rtk` executable. Empty means `rtk` on `PATH`. |
@@ -383,10 +383,13 @@ Subscription plans (Claude Pro/Max, ChatGPT Plus/Pro) meter usage in a rolling 5
 Limits (max)
 5h · 5% used · resets 16:40
 7d · 8% used · resets 07-15 14:00
+7d Fable · 68% used · resets 07-15 14:00
+Banked resets · 2
 ```
 
-- **Codex CLI**: read entirely locally. Rollout session logs already contain the server-reported `rate_limits` snapshot on every turn; the extension reads the tail of the most recent log. A window whose reset time has already passed is shown as 0% used. A snapshot older than **6 hours** (`asOfMs`) is treated as unknown — idle days do not keep showing the last session's high percentage.
-- **Claude Code**: local logs carry no rate-limit data, so the extension calls the Anthropic usage endpoint — the same source as the CLI's `/usage` command — authenticated with the OAuth token Claude Code stores in `.credentials.json`. The token is read-only: it is never refreshed, written, or sent anywhere except `api.anthropic.com`. If the credentials file is absent (for example on macOS, where Claude Code uses the Keychain) or the token has expired, Claude limits are simply omitted.
+- **Codex CLI**: windows are read locally. Rollout session logs already contain the server-reported `rate_limits` snapshot on every turn; the extension reads the tail of the most recent log. A window whose reset time has already passed is shown as 0% used. A snapshot older than **6 hours** (`asOfMs`) is treated as unknown — idle days do not keep showing the last session's high percentage. The banked reset count is not in those logs, so the extension also calls ChatGPT's `/wham/usage` endpoint — the same source as Codex `/usage` — with the ChatGPT token in `~/.codex/auth.json`. The token is read-only: it is never refreshed, written, redeemed, or sent anywhere except `chatgpt.com`. API-key-only installs have no such token and omit the count.
+- **Claude Code**: local logs carry no rate-limit data, so the extension calls the Anthropic usage endpoint — the same source as the CLI's `/usage` command — authenticated with the OAuth token Claude Code stores in `.credentials.json`. The token is read-only: it is never refreshed, written, or sent anywhere except `api.anthropic.com`. If the credentials file is absent (for example on macOS, where Claude Code uses the Keychain) or the token has expired, Claude limits are simply omitted. Model-scoped weekly windows such as Fable are shown when the payload includes them.
+- Click the **Limits** heading (or the Codex banked-reset row) in the tooltip to open the official usage page in the browser.
 
 Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself. Each provider is shown with its brand logo (Claude / OpenAI, shipped as an icon font) followed by its **5-hour window** percentage, so both providers read on the same scale; a snapshot without 5-hour data falls back to its weekly window.
 
@@ -398,7 +401,7 @@ Set `otakUsage.statusBarMode` to surface limits in the status-bar item itself. E
 
 **Clicking the status-bar item cycles the view**: today's cost → this month's cost → limits → back to today's cost. Leaving the limits view restores your configured mode, so a `costAndLimits` preference survives the round trip.
 
-Disabling `otakUsage.showRateLimits` hides everything, reverts the click to the classic Today/This Month toggle, and stops the network request.
+Disabling `otakUsage.showRateLimits` hides everything, reverts the click to the classic Today/This Month toggle, and stops both usage requests.
 
 ## Cost Model
 
@@ -433,8 +436,8 @@ otak-usage is local by default:
 - **Local log reading**: it reads token-count metadata from local Claude Code and Codex CLI logs.
 - **Local config optimization**: by default it updates only Claude Code's documented auto-compaction percentage and Codex's documented context/auto-compaction keys. Both can be turned off from **Optimize**; Claude's previous percentage is restored.
 - **No prompt collection**: it does not collect, store, or export prompt content.
-- **Read-only credential use, provider-only**: for the Claude rate-limit display it reads the OAuth token Claude Code already stores locally and sends it only to `api.anthropic.com` — never to any other endpoint, and never modified. Disable `otakUsage.showRateLimits` to prevent this entirely; no other feature touches credential files.
-- **No other network use**: apart from the Anthropic rate-limit request above (on by default, one call per refresh interval), network access happens only when you explicitly enable OpenTelemetry export.
+- **Read-only credential use, provider-only**: for rate-limit display it reads the OAuth tokens Claude Code and Codex CLI already store locally and sends each only to that provider's usage endpoint (`api.anthropic.com` / `chatgpt.com`) — never modified, refreshed, or redeemed. Disable `otakUsage.showRateLimits` to prevent this entirely; no other feature touches credential files.
+- **No other network use**: apart from those usage requests (on by default, one call per provider per refresh interval), network access happens only when you explicitly enable OpenTelemetry export.
 - **User-controlled endpoints**: telemetry goes only to the OTLP/HTTP endpoint and headers you configure.
 - **Local RTK integration**: optional RTK support runs the local `rtk gain` command and reads only aggregate savings numbers.
 - **Open source, MIT-licensed**: the full implementation is auditable on [GitHub](https://github.com/tsuyoshi-otake/otak-usage).
@@ -481,7 +484,7 @@ Reload VS Code after installing the VSIX.
 - **The numbers describe the wrong machine**: in a Codespace, Dev Container or SSH remote, the tooltip names the host it is reading whenever that is not the remote you are attached to. Install the extension on the remote side — see [Codespaces, Dev Containers and other remotes](#codespaces-dev-containers-and-other-remotes).
 - **Usage from a codespace disappeared**: it is read from `~/.claude` and `~/.codex` inside that container, so it is not merged into a local window and does not survive a container rebuild unless those directories are on named volumes.
 - **A model shows `n/a` cost**: add an entry to `otakUsage.pricingOverrides` for that model.
-- **Rate limits are not showing**: Codex limits appear after the first Codex turn on this machine (they come from session logs). Claude limits require `~/.claude/.credentials.json` with a valid OAuth token — on macOS Claude Code keeps credentials in the Keychain, so Claude limits are unavailable there. Also confirm `otakUsage.showRateLimits` is enabled and reload the window after installing an update.
+- **Rate limits are not showing**: Codex windows appear after the first Codex turn on this machine (they come from session logs). Banked resets also need a ChatGPT login in `~/.codex/auth.json`. Claude limits require `~/.claude/.credentials.json` with a valid OAuth token — on macOS Claude Code keeps credentials in the Keychain, so Claude limits are unavailable there. Also confirm `otakUsage.showRateLimits` is enabled and reload the window after installing an update.
 - **RTK savings are absent**: install `rtk`, put it on `PATH`, or set `otakUsage.rtkPath`.
 - **Telemetry is not appearing**: confirm `otakUsage.telemetry.enabled`, the OTLP/HTTP base endpoint, custom headers, and the collector's `/v1/metrics` route.
 - **The numbers differ from a subscription bill**: otak-usage estimates API-equivalent cost, not subscription spend.

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { readCodexLimits } from '../../limits';
+import { fetchCodexBankedResets, readCodexLimits } from '../../limits';
 import { ScannedFile } from '../../scanner/scanIndex';
 
 suite('API integration: Codex rollout limits', () => {
@@ -71,5 +71,47 @@ suite('API integration: Codex rollout limits', () => {
         assert.strictEqual((await readCodexLimits(dir, Date.now(), [duplicate]))?.primary?.usedPercent, 5);
         assert.strictEqual(await readCodexLimits(dir, Date.now(), [omitted]), undefined);
         await fsp.rename(duplicate.path, duplicate.path + '.closed');
+    });
+});
+
+suite('API integration: Codex banked resets', () => {
+    let dir: string;
+    setup(async () => { dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'otak-codex-banked-')); });
+    teardown(async () => { await fsp.rm(dir, { recursive: true, force: true }); });
+
+    test('sends the ChatGPT usage request with the stored bearer token and account id', async () => {
+        await fsp.writeFile(path.join(dir, 'auth.json'), JSON.stringify({
+            auth_mode: 'chatgpt',
+            tokens: { access_token: 'test-token', account_id: 'acct-1' },
+        }), 'utf8');
+        let calls = 0;
+        const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+            calls++;
+            assert.strictEqual(String(input), 'https://chatgpt.com/backend-api/wham/usage');
+            assert.deepStrictEqual(init?.headers, {
+                Authorization: 'Bearer test-token',
+                'ChatGPT-Account-Id': 'acct-1',
+            });
+            return {
+                ok: true,
+                json: async () => ({ rate_limit_reset_credits: { available_count: 2 } }),
+            } as Response;
+        }) as typeof fetch;
+        assert.strictEqual(await fetchCodexBankedResets(dir, fakeFetch), 2);
+        assert.strictEqual(calls, 1);
+    });
+
+    test('omitted credentials and HTTP failure stop without inventing a count', async () => {
+        let calls = 0;
+        const fakeFetch = (async () => { calls++; throw new Error('must not run'); }) as typeof fetch;
+        assert.strictEqual(await fetchCodexBankedResets(dir, fakeFetch), undefined);
+        await fsp.writeFile(path.join(dir, 'auth.json'), JSON.stringify({ tokens: { access_token: 'x' } }), 'utf8');
+        assert.strictEqual(await fetchCodexBankedResets(dir, fakeFetch), undefined);
+        await fsp.writeFile(path.join(dir, 'auth.json'), JSON.stringify({
+            tokens: { access_token: 'x', account_id: 'acct-1' },
+        }), 'utf8');
+        const failing = (async () => ({ ok: false } as Response)) as typeof fetch;
+        assert.strictEqual(await fetchCodexBankedResets(dir, failing), undefined);
+        assert.strictEqual(calls, 0);
     });
 });

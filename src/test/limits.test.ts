@@ -2,9 +2,9 @@ import * as assert from 'assert';
 import * as os from 'os';
 import * as path from 'path';
 import { ProviderSummary } from '../aggregator';
-import { ProviderView, cycleStatusBarView, detectSubscriptionMode, limitWindowLabel, limitsLines, statusBarText } from '../formatter';
+import { CLAUDE_USAGE_PAGE, ProviderView, cycleStatusBarView, detectSubscriptionMode, limitWindowLabel, limitsLines, markdownOpenCommand, statusBarText } from '../formatter';
 import { I18n } from '../i18n';
-import { ProviderLimits, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine, recentCodexFiles } from '../limits';
+import { ProviderLimits, bankedResetsFromUnknown, effectiveLimits, parseClaudeUsageResponse, parseCodexRateLimitLine, recentCodexFiles, scopedWindowSlug, withCodexBankedResets } from '../limits';
 
 const NOW = new Date(2026, 6, 11, 12, 0, 0); // 2026-07-11 12:00 local
 const NOW_MS = NOW.getTime();
@@ -97,6 +97,33 @@ suite('limits: codex rollout parsing', () => {
         delete rec.timestamp;
         assert.strictEqual(parseCodexRateLimitLine(JSON.stringify(rec)), undefined);
     });
+
+    test('reads a banked reset count when the log carries one', () => {
+        const rec = JSON.parse(line);
+        rec.payload.rate_limits.rate_limit_reset_credits = { available_count: 2 };
+        const limits = parseCodexRateLimitLine(JSON.stringify(rec));
+        assert.strictEqual(limits?.bankedResets, 2);
+    });
+});
+
+suite('limits: codex banked resets', () => {
+    test('reads available_count from snake_case and camelCase usage payloads', () => {
+        assert.strictEqual(bankedResetsFromUnknown({ rate_limit_reset_credits: { available_count: 3 } }), 3);
+        assert.strictEqual(bankedResetsFromUnknown({ rateLimitResetCredits: { availableCount: 1 } }), 1);
+        assert.strictEqual(bankedResetsFromUnknown({ available_count: 0 }), 0);
+        assert.strictEqual(bankedResetsFromUnknown({ rate_limit_reset_credits: { available_count: -1 } }), undefined);
+        assert.strictEqual(bankedResetsFromUnknown({}), undefined);
+    });
+
+    test('withCodexBankedResets prefers a fresh fetch, then keeps the previous count', () => {
+        const latest: ProviderLimits = { primary: { usedPercent: 40, windowMinutes: 10080 }, asOfMs: NOW_MS };
+        const previous: ProviderLimits = { primary: { usedPercent: 10 }, bankedResets: 2, asOfMs: NOW_MS - 1000 };
+        assert.strictEqual(withCodexBankedResets(latest, previous, 4, NOW_MS)?.bankedResets, 4);
+        assert.strictEqual(withCodexBankedResets(latest, previous, undefined, NOW_MS)?.bankedResets, 2);
+        assert.strictEqual(withCodexBankedResets(undefined, previous, 0, NOW_MS)?.bankedResets, 0);
+        assert.deepStrictEqual(withCodexBankedResets(undefined, undefined, 1, NOW_MS), { bankedResets: 1, asOfMs: NOW_MS });
+        assert.strictEqual(withCodexBankedResets(undefined, undefined, undefined, NOW_MS), undefined);
+    });
 });
 
 suite('limits: claude usage response parsing', () => {
@@ -119,6 +146,64 @@ suite('limits: claude usage response parsing', () => {
         assert.strictEqual(parseClaudeUsageResponse({}, NOW_MS), undefined);
         assert.strictEqual(parseClaudeUsageResponse(null, NOW_MS), undefined);
         assert.strictEqual(parseClaudeUsageResponse({ five_hour: { utilization: 'x' } }, NOW_MS), undefined);
+    });
+
+    test('reads Fable from the limits array without duplicating fallbacks', () => {
+        const limits = parseClaudeUsageResponse({
+            five_hour: { utilization: 12, resets_at: '2026-07-11T07:40:00Z' },
+            seven_day: { utilization: 40, resets_at: '2026-07-15T05:00:00Z' },
+            seven_day_fable: { utilization: 99, resets_at: '2026-07-15T05:00:00Z' },
+            model_scoped: [{ display_name: 'Fable', utilization: 88, resets_at: '2026-07-15T05:00:00Z' }],
+            limits: [
+                {
+                    kind: 'weekly_scoped',
+                    percent: 68,
+                    resets_at: '2026-07-15T05:00:00Z',
+                    scope: { model: { id: null, display_name: 'Fable' } },
+                },
+            ],
+        }, NOW_MS, 'max');
+        assert.ok(limits);
+        assert.strictEqual(limits.primary?.usedPercent, 12);
+        assert.strictEqual(limits.secondary?.usedPercent, 40);
+        assert.strictEqual(limits.scoped?.length, 1);
+        assert.strictEqual(limits.scoped?.[0].label, 'Fable');
+        assert.strictEqual(limits.scoped?.[0].usedPercent, 68);
+        assert.strictEqual(limits.scoped?.[0].windowMinutes, 10080);
+        assert.strictEqual(limits.scoped?.[0].resetsAtMs, Date.parse('2026-07-15T05:00:00Z'));
+    });
+
+    test('falls back to model_scoped and the flat Fable key, then to limits session/weekly_all', () => {
+        const fromModelScoped = parseClaudeUsageResponse({
+            model_scoped: [{ display_name: 'Fable', utilization: 55, resets_at: '2026-07-18T00:00:00Z' }],
+        }, NOW_MS);
+        assert.strictEqual(fromModelScoped?.scoped?.[0].label, 'Fable');
+        assert.strictEqual(fromModelScoped?.scoped?.[0].usedPercent, 55);
+
+        const fromFlat = parseClaudeUsageResponse({
+            seven_day_fable: { utilization: 22, resets_at: '2026-07-18T00:00:00Z' },
+        }, NOW_MS);
+        assert.strictEqual(fromFlat?.scoped?.[0].label, 'Fable');
+        assert.strictEqual(fromFlat?.scoped?.[0].usedPercent, 22);
+
+        const fromKinds = parseClaudeUsageResponse({
+            limits: [
+                { kind: 'session', percent: 9, resets_at: '2026-07-11T17:00:00Z' },
+                { kind: 'weekly_all', percent: 31, resets_at: '2026-07-18T00:00:00Z' },
+                { kind: 'weekly_scoped', percent: 4, scope: { model: { display_name: 'Mythos' } } },
+                { kind: 'weekly_scoped', percent: 7, scope: { model: { display_name: '' } } },
+            ],
+        }, NOW_MS);
+        assert.strictEqual(fromKinds?.primary?.usedPercent, 9);
+        assert.strictEqual(fromKinds?.primary?.windowMinutes, 300);
+        assert.strictEqual(fromKinds?.secondary?.usedPercent, 31);
+        assert.deepStrictEqual(fromKinds?.scoped?.map((w) => w.label), ['Mythos']);
+    });
+
+    test('scopedWindowSlug is stable for alert ids', () => {
+        assert.strictEqual(scopedWindowSlug('Fable'), 'fable');
+        assert.strictEqual(scopedWindowSlug('Fable 5'), 'fable-5');
+        assert.strictEqual(scopedWindowSlug('***'), 'scoped');
     });
 });
 
@@ -153,6 +238,17 @@ suite('limits: staleness clamp', () => {
         assert.deepStrictEqual(effectiveLimits(fresh, NOW_MS), fresh);
         assert.strictEqual(effectiveLimits(undefined, NOW_MS), undefined);
     });
+
+    test('a scoped window past its reset reads as 0% used and keeps its label', () => {
+        const stale: ProviderLimits = {
+            scoped: [{ usedPercent: 91, resetsAtMs: NOW_MS - 1000, windowMinutes: 10080, label: 'Fable' }],
+            asOfMs: NOW_MS - 1_000,
+        };
+        const effective = effectiveLimits(stale, NOW_MS);
+        assert.strictEqual(effective?.scoped?.[0].usedPercent, 0);
+        assert.strictEqual(effective?.scoped?.[0].label, 'Fable');
+        assert.strictEqual(effective?.scoped?.[0].resetsAtMs, undefined);
+    });
 });
 
 suite('limits: window labels', () => {
@@ -161,6 +257,7 @@ suite('limits: window labels', () => {
         assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 10080 }, '5h'), '7d');
         assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 1440 }, '5h'), '1d');
         assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 90 }, '5h'), '90m');
+        assert.strictEqual(limitWindowLabel({ usedPercent: 0, windowMinutes: 10080, label: 'Fable' }, '7d'), '7d Fable');
     });
 
     test('falls back to the positional label when no length is reported', () => {
@@ -221,6 +318,52 @@ suite('limits: formatting', () => {
         ].join('  \n'));
     });
 
+    test('limitsLines wraps the heading and banked row as vscode.open links', () => {
+        const withResets: ProviderLimits = {
+            primary: { usedPercent: 43, windowMinutes: 10080 },
+            bankedResets: 2,
+            planType: 'pro',
+            asOfMs: NOW_MS,
+        };
+        const href = markdownOpenCommand(CLAUDE_USAGE_PAGE);
+        const out = limitsLines(withResets, NOW, undefined, '  \n', CLAUDE_USAGE_PAGE);
+        assert.ok(out?.includes(`[$(dashboard) **Limits**](${href}) (pro)`));
+        assert.ok(out?.includes(`[Banked resets · **2**](${href})`));
+        assert.ok(href.startsWith('command:vscode.open?'));
+    });
+
+    test('limitsLines appends Codex banked resets after the windows', () => {
+        const withResets: ProviderLimits = {
+            primary: { usedPercent: 43, windowMinutes: 10080 },
+            bankedResets: 2,
+            planType: 'pro',
+            asOfMs: NOW_MS,
+        };
+        const out = limitsLines(withResets, NOW);
+        assert.strictEqual(out, [
+            '$(dashboard) **Limits** (pro)',
+            '7d · **43% used**',
+            'Banked resets · **2**',
+        ].join('  \n'));
+    });
+
+    test('limitsLines appends Claude model-scoped windows after the shared ones', () => {
+        const withFable: ProviderLimits = {
+            primary: { usedPercent: 5, resetsAtMs: new Date(2026, 6, 11, 16, 40).getTime(), windowMinutes: 300 },
+            secondary: { usedPercent: 19, resetsAtMs: new Date(2026, 6, 15, 14, 0).getTime(), windowMinutes: 10080 },
+            scoped: [{ usedPercent: 68, resetsAtMs: new Date(2026, 6, 15, 14, 0).getTime(), windowMinutes: 10080, label: 'Fable' }],
+            planType: 'max',
+            asOfMs: NOW_MS,
+        };
+        const out = limitsLines(withFable, NOW);
+        assert.strictEqual(out, [
+            '$(dashboard) **Limits** (max)',
+            '5h · **5% used** · resets 16:40',
+            '7d · **19% used** · resets 07-15 14:00',
+            '7d Fable · **68% used** · resets 07-15 14:00',
+        ].join('  \n'));
+    });
+
     suite('statusBarText modes', () => {
         const emptySummary: ProviderSummary = { provider: 'claude', todayCost: 0, monthCost: 0, hasUnknownModel: false, models: [] };
         const view = (limits?: ProviderLimits): ProviderView => ({
@@ -248,6 +391,16 @@ suite('limits: formatting', () => {
         test('falls back to the weekly window when a snapshot has no 5-hour data', () => {
             const weeklyOnly = view({ secondary: { usedPercent: 42 }, asOfMs: NOW_MS });
             assert.strictEqual(statusBarText(weeklyOnly, view(undefined), 'today', false, 'limits'), '$(otak-claude) 42%');
+        });
+
+        test('limits mode uses the most used weekly window, including Fable', () => {
+            const withFable = view({
+                primary: { usedPercent: 5 },
+                secondary: { usedPercent: 8 },
+                scoped: [{ usedPercent: 68, windowMinutes: 10080, label: 'Fable' }],
+                asOfMs: NOW_MS,
+            });
+            assert.strictEqual(statusBarText(withFable, view(undefined), 'today', false, 'limits'), '$(otak-claude) 68%');
         });
 
         test('limits mode falls back to cost when no snapshot is available', () => {
