@@ -13,6 +13,8 @@ import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
 import { ScanTargets, scanAll } from './engine';
 import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
+import { writeFileAtomic, writeTextFileIfChanged } from './coordination/atomicFile';
+import { allowInPlaceCommit } from './coordination/inPlaceCommit';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
 import { alertSnoozePathFor, readAlertSnooze, writeAlertSnooze } from './coordination/alertSnooze';
 import { FENCED_CACHE_PREFIX, fencedCacheGroupPrefix, fencedCacheKey, makeFencedCacheRecord, readFencedCacheRecord } from './coordination/fencedCache';
@@ -560,7 +562,7 @@ class UsageController implements vscode.Disposable {
             } finally {
                 this.updatingClaudeOptimizeConfiguration = false;
             }
-            const removed = await this.syncClaudeOptimize(false);
+            const removed = await this.syncClaudeOptimize(false, false);
             if (removed) {
                 vscode.window.setStatusBarMessage('otak-usage: turned off Claude Code context optimization and restored its previous settings', 5000);
                 void this.renderAndCheckAlert();
@@ -611,14 +613,14 @@ class UsageController implements vscode.Disposable {
             await config.update('optimizeClaudeContext', true, vscode.ConfigurationTarget.Global);
         } catch (err) {
             console.error('otak-usage: failed to save Claude optimize settings', err);
-            await this.syncClaudeOptimize(false);
+            await this.syncClaudeOptimize(false, false);
             void vscode.window.showErrorMessage('otak-usage: failed to save Claude Code context optimization settings. See Developer Tools for details.');
             return;
         } finally {
             this.updatingClaudeOptimizeConfiguration = false;
         }
 
-        const applied = await this.syncClaudeOptimize(false);
+        const applied = await this.syncClaudeOptimize(false, false);
         if (applied) {
             vscode.window.setStatusBarMessage(
                 `otak-usage: applied Claude Code context optimization: ${formatTokenLimit(values.contextWindow)} → ${formatTokenLimit(claudeAutoCompactTokenLimit(values))} (${values.autoCompactPercent}%)`,
@@ -748,7 +750,7 @@ class UsageController implements vscode.Disposable {
             } finally {
                 this.updatingCodexOptimizeConfiguration = false;
             }
-            const removed = await this.syncCodexOptimize(false);
+            const removed = await this.syncCodexOptimize(false, false);
             if (removed) {
                 vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeRemoved'), 5000);
                 void this.renderAndCheckAlert();
@@ -810,14 +812,14 @@ class UsageController implements vscode.Disposable {
             // Reconcile whatever configuration state VS Code did persist, so a
             // partially failed multi-key update cannot leave config.toml owned
             // by an older in-flight write.
-            await this.syncCodexOptimize(false);
+            await this.syncCodexOptimize(false, false);
             void vscode.window.showErrorMessage('otak-usage: failed to save Codex context optimization settings. See Developer Tools for details.');
             return;
         } finally {
             this.updatingCodexOptimizeConfiguration = false;
         }
 
-        const applied = await this.syncCodexOptimize(false);
+        const applied = await this.syncCodexOptimize(false, false);
         if (applied) {
             vscode.window.setStatusBarMessage(
                 `${this.i18n.t('message.codexOptimizeApplied')}: ${formatTokenLimit(values.contextWindow)} → ${formatTokenLimit(values.autoCompactLimit)}`,
@@ -833,13 +835,26 @@ class UsageController implements vscode.Disposable {
      * events cannot race each other. Every branch either reaches an applied/off
      * terminal state or leaves an ownership phase that the next sync can retry.
      */
-    private syncClaudeOptimize(showStatus = true): Promise<boolean> {
-        const task = this.claudeConfigSyncQueue.then(() => this.performClaudeOptimizeSync(showStatus));
+    private syncClaudeOptimize(showStatus = true, requireFence = true): Promise<boolean> {
+        const task = this.claudeConfigSyncQueue.then(() => this.performClaudeOptimizeSync(showStatus, requireFence));
         this.claudeConfigSyncQueue = task.then(() => undefined, () => undefined);
         return task;
     }
 
-    private async performClaudeOptimizeSync(showStatus: boolean): Promise<boolean> {
+    private async allowManagedFileCommit(requireFence: boolean): Promise<boolean> {
+        if (!requireFence) {
+            return true;
+        }
+        if (!this.lock) {
+            return allowInPlaceCommit({ requireFence: true, isLeader: this.leader });
+        }
+        return this.confirmLeadership();
+    }
+
+    private async performClaudeOptimizeSync(showStatus: boolean, requireFence: boolean): Promise<boolean> {
+        if (!(await this.allowManagedFileCommit(requireFence))) {
+            return false;
+        }
         const config = this.config();
         const desired = config.get<boolean>('optimizeClaudeContext', true);
         const rawOwnership = this.context.globalState.get<unknown>(CLAUDE_OPTIMIZE_OWNERSHIP_KEY);
@@ -882,8 +897,12 @@ class UsageController implements vscode.Disposable {
                 ownership = owned;
                 await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, ownership);
                 const values = this.currentClaudeOptimizeValues(config);
+                if (!(await this.allowManagedFileCommit(requireFence))) {
+                    return false;
+                }
                 const changed = await writeTransformedTextFile(
                     configPath,
+                    this.instanceId,
                     current,
                     applyClaudeOptimizeJson(current ?? '', values),
                 );
@@ -903,13 +922,19 @@ class UsageController implements vscode.Disposable {
                             ? restoreClaudeOptimizeV2Json(current, ownership.backup)
                             : restoreClaudeOptimizeJson(current, ownership.backup);
                     if (!ownership.filePresent && jsonObjectIsEmpty(restored)) {
+                        if (!(await this.allowManagedFileCommit(requireFence))) {
+                            return false;
+                        }
                         await fsp.unlink(configPath).catch((err: unknown) => {
                             if (!isNodeError(err, 'ENOENT')) {
                                 throw err;
                             }
                         });
                     } else {
-                        await writeTransformedTextFile(configPath, current, restored);
+                        if (!(await this.allowManagedFileCommit(requireFence))) {
+                            return false;
+                        }
+                        await writeTransformedTextFile(configPath, this.instanceId, current, restored);
                     }
                 }
                 await this.context.globalState.update(CLAUDE_OPTIMIZE_OWNERSHIP_KEY, undefined);
@@ -934,8 +959,8 @@ class UsageController implements vscode.Disposable {
      * file untouched while the toggle is and stays off, so a user's own manual
      * values are never removed unless they opted in first.
      */
-    private syncCodexOptimize(showStatus = true): Promise<boolean> {
-        return this.enqueueCodexConfigSync(() => this.performCodexOptimizeSync(showStatus));
+    private syncCodexOptimize(showStatus = true, requireFence = true): Promise<boolean> {
+        return this.enqueueCodexConfigSync(() => this.performCodexOptimizeSync(showStatus, requireFence));
     }
 
     /**
@@ -989,8 +1014,8 @@ class UsageController implements vscode.Disposable {
     }
 
     /** Serialize hooks with Claude's settings.json context-optimization writes. */
-    private syncHookFeatures(): Promise<boolean> {
-        const task = this.claudeConfigSyncQueue.then(() => this.performHookFeaturesSync());
+    private syncHookFeatures(requireFence = true): Promise<boolean> {
+        const task = this.claudeConfigSyncQueue.then(() => this.performHookFeaturesSync(requireFence));
         this.claudeConfigSyncQueue = task.then(() => undefined, () => undefined);
         return task;
     }
@@ -1023,13 +1048,15 @@ class UsageController implements vscode.Disposable {
         const runner = await fsp.readFile(source, 'utf8');
         const current = await readOptionalTextFile(target);
         if (current !== runner) {
-            await fsp.mkdir(path.dirname(target), { recursive: true });
-            await fsp.writeFile(target, runner, 'utf8');
+            await writeFileAtomic(target, this.instanceId, runner);
         }
         return target;
     }
 
-    private async performHookFeaturesSync(): Promise<boolean> {
+    private async performHookFeaturesSync(requireFence: boolean): Promise<boolean> {
+        if (!(await this.allowManagedFileCommit(requireFence))) {
+            return false;
+        }
         const settings = this.hookFeatureSettings();
         try {
             const runnerPath = settings.repositoryName || settings.sounds ? await this.installHookRunner() : this.hookRunnerPath();
@@ -1043,7 +1070,10 @@ class UsageController implements vscode.Disposable {
                     continue;
                 }
                 const next = applyHookFeaturesJson(current ?? '', provider, runnerPath, settings);
-                await writeTransformedTextFile(filePath, current, next);
+                if (!(await this.allowManagedFileCommit(requireFence))) {
+                    return false;
+                }
+                await writeTransformedTextFile(filePath, this.instanceId, current, next);
             }
             return true;
         } catch (err) {
@@ -1122,7 +1152,10 @@ class UsageController implements vscode.Disposable {
         }
     }
 
-    private async performCodexOptimizeSync(showStatus: boolean): Promise<boolean> {
+    private async performCodexOptimizeSync(showStatus: boolean, requireFence: boolean): Promise<boolean> {
+        if (!(await this.allowManagedFileCommit(requireFence))) {
+            return false;
+        }
         const config = this.config();
         const desired = config.get<boolean>('optimizeCodexContext', true);
         const applied = this.context.globalState.get<boolean>(CODEX_OPTIMIZE_APPLIED_KEY, false);
@@ -1133,12 +1166,18 @@ class UsageController implements vscode.Disposable {
         try {
             if (desired) {
                 const values = this.currentCodexOptimizeValues(config);
+                if (!(await this.allowManagedFileCommit(requireFence))) {
+                    return false;
+                }
                 const changed = await this.rewriteCodexConfig(configPath, (text) => applyCodexOptimizeToml(text, values), true);
                 await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, true);
                 if (changed && showStatus) {
                     vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeApplied'), 4000);
                 }
             } else {
+                if (!(await this.allowManagedFileCommit(requireFence))) {
+                    return false;
+                }
                 const changed = await this.rewriteCodexConfig(configPath, (text) => removeCodexOptimizeToml(text), false);
                 await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, false);
                 if (changed && showStatus) {
@@ -1171,9 +1210,7 @@ class UsageController implements vscode.Disposable {
         if (next === current) {
             return false;
         }
-        await fsp.mkdir(path.dirname(configPath), { recursive: true });
-        await fsp.writeFile(configPath, next, 'utf8');
-        return true;
+        return writeTransformedTextFile(configPath, this.instanceId, current, next);
     }
 
     /** Serialize role changes: the scan tick and the heartbeat both drive them. */
@@ -2044,13 +2081,8 @@ async function readOptionalTextFile(filePath: string): Promise<string | undefine
     }
 }
 
-async function writeTransformedTextFile(filePath: string, current: string | undefined, next: string): Promise<boolean> {
-    if (next === current) {
-        return false;
-    }
-    await fsp.mkdir(path.dirname(filePath), { recursive: true });
-    await fsp.writeFile(filePath, next, 'utf8');
-    return true;
+async function writeTransformedTextFile(filePath: string, tag: string, current: string | undefined, next: string): Promise<boolean> {
+    return writeTextFileIfChanged(filePath, tag, current, next);
 }
 
 function jsonObjectIsEmpty(text: string): boolean {

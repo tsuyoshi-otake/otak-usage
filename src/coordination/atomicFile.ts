@@ -22,6 +22,24 @@ const RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80];
  * `tag` must be unique per writer: two windows renaming concurrently is fine
  * (the last one wins) but they must not share a temp path.
  */
+/**
+ * Replace `filePath` only when the bytes actually change. Same atomic rename
+ * as `writeFileAtomic`, so a Claude Code / Codex process never observes a
+ * half-written settings file.
+ */
+export async function writeTextFileIfChanged(
+    filePath: string,
+    tag: string,
+    current: string | undefined,
+    next: string,
+): Promise<boolean> {
+    if (next === current) {
+        return false;
+    }
+    await writeFileAtomic(filePath, tag, next);
+    return true;
+}
+
 export async function writeFileAtomic(filePath: string, tag: string, data: string): Promise<void> {
     const tmp = `${filePath}.${tag}.tmp`;
     await fsp.mkdir(path.dirname(filePath), { recursive: true });
