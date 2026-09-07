@@ -27,9 +27,7 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        # The extension ships zero runtime dependencies (everything is a
-        # devDependency used only for build/test/packaging), so only the
-        # production dependency tree is relevant to the published artifact.
+        # Audit shipped runtime code, including the TOML syntax parser.
         # Dev-tooling advisories (mocha/vsce transitive deps) don't reach users.
         run: npm audit --omit=dev --audit-level=high
 

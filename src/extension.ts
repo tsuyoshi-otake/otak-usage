@@ -1199,12 +1199,7 @@ class UsageController implements vscode.Disposable {
      * no-op (nothing to remove).
      */
     private async rewriteCodexConfig(configPath: string, transform: (text: string) => string, createIfMissing: boolean): Promise<boolean> {
-        let current: string | undefined;
-        try {
-            current = await fsp.readFile(configPath, 'utf8');
-        } catch {
-            current = undefined;
-        }
+        const current = await readOptionalTextFile(configPath);
         if (current === undefined && !createIfMissing) {
             return false;
         }
