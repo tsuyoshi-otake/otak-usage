@@ -4,7 +4,7 @@ import * as path from 'path';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, SHIPPED_CLAUDE_CONTEXT_DEFAULTS, ClaudeOptimizeBackupV2, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
-import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, SHIPPED_CODEX_CONTEXT_DEFAULTS, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, SHIPPED_CODEX_CONTEXT_DEFAULTS, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { CODEX_DEFAULT_REASONING_EFFORTS, CODEX_ENABLED_REASONING_EFFORTS_KEY, CODEX_PERSISTED_ATOM_STATE_KEY, MementoLike, addCodexMaxReasoningEffort, syncCodexMaxReasoningEffort } from '../codexModelFeatures';
 import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
@@ -690,6 +690,38 @@ suite('codex optimize', () => {
                 clear: ['codexContextWindow', 'codexAutoCompactLimit'],
                 write: {},
             });
+        });
+
+        test('force-clears both settings when config.toml proves the previous defaults were applied', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(400000, 380000, true), {
+                clear: ['codexContextWindow', 'codexAutoCompactLimit'],
+                write: {},
+            });
+        });
+
+        test('recognizes the applied previous defaults across valid TOML structures', () => {
+            for (const source of [
+                'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = true\n',
+                '"model_context_window" = 250_000\nmodel_auto_compact_token_limit = 212_500\nfeatures.context_management.experimental_mode = true\n',
+                'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features]\ncontext_management = { experimental_mode = true, keep = true }\n',
+            ]) {
+                assert.strictEqual(hasAppliedPreviousCodexContextDefaults(source), true, source);
+            }
+        });
+
+        test('requires the exact previous pair and an enabled experimental flag', () => {
+            for (const source of [
+                'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = true\n',
+                'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = false\n',
+                'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n',
+                'model_context_window = 250000\nmodel_auto_compact_token_limit = 200000\n[features.context_management]\nexperimental_mode = true\n',
+            ]) {
+                assert.strictEqual(hasAppliedPreviousCodexContextDefaults(source), false, source);
+            }
+        });
+
+        test('rejects malformed TOML while checking applied defaults', () => {
+            assert.throws(() => hasAppliedPreviousCodexContextDefaults('model = "unterminated'));
         });
     });
 

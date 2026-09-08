@@ -17,6 +17,7 @@ export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 export const CODEX_CONTEXT_MANAGEMENT_TABLE = 'features.context_management';
 export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
 
+import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { editToml } from './tomlEdit';
 
 /**
@@ -141,6 +142,27 @@ export interface CodexContextDefaultMigration {
     write: Partial<Record<CodexContextSettingKey, number>>;
 }
 
+function objectProperty(value: unknown, key: string): unknown {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    return (value as Record<string, unknown>)[key];
+}
+
+/**
+ * Whether config.toml still contains the exact default pair previously applied
+ * by otak-usage, including the experimental flag that the extension owns.
+ * The flag is essential: the two numeric values alone could be a manual choice.
+ */
+export function hasAppliedPreviousCodexContextDefaults(text: string): boolean {
+    const root = getStaticTOMLValue(parseTOML(text)) as unknown;
+    const features = objectProperty(root, 'features');
+    const contextManagement = objectProperty(features, 'context_management');
+    return objectProperty(root, CODEX_CONTEXT_WINDOW_KEY) === PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW
+        && objectProperty(root, CODEX_AUTO_COMPACT_KEY) === PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT
+        && objectProperty(contextManagement, CODEX_EXPERIMENTAL_MODE_KEY) === true;
+}
+
 /**
  * Moving the shipped defaults would not reach an installation that already has
  * the old numbers written into its settings, and would silently change the
@@ -152,6 +174,9 @@ export interface CodexContextDefaultMigration {
  * - the pair reads as one this extension shipped (an unset key counts as the
  *   previous default, which is what it used to mean) → clear both values so the
  *   current defaults apply from now on;
+ * - config.toml still holds the immediately previous pair together with the
+ *   managed experimental flag → clear both values regardless of what the VS
+ *   Code settings now say, because the applied file proves extension ownership;
  * - anything else is a chosen configuration → leave the chosen values alone and
  *   pin whatever is still unset to the previous default, so the pair keeps
  *   behaving exactly as it did before the defaults moved.
@@ -163,7 +188,14 @@ export interface CodexContextDefaultMigration {
 export function planCodexContextDefaultMigration(
     contextWindow: unknown,
     autoCompactLimit: unknown,
+    appliedPreviousDefaults = false,
 ): CodexContextDefaultMigration {
+    if (appliedPreviousDefaults) {
+        return {
+            clear: ['codexContextWindow', 'codexAutoCompactLimit'],
+            write: {},
+        };
+    }
     const effective: CodexOptimizeValues = {
         contextWindow: normalizeCodexTokenLimit(contextWindow, PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW),
         autoCompactLimit: normalizeCodexTokenLimit(autoCompactLimit, PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT),

@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.9] - 2026-09-08
+
+### Fixed
+
+- Codex context-default migration now also recognizes the previous 250k / 212.5k pair in `config.toml` when the extension-managed experimental context flag is enabled. That applied legacy configuration is force-migrated to the current 180k / 150k defaults even when its VS Code setting values alone look customized; other TOML pairs and disabled or missing experimental flags remain untouched. (#67)
+
 ## [1.26.8] - 2026-09-08
 
 ### Changed

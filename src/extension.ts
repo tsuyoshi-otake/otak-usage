@@ -8,7 +8,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -47,10 +47,11 @@ const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigr
  * Bumped independently whenever a provider's shipped context defaults move,
  * so changing one provider does not re-run migration writes for the other.
  * Generation 1 was the boolean-flagged Codex move off 272k/250k; generation 2
- * aligned both providers at 250k; Codex generation 3 moves to 180k/150k while
- * Claude remains on its generation-2 default.
+ * aligned both providers at 250k; Codex generation 3 moves to 180k/150k;
+ * generation 4 also recognizes that old pair in config.toml when the managed
+ * experimental flag proves it was applied. Claude remains on generation 2.
  */
-const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 3;
+const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 4;
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
@@ -662,9 +663,21 @@ class UsageController implements vscode.Disposable {
             return;
         }
         const config = this.config();
+        let appliedPreviousDefaults = false;
+        try {
+            const codexConfig = await readOptionalTextFile(path.join(this.codexHomeDir(), 'config.toml'));
+            appliedPreviousDefaults = codexConfig !== undefined
+                && hasAppliedPreviousCodexContextDefaults(codexConfig);
+        } catch (err) {
+            // Do not permanently skip file-backed evidence after a transient
+            // read failure or while the user is repairing invalid TOML.
+            console.error('otak-usage: could not inspect Codex config.toml for context-default migration', err);
+            return;
+        }
         const plan = planCodexContextDefaultMigration(
             config.inspect<number>('codexContextWindow')?.globalValue,
             config.inspect<number>('codexAutoCompactLimit')?.globalValue,
+            appliedPreviousDefaults,
         );
         try {
             for (const key of plan.clear) {
