@@ -12,22 +12,19 @@ export const CLAUDE_AUTO_COMPACT_WINDOW_ENV = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
 export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE';
 
 /**
- * The working window both providers are pinned to. Current Claude models offer
- * far more, but pinning the window is what makes compaction land on a fixed
- * token count instead of a share of whatever model happens to be active. 250k
- * paired with the shared compact share below triggers at 212.5k, leaving 37.5k
- * to write the summary. That trigger sits above the 200k input tokens at which
- * Anthropic switches to the long-context rate — the larger working window is
- * taken in exchange. `DEFAULT_CODEX_CONTEXT_WINDOW` is the same number, so the
- * two providers behave alike regardless of which one a session runs on.
+ * Current Claude models offer a larger native window, but pinning this working
+ * window makes compaction land on a fixed token count instead of a share of
+ * whatever model happens to be active. At 85%, 250k triggers at 212.5k and
+ * leaves 37.5k to write the summary. That trigger sits above the 200k input
+ * tokens at which Anthropic switches to the long-context rate — the larger
+ * working window is taken in exchange. Codex is tuned independently because
+ * its experimental context management can recover work across fresh windows.
  */
 export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 250000;
 
 /**
  * Claude Code compacts at this share of the managed window, leaving the rest to
- * produce the summary. The Codex side compacts at the same share of its own
- * window (`CODEX_AUTO_COMPACT_RATIO`), so both providers compact at the same
- * point even though one is configured in percent and the other in tokens.
+ * produce the summary.
  */
 export const DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
 
@@ -95,10 +92,9 @@ export interface ClaudeContextDefaultMigration {
 }
 
 /**
- * The Claude counterpart of `planCodexContextDefaultMigration`, following the
- * same rules so both providers move together: a pair this extension once
- * shipped is cleared so the current default applies, and a chosen pair is left
- * alone with any unset half pinned to the previous default.
+ * The Claude counterpart of `planCodexContextDefaultMigration`: a pair this
+ * extension once shipped is cleared so the current default applies, and a
+ * chosen pair is left alone with any unset half pinned to the previous default.
  */
 export function planClaudeContextDefaultMigration(
     contextWindow: unknown,

@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.8] - 2026-09-08
+
+### Changed
+
+- Codex context optimization now defaults to a 180k configured window with the context transition starting at 150k. Supported Codex setups can carry long-running work into fresh windows through experimental notes/history context management, while the 180k working set preserves useful prompt-cache continuity and room for substantial coding turns. Claude remains independently tuned at 250k / 85%, the 272k Codex preset remains available, and upgrades migrate the former 250k / 212.5k Codex default without changing user-selected pairs. (#66)
+
 ## [1.26.7] - 2026-09-08
 
 ### Added

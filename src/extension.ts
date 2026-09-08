@@ -44,12 +44,14 @@ const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 const CODEX_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.codexContextDefaultMigration';
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigration';
 /**
- * Bumped every time the shipped context defaults move, so each installation
- * runs the migration once per move. Generation 1 was the boolean-flagged move
- * off 272k/250k; an installation that ran it records nothing here and is picked
- * up by the `0` fallback below.
+ * Bumped independently whenever a provider's shipped context defaults move,
+ * so changing one provider does not re-run migration writes for the other.
+ * Generation 1 was the boolean-flagged Codex move off 272k/250k; generation 2
+ * aligned both providers at 250k; Codex generation 3 moves to 180k/150k while
+ * Claude remains on its generation-2 default.
  */
-const CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
+const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 3;
+const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
 const REMOTE_HOST_HINT_KEY = 'otakUsage.remoteHostHintShown';
@@ -656,7 +658,7 @@ class UsageController implements vscode.Disposable {
     }
 
     private async migrateCodexContextDefaults(): Promise<void> {
-        if (this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CONTEXT_DEFAULT_MIGRATION_GENERATION) {
+        if (this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
             return;
         }
         const config = this.config();
@@ -675,11 +677,11 @@ class UsageController implements vscode.Disposable {
             console.error('otak-usage: could not migrate the Codex context defaults', err);
             return;
         }
-        await this.context.globalState.update(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, CONTEXT_DEFAULT_MIGRATION_GENERATION);
+        await this.context.globalState.update(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION);
     }
 
     private async migrateClaudeContextDefaults(): Promise<void> {
-        if (this.context.globalState.get<number>(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CONTEXT_DEFAULT_MIGRATION_GENERATION) {
+        if (this.context.globalState.get<number>(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
             return;
         }
         const config = this.config();
@@ -698,7 +700,7 @@ class UsageController implements vscode.Disposable {
             console.error('otak-usage: could not migrate the Claude context defaults', err);
             return;
         }
-        await this.context.globalState.update(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, CONTEXT_DEFAULT_MIGRATION_GENERATION);
+        await this.context.globalState.update(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION);
     }
 
     private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {

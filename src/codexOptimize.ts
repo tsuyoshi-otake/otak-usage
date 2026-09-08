@@ -20,33 +20,28 @@ export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
 import { editToml } from './tomlEdit';
 
 /**
- * Every window is paired with a compact limit at this share of it, so
- * compaction starts with enough room left to write the summary. Presets and the
- * Custom flow's suggestion both derive from it, which keeps a hand-entered
- * window on the same rule as a preset one.
- *
- * The Claude Code side compacts at the same share of its own managed window
- * (`DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT`), so the two providers are aligned
- * even though one is configured in tokens and the other in percent.
+ * The wider preset and the Custom flow's suggestion start compaction at this
+ * share of the configured window. The compact 180k default below deliberately
+ * uses a round 150k transition point instead, leaving 30k of configured
+ * headroom for context hand-off and the token-budget fallback buffer.
  */
 export const CODEX_AUTO_COMPACT_RATIO = 0.85;
 
-// The window both providers share (`DEFAULT_CLAUDE_CONTEXT_WINDOW` is the same
-// number), so a session behaves alike whichever CLI it runs on. It stays below
-// 272k, the point above which OpenAI charges the long-context rate, so the
-// default never parks a Codex session at that billing boundary. Its 85% trigger
-// lands at 212.5k, which is past Anthropic's own 200k boundary on the other
-// side — the wider working window is taken in exchange.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 250000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 212500;
+// Experimental context management can move long-running work into a fresh
+// window and recover selected prior context through notes/history. Keep the
+// configured Codex working set compact by default; 150k leaves 30k before the
+// configured maximum for the hand-off. Claude remains independently tuned to
+// its own native summary-compaction behaviour.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 180000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 150000;
 
 /**
  * The pair that shipped as the default immediately before the current one. An
  * unset setting used to mean exactly this, so the migration reads a missing key
  * as this value and pins it when the rest of the pair was chosen by hand.
  */
-export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 240000;
-export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 216000;
+export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 250000;
+export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 212500;
 
 /**
  * Every pair otak-usage has ever shipped as its Codex default, oldest first.
@@ -60,6 +55,7 @@ export const SHIPPED_CODEX_CONTEXT_DEFAULTS: readonly CodexOptimizeValues[] = [
     { contextWindow: 272000, autoCompactLimit: 250000 },
     { contextWindow: 200000, autoCompactLimit: 184000 },
     { contextWindow: 230000, autoCompactLimit: 195500 },
+    { contextWindow: 240000, autoCompactLimit: 216000 },
     {
         contextWindow: PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW,
         autoCompactLimit: PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
@@ -85,19 +81,18 @@ export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
 }
 
 export interface CodexOptimizePreset {
-    id: '250k' | '272k';
+    id: '180k' | '272k';
     contextWindow: number;
     autoCompactLimit: number;
 }
 
 /**
  * Curated context-size pairs exposed by the Optimize quick pick, default first.
- * Both compact at `CODEX_AUTO_COMPACT_RATIO` of their window, so switching
- * presets — or typing a custom window — never changes how much headroom
- * compaction is given.
+ * The compact default uses its explicit 180k / 150k hand-off pair. The wider
+ * 272k choice and Custom suggestions retain the established 85% rule.
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
-    { id: '250k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
+    { id: '180k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
     {
         id: '272k',
         contextWindow: STANDARD_RATE_CODEX_CONTEXT_WINDOW,
