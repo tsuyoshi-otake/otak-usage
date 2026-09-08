@@ -1,3 +1,4 @@
+import { claudeCredentialReader, CredentialStatus } from './claudeCredentials';
 import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
@@ -21,6 +22,7 @@ import { FENCED_CACHE_PREFIX, fencedCacheGroupPrefix, fencedCacheKey, makeFenced
 import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
 import { SNAPSHOT_VERSION, SharedSnapshot, readFencedSnapshot, writeFencedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
+import { ScanQueue } from './scanner/scanQueue';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { unscannedRemoteLabel } from './remoteHost';
 import { I18n } from './i18n';
@@ -118,6 +120,7 @@ class UsageController implements vscode.Disposable {
     /** Directory listings and stat backoff, kept across ticks; see scanIndex.ts. */
     private scanIndex = new ScanIndex();
     private scanning = false;
+    private readonly scanQueue = new ScanQueue();
     /** Identifies this window in the lock file; regenerated on every activation. */
     private readonly instanceId = randomUUID();
     /** Where the lock and snapshot live; empty when coordination is unavailable. */
@@ -138,6 +141,7 @@ class UsageController implements vscode.Disposable {
     private lastTargets: ResolvedTargets = { claudeAvailable: false, codexAvailable: false };
     private lastRtkStats: RtkStats | undefined;
     private lastClaudeLimits: ProviderLimits | undefined;
+    private claudeCredentialStatus: CredentialStatus | undefined;
     private lastCodexLimits: ProviderLimits | undefined;
     private limitsFetching = false;
     private lastClaudeLimitsFetchMs = 0;
@@ -1199,12 +1203,7 @@ class UsageController implements vscode.Disposable {
      * no-op (nothing to remove).
      */
     private async rewriteCodexConfig(configPath: string, transform: (text: string) => string, createIfMissing: boolean): Promise<boolean> {
-        let current: string | undefined;
-        try {
-            current = await fsp.readFile(configPath, 'utf8');
-        } catch {
-            current = undefined;
-        }
+        const current = await readOptionalTextFile(configPath);
         if (current === undefined && !createIfMissing) {
             return false;
         }
@@ -1280,7 +1279,11 @@ class UsageController implements vscode.Disposable {
         }
     }
 
-    private async tick(): Promise<void> {
+    private tick(): Promise<void> {
+        return this.scanQueue.tick(() => this.performTick());
+    }
+
+    private async performTick(): Promise<void> {
         if (this.scanning) {
             return;
         }
@@ -1303,7 +1306,9 @@ class UsageController implements vscode.Disposable {
     private async leaderTick(now: number): Promise<void> {
         const targets = await this.resolveTargets();
         this.lastTargets = targets;
-        const changed = await scanAll(this.cache, targets, now, this.scanIndex);
+        const cache = this.cache;
+        const changed = await scanAll(cache, targets, now, this.scanIndex);
+        if (cache !== this.cache) { return; }
         this.initialScanDone = true;
         if (!(await this.confirmLeadership())) {
             return;
@@ -1344,6 +1349,7 @@ class UsageController implements vscode.Disposable {
             codexAvailable: snapshot.codexAvailable,
         };
         this.lastClaudeLimits = snapshot.claudeLimits;
+        this.claudeCredentialStatus = snapshot.claudeCredentialStatus;
         this.lastCodexLimits = snapshot.codexLimits;
         this.lastRtkStats = snapshot.rtk;
         this.initialScanDone = true;
@@ -1365,6 +1371,7 @@ class UsageController implements vscode.Disposable {
             claudeAvailable: this.lastTargets.claudeAvailable,
             codexAvailable: this.lastTargets.codexAvailable,
             claudeLimits: this.lastClaudeLimits,
+            claudeCredentialStatus: this.claudeCredentialStatus,
             codexLimits: this.lastCodexLimits,
             rtk: this.lastRtkStats,
             fence,
@@ -1453,11 +1460,14 @@ class UsageController implements vscode.Disposable {
                 this.lastCodexBankedFetchMs = nowMs;
             }
             const [claude, codex, bankedResets] = await Promise.all([
-                fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs) : Promise.resolve(undefined),
+                fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs, fetch, 10_000, this.storageDir, {
+                    customDirectory: !!firstNonEmpty(this.config().get<string>('claudeConfigDir'), process.env.CLAUDE_CONFIG_DIR),
+                    onCredentialStatus: status => { this.claudeCredentialStatus = status; },
+                }) : Promise.resolve(undefined),
                 codexHome
                     ? readCodexLimits(codexHome, nowMs, recentCodexFiles(this.cache.files, codexHome, nowMs))
                     : Promise.resolve(undefined),
-                fetchCodexBanked ? fetchCodexBankedResets(codexHome!) : Promise.resolve(undefined),
+                fetchCodexBanked ? fetchCodexBankedResets(codexHome!, fetch, 10_000, this.storageDir, nowMs) : Promise.resolve(undefined),
             ]);
             // A failed fetch keeps the previous snapshot; effectiveLimits()
             // neutralizes windows whose reset time has since passed.
@@ -1468,7 +1478,7 @@ class UsageController implements vscode.Disposable {
             if (nextCodex) {
                 this.lastCodexLimits = nextCodex;
             }
-            if (claude || nextCodex) {
+            if (fetchClaude || nextCodex) {
                 this.render();
             }
             await this.maybeDefaultToLimitsMode();
@@ -1571,6 +1581,7 @@ class UsageController implements vscode.Disposable {
             available: this.lastTargets.claudeAvailable,
             show: config.get<boolean>('showClaude', true),
             limits: showLimits ? effectiveLimits(this.lastClaudeLimits, now) : undefined,
+            credentialStatus: showLimits ? this.claudeCredentialStatus : undefined,
         };
         const codex: ProviderView = {
             summary: summaries.codex,
@@ -1916,7 +1927,13 @@ class UsageController implements vscode.Disposable {
         void this.renderAndCheckAlert();
     }
 
-    private async refresh(): Promise<void> {
+    private refresh(): Promise<void> {
+        return this.scanQueue.refresh(() => this.performRefresh());
+    }
+
+    private async performRefresh(): Promise<void> {
+        claudeCredentialReader.retry();
+        this.lastClaudeLimitsFetchMs = 0;
         // An explicit refresh should rescan here and now, in the window the
         // user asked in — so take the lock rather than wait for a snapshot the
         // current leader will publish on its own schedule.
@@ -1933,7 +1950,7 @@ class UsageController implements vscode.Disposable {
         this.lastPublished = '';
         await this.clearPersistedCaches();
         this.statusBarItem.text = '$(loading~spin) usage';
-        await this.tick();
+        await this.performTick();
     }
 
     private ensureRoleSteal(): Promise<void> {

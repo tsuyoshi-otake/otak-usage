@@ -1,3 +1,5 @@
+import { claudeCredentialReader, ClaudeCredentialReader, CredentialStatus } from './claudeCredentials';
+import { httpFailure, PollResult, usagePolling } from './usagePolling';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { listCodexFiles } from './scanner/codexScanner';
@@ -38,6 +40,8 @@ export interface ProviderLimits {
      * the account did not report a count (API-key plans, failed fetch).
      */
     bankedResets?: number;
+    /** Freshness of the independently fetched reset count. */
+    bankedResetsAsOfMs?: number;
     /** subscription plan, e.g. "max" (Claude) or "pro" (Codex) */
     planType?: string;
     /** when this snapshot was produced (epoch ms) */
@@ -62,18 +66,19 @@ export function effectiveLimits(limits: ProviderLimits | undefined, nowMs: numbe
     if (!limits) {
         return undefined;
     }
-    if (nowMs - limits.asOfMs > LIMITS_FRESHNESS_MS) {
-        return undefined;
-    }
-    const primary = effectiveWindow(limits.primary, nowMs);
-    const secondary = effectiveWindow(limits.secondary, nowMs);
-    const scoped = limits.scoped
+    const windowsFresh = nowMs - limits.asOfMs <= LIMITS_FRESHNESS_MS;
+    const bankedResets = nowMs - (limits.bankedResetsAsOfMs ?? limits.asOfMs) <= LIMITS_FRESHNESS_MS
+        ? limits.bankedResets : undefined;
+    const primary = effectiveWindow(windowsFresh ? limits.primary : undefined, nowMs);
+    const secondary = effectiveWindow(windowsFresh ? limits.secondary : undefined, nowMs);
+    const scoped = (windowsFresh ? limits.scoped : undefined)
         ?.map((window) => effectiveWindow(window, nowMs))
         .filter((window): window is LimitWindow => window !== undefined);
-    if (!primary && !secondary && (!scoped || scoped.length === 0) && limits.bankedResets === undefined) {
+    if (!primary && !secondary && (!scoped || scoped.length === 0) && bankedResets === undefined) {
         return undefined;
     }
-    const next = { ...limits, primary, secondary };
+    const next = { ...limits, primary, secondary, bankedResets };
+    if (bankedResets === undefined) { delete next.bankedResets; }
     if (scoped && scoped.length > 0) {
         next.scoped = scoped;
     } else {
@@ -99,30 +104,22 @@ function effectiveWindow(window: LimitWindow | undefined, nowMs: number): LimitW
 const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
 
-interface ClaudeCredentials {
-    accessToken: string;
-    expiresAt?: number;
-    subscriptionType?: string;
-}
-
-/**
- * Claude Code does not log rate-limit state locally, so query the usage
- * endpoint with the OAuth token Claude Code itself stores in
- * <claudeDir>/.credentials.json. Never refreshes the token (that is Claude
- * Code's job); an expired or missing token yields undefined.
- * On macOS the credentials live in the Keychain instead of the file, in
- * which case Claude limits are simply unavailable.
- */
+/** Read-only Claude OAuth usage; token refresh remains owned by Claude Code. */
 export async function fetchClaudeLimits(
     claudeDir: string,
     nowMs: number,
     fetchFn: typeof fetch = fetch,
     timeoutMs = 10_000,
+    pollingStorage?: string,
+    options: { reader?: ClaudeCredentialReader; onCredentialStatus?: (status: CredentialStatus) => void; customDirectory?: boolean } = {},
 ): Promise<ProviderLimits | undefined> {
-    const cred = await readClaudeCredentials(claudeDir);
-    if (!cred || (cred.expiresAt !== undefined && cred.expiresAt <= nowMs)) {
+    const credential = await (options.reader ?? claudeCredentialReader).read(claudeDir, nowMs, options.customDirectory);
+    options.onCredentialStatus?.(credential.status);
+    if (credential.status !== 'available') {
         return undefined;
     }
+    const cred = credential.credentials;
+    const request = async (): Promise<PollResult<ProviderLimits>> => {
     let body: unknown;
     try {
         const res = await fetchFn(CLAUDE_USAGE_URL, {
@@ -133,31 +130,17 @@ export async function fetchClaudeLimits(
             signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
-            return undefined;
+            return httpFailure(res, nowMs);
         }
         body = await res.json();
     } catch {
-        return undefined;
+        return { kind: 'retryable' };
     }
-    return parseClaudeUsageResponse(body, nowMs, cred.subscriptionType);
-}
-
-async function readClaudeCredentials(claudeDir: string): Promise<ClaudeCredentials | undefined> {
-    let raw: any;
-    try {
-        raw = JSON.parse(await fsp.readFile(path.join(claudeDir, '.credentials.json'), 'utf8'));
-    } catch {
-        return undefined;
-    }
-    const oauth = raw?.claudeAiOauth;
-    if (typeof oauth?.accessToken !== 'string' || oauth.accessToken === '') {
-        return undefined;
-    }
-    return {
-        accessToken: oauth.accessToken,
-        expiresAt: typeof oauth.expiresAt === 'number' ? oauth.expiresAt : undefined,
-        subscriptionType: typeof oauth.subscriptionType === 'string' ? oauth.subscriptionType : undefined,
+    return { kind: 'success', value: parseClaudeUsageResponse(body, nowMs, cred.subscriptionType) };
     };
+    const result = pollingStorage === undefined ? await request()
+        : await usagePolling.poll(pollingStorage, 'claude:' + cred.accessToken, nowMs, request);
+    return result.value;
 }
 
 /** Parse the /api/oauth/usage response body ({ five_hour, seven_day, limits, ... }). */
@@ -340,13 +323,14 @@ export async function readCodexLimits(codexHome: string, nowMs: number, known?: 
         files.sort((a, b) => b.mtimeMs - a.mtimeMs);
         files = files.slice(0, CODEX_MAX_FILES);
     }
-    for (const file of files) {
+    let newest: ProviderLimits | undefined;
+    for (const file of files.slice(0, CODEX_MAX_FILES)) {
         const found = await lastRateLimitsInFile(file.path, file.size);
-        if (found) {
-            return found;
+        if (found && (!newest || found.asOfMs > newest.asOfMs)) {
+            newest = found;
         }
     }
-    return undefined;
+    return newest;
 }
 
 async function lastRateLimitsInFile(filePath: string, size: number): Promise<ProviderLimits | undefined> {
@@ -431,11 +415,14 @@ export async function fetchCodexBankedResets(
     codexHome: string,
     fetchFn: typeof fetch = fetch,
     timeoutMs = 10_000,
+    pollingStorage?: string,
+    nowMs = Date.now(),
 ): Promise<number | undefined> {
     const cred = await readCodexCredentials(codexHome);
     if (!cred) {
         return undefined;
     }
+    const request = async (): Promise<PollResult<number>> => {
     let body: unknown;
     try {
         const res = await fetchFn(CODEX_USAGE_URL, {
@@ -446,13 +433,17 @@ export async function fetchCodexBankedResets(
             signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
-            return undefined;
+            return httpFailure(res, nowMs);
         }
         body = await res.json();
     } catch {
-        return undefined;
+        return { kind: 'retryable' };
     }
-    return bankedResetsFromUnknown(body);
+    return { kind: 'success', value: bankedResetsFromUnknown(body) };
+    };
+    const result = pollingStorage === undefined ? await request()
+        : await usagePolling.poll(pollingStorage, 'codex:' + cred.accountId, nowMs, request);
+    return result.value;
 }
 
 async function readCodexCredentials(codexHome: string): Promise<CodexCredentials | undefined> {
@@ -481,14 +472,16 @@ export function withCodexBankedResets(
     fetched: number | undefined,
     nowMs: number,
 ): ProviderLimits | undefined {
-    const count = fetched ?? latest?.bankedResets ?? previous?.bankedResets;
-    if (latest) {
-        return count === undefined ? latest : { ...latest, bankedResets: count };
+    if (latest && previous && (previous.primary || previous.secondary || previous.scoped?.length) && previous.asOfMs > latest.asOfMs) {
+        latest = previous;
     }
-    if (count === undefined) {
-        return previous;
-    }
-    return { ...(previous ?? { asOfMs: nowMs }), bankedResets: count };
+    const base = latest ?? previous;
+    const source = fetched !== undefined ? { bankedResets: fetched, bankedResetsAsOfMs: nowMs }
+        : latest?.bankedResets !== undefined ? { bankedResets: latest.bankedResets, bankedResetsAsOfMs: latest.bankedResetsAsOfMs ?? latest.asOfMs }
+            : previous?.bankedResets !== undefined ? { bankedResets: previous.bankedResets, bankedResetsAsOfMs: previous.bankedResetsAsOfMs ?? previous.asOfMs }
+                : undefined;
+    if (!source) { return base; }
+    return { ...(base ?? { asOfMs: nowMs }), ...source };
 }
 
 /** Read available_count from a usage payload or a rollout rate_limits object. */

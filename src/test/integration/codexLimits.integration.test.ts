@@ -36,10 +36,10 @@ suite('API integration: Codex rollout limits', () => {
         assert.strictEqual(result?.planType, 'pro');
     });
 
-    test('candidate order is explicit and supports reordered arrival without merging snapshots', async () => {
+    test('newest event wins in either candidate order without merging snapshots', async () => {
         const first = await rollout('first.jsonl', line(10, '2026-08-14T01:00:00Z'), 10);
         const second = await rollout('second.jsonl', line(20, '2026-08-14T02:00:00Z'), 20);
-        assert.strictEqual((await readCodexLimits(dir, Date.now(), [first, second]))?.primary?.usedPercent, 10);
+        assert.strictEqual((await readCodexLimits(dir, Date.now(), [first, second]))?.primary?.usedPercent, 20);
         assert.strictEqual((await readCodexLimits(dir, Date.now(), [second, first]))?.primary?.usedPercent, 20);
     });
 
@@ -52,6 +52,13 @@ suite('API integration: Codex rollout limits', () => {
         await fsp.appendFile(newest.path, line(99).slice(40), 'utf8');
         newest.size = (await fsp.stat(newest.path)).size;
         assert.strictEqual((await readCodexLimits(dir, Date.now(), [newest, older]))?.primary?.usedPercent, 99);
+    });
+    test('non-limit appends do not outrank a newer event and supplied candidates stay bounded #61', async () => {
+        const old = await rollout('old.jsonl', line(90, '2026-08-14T00:00:00Z') + '\n{"payload":{"type":"task_complete"}}\n', 100);
+        const fresh = await rollout('fresh.jsonl', line(20, '2026-08-14T07:00:00Z'), 90);
+        assert.strictEqual((await readCodexLimits(dir, Date.now(), [old, fresh]))?.primary?.usedPercent, 20);
+        const outside = await rollout('sixth.jsonl', line(99, '2026-08-14T09:00:00Z'), 80);
+        assert.strictEqual((await readCodexLimits(dir, Date.now(), [old, old, old, old, fresh, outside]))?.primary?.usedPercent, 20);
     });
 
     test('the bounded tail omits old events but accepts a complete event at the tail boundary', async () => {

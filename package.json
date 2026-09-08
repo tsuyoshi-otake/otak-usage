@@ -345,5 +345,8 @@
     "mocha": "11.8.0",
     "ovsx": "^1.0.2",
     "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "toml-eslint-parser": "0.10.1"
   }
 }

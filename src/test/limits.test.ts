@@ -121,7 +121,7 @@ suite('limits: codex banked resets', () => {
         assert.strictEqual(withCodexBankedResets(latest, previous, 4, NOW_MS)?.bankedResets, 4);
         assert.strictEqual(withCodexBankedResets(latest, previous, undefined, NOW_MS)?.bankedResets, 2);
         assert.strictEqual(withCodexBankedResets(undefined, previous, 0, NOW_MS)?.bankedResets, 0);
-        assert.deepStrictEqual(withCodexBankedResets(undefined, undefined, 1, NOW_MS), { bankedResets: 1, asOfMs: NOW_MS });
+        assert.deepStrictEqual(withCodexBankedResets(undefined, undefined, 1, NOW_MS), { bankedResets: 1, bankedResetsAsOfMs: NOW_MS, asOfMs: NOW_MS });
         assert.strictEqual(withCodexBankedResets(undefined, undefined, undefined, NOW_MS), undefined);
     });
 });

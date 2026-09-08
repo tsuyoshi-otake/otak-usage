@@ -9,7 +9,7 @@ import {
 } from './cache';
 import { DedupeWindow, closeWindow, hasSeen, openWindow, pendingFor, remember } from './dedupe';
 import { dayKey, startOfMonth } from './period';
-import { UsageEvent, bucketKey, subtractUsage, totalTokens } from './types';
+import { DayBuckets, TokenUsage, UsageEvent, bucketKey, subtractUsage, totalTokens } from './types';
 import { visitNewLines } from './scanner/jsonlReader';
 import { iterClaudeFiles, parseClaudeLine } from './scanner/claudeScanner';
 import { CodexParseState, iterCodexFiles, parseCodexLine } from './scanner/codexScanner';
@@ -68,7 +68,7 @@ export async function scanAll(
 async function scanClaudeFiles(cache: ScanCacheData, files: AsyncIterable<ScannedFile>, monthStartMs: number, nowMs: number): Promise<boolean> {
     let changed = false;
     for await (const file of files) {
-        changed = (await ingestFile(cache, file, nowMs, SEEN_CAP_CLAUDE, true, (line, _state, window) => {
+        changed = (await ingestFile(cache, file, nowMs, SEEN_CAP_CLAUDE, true, (line, _state, window, transaction) => {
             const parsed = parseClaudeLine(line);
             if (!parsed || parsed.event.timestamp < monthStartMs) {
                 return undefined;
@@ -82,7 +82,7 @@ async function scanClaudeFiles(cache: ScanCacheData, files: AsyncIterable<Scanne
             const day = dayKey(ev.timestamp);
             const bucket = bucketKey(ev.provider, ev.model);
             if (!hasSeen(window, h)) {
-                addEvent(cache.days, ev);
+                transaction.add(ev);
                 remember(window, h, { h, d: day, b: bucket, u: { ...ev.usage } });
                 return undefined; // already added directly
             }
@@ -94,11 +94,8 @@ async function scanClaudeFiles(cache: ScanCacheData, files: AsyncIterable<Scanne
             // record, which never grows — presence alone settles it.
             const prev = pendingFor(window, h);
             if (prev && totalTokens(ev.usage) > totalTokens(prev.u)) {
-                const priorBucket = cache.days[prev.d]?.[prev.b];
-                if (priorBucket) {
-                    subtractUsage(priorBucket, prev.u);
-                }
-                addEvent(cache.days, ev);
+                transaction.subtract(prev.d, prev.b, prev.u);
+                transaction.add(ev);
                 remember(window, h, { h, d: day, b: bucket, u: { ...ev.usage } });
             }
             return undefined; // handled directly; never double-add
@@ -133,7 +130,7 @@ async function scanCodexFiles(cache: ScanCacheData, files: AsyncIterable<Scanned
     return changed;
 }
 
-type LineHandler = (line: string, state: FileState, window: DedupeWindow) => UsageEvent | undefined;
+type LineHandler = (line: string, state: FileState, window: DedupeWindow, transaction: UsageTransaction) => UsageEvent | undefined;
 
 async function ingestFile(
     cache: ScanCacheData,
@@ -162,7 +159,7 @@ async function ingestFile(
         }
         return touched;
     }
-    const next: FileState = state ?? { size: 0, mtimeMs: 0, offset: 0 };
+    const next: FileState = state ? { ...state } : { size: 0, mtimeMs: 0, offset: 0 };
     // The dedupe window survives a restart: whatever the rewrite kept must not
     // be counted a second time, and keys from an unrelated file cannot collide.
     const window = openWindow(state, seenCap);
@@ -170,12 +167,13 @@ async function ingestFile(
         next.offset = 0;
         delete next.lastModel;
     }
+    const transaction = new UsageTransaction(cache.days);
     let result;
     try {
         result = await visitNewLines(file.path, next.offset, (line) => {
-            const event = handle(line, next, window);
+            const event = handle(line, next, window, transaction);
             if (event) {
-                addEvent(cache.days, event);
+                transaction.add(event);
             }
         });
     } catch {
@@ -194,6 +192,7 @@ async function ingestFile(
     if (changed) {
         closeWindow(window, next, wantPend && nowMs - file.mtimeMs <= PEND_RETENTION_MS);
     }
+    transaction.commit();
     cache.files[file.path] = next;
     return changed;
 }
@@ -208,4 +207,31 @@ function pruneStaleFileStates(cache: ScanCacheData, monthStartMs: number): boole
         }
     }
     return changed;
+}
+
+/** Copy only touched buckets; a failed file never changes committed accounting. */
+class UsageTransaction {
+    private readonly staged: DayBuckets = {};
+    constructor(private readonly committed: DayBuckets) { }
+
+    private touch(day: string, key: string): void {
+        const bucket = this.staged[day] ??= {};
+        if (!bucket[key] && this.committed[day]?.[key]) {
+            bucket[key] = { ...this.committed[day][key] };
+        }
+    }
+    add(event: UsageEvent): void {
+        this.touch(dayKey(event.timestamp), bucketKey(event.provider, event.model));
+        addEvent(this.staged, event);
+    }
+    subtract(day: string, key: string, usage: TokenUsage): void {
+        this.touch(day, key);
+        const prior = this.staged[day][key];
+        if (prior) { subtractUsage(prior, usage); }
+    }
+    commit(): void {
+        for (const [day, bucket] of Object.entries(this.staged)) {
+            Object.assign(this.committed[day] ??= {}, bucket);
+        }
+    }
 }
