@@ -1,3 +1,4 @@
+import { httpFailure, PollResult, usagePolling } from './usagePolling';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { listCodexFiles } from './scanner/codexScanner';
@@ -121,11 +122,13 @@ export async function fetchClaudeLimits(
     nowMs: number,
     fetchFn: typeof fetch = fetch,
     timeoutMs = 10_000,
+    pollingStorage?: string,
 ): Promise<ProviderLimits | undefined> {
     const cred = await readClaudeCredentials(claudeDir);
     if (!cred || (cred.expiresAt !== undefined && cred.expiresAt <= nowMs)) {
         return undefined;
     }
+    const request = async (): Promise<PollResult<ProviderLimits>> => {
     let body: unknown;
     try {
         const res = await fetchFn(CLAUDE_USAGE_URL, {
@@ -136,13 +139,17 @@ export async function fetchClaudeLimits(
             signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
-            return undefined;
+            return httpFailure(res, nowMs);
         }
         body = await res.json();
     } catch {
-        return undefined;
+        return { kind: 'retryable' };
     }
-    return parseClaudeUsageResponse(body, nowMs, cred.subscriptionType);
+    return { kind: 'success', value: parseClaudeUsageResponse(body, nowMs, cred.subscriptionType) };
+    };
+    const result = pollingStorage === undefined ? await request()
+        : await usagePolling.poll(pollingStorage, 'claude:' + cred.accessToken, nowMs, request);
+    return result.value;
 }
 
 async function readClaudeCredentials(claudeDir: string): Promise<ClaudeCredentials | undefined> {
@@ -435,11 +442,14 @@ export async function fetchCodexBankedResets(
     codexHome: string,
     fetchFn: typeof fetch = fetch,
     timeoutMs = 10_000,
+    pollingStorage?: string,
+    nowMs = Date.now(),
 ): Promise<number | undefined> {
     const cred = await readCodexCredentials(codexHome);
     if (!cred) {
         return undefined;
     }
+    const request = async (): Promise<PollResult<number>> => {
     let body: unknown;
     try {
         const res = await fetchFn(CODEX_USAGE_URL, {
@@ -450,13 +460,17 @@ export async function fetchCodexBankedResets(
             signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
-            return undefined;
+            return httpFailure(res, nowMs);
         }
         body = await res.json();
     } catch {
-        return undefined;
+        return { kind: 'retryable' };
     }
-    return bankedResetsFromUnknown(body);
+    return { kind: 'success', value: bankedResetsFromUnknown(body) };
+    };
+    const result = pollingStorage === undefined ? await request()
+        : await usagePolling.poll(pollingStorage, 'codex:' + cred.accountId, nowMs, request);
+    return result.value;
 }
 
 async function readCodexCredentials(codexHome: string): Promise<CodexCredentials | undefined> {

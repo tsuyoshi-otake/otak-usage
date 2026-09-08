@@ -1456,11 +1456,11 @@ class UsageController implements vscode.Disposable {
                 this.lastCodexBankedFetchMs = nowMs;
             }
             const [claude, codex, bankedResets] = await Promise.all([
-                fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs) : Promise.resolve(undefined),
+                fetchClaude ? fetchClaudeLimits(claudeDir!, nowMs, fetch, 10_000, this.storageDir) : Promise.resolve(undefined),
                 codexHome
                     ? readCodexLimits(codexHome, nowMs, recentCodexFiles(this.cache.files, codexHome, nowMs))
                     : Promise.resolve(undefined),
-                fetchCodexBanked ? fetchCodexBankedResets(codexHome!) : Promise.resolve(undefined),
+                fetchCodexBanked ? fetchCodexBankedResets(codexHome!, fetch, 10_000, this.storageDir, nowMs) : Promise.resolve(undefined),
             ]);
             // A failed fetch keeps the previous snapshot; effectiveLimits()
             // neutralizes windows whose reset time has since passed.
