@@ -5,7 +5,7 @@ Otak Usage processes Claude Code, OpenAI Codex CLI, and optional RTK usage data 
 ## Data accessed locally
 
 - Claude Code and Codex CLI session logs are read to extract model identifiers, timestamps, token counts, cache usage, and Codex rate-limit snapshots. Prompt and response content is not collected, cached, displayed, or exported.
-- When subscription rate-limit display is enabled, the extension reads the Claude Code OAuth access token and expiry metadata from Claude Code's local credentials file, and the Codex ChatGPT access token plus account id from Codex CLI's local `auth.json`. Each token is used only as a bearer token for that provider's usage request. Tokens are not modified, refreshed, copied into extension storage, logged, or included in telemetry.
+- When subscription rate-limit display is enabled, the extension reads the Claude Code OAuth access token and expiry metadata from Claude Code's local credentials file or macOS Keychain, and the Codex ChatGPT access token plus account id from Codex CLI's local `auth.json`. Each token is used only as a bearer token for that provider's usage request. Tokens are not modified, refreshed, copied into extension storage, logged, or included in telemetry.
 - Optional RTK integration runs the configured local `rtk` executable with `gain --daily --format json` and reads aggregate token-saving statistics from its output.
 - Context optimization and optional hook features update only the Claude Code and Codex configuration files described in the extension settings and README.
 

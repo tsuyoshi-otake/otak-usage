@@ -1,3 +1,4 @@
+import { CredentialStatus } from '../claudeCredentials';
 import { ProviderLimits } from '../limits';
 import { RtkStats } from '../rtk';
 import { DayBuckets } from '../types';
@@ -26,6 +27,7 @@ export interface SharedSnapshot {
     claudeAvailable: boolean;
     codexAvailable: boolean;
     claudeLimits?: ProviderLimits;
+    claudeCredentialStatus?: CredentialStatus;
     codexLimits?: ProviderLimits;
     rtk?: RtkStats;
     /** Fencing identity of the leader which produced this snapshot. */

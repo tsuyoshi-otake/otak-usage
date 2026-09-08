@@ -1,3 +1,4 @@
+import { claudeCredentialReader, ClaudeCredentialReader, CredentialStatus } from './claudeCredentials';
 import { httpFailure, PollResult, usagePolling } from './usagePolling';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -103,31 +104,21 @@ function effectiveWindow(window: LimitWindow | undefined, nowMs: number): LimitW
 const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
 
-interface ClaudeCredentials {
-    accessToken: string;
-    expiresAt?: number;
-    subscriptionType?: string;
-}
-
-/**
- * Claude Code does not log rate-limit state locally, so query the usage
- * endpoint with the OAuth token Claude Code itself stores in
- * <claudeDir>/.credentials.json. Never refreshes the token (that is Claude
- * Code's job); an expired or missing token yields undefined.
- * On macOS the credentials live in the Keychain instead of the file, in
- * which case Claude limits are simply unavailable.
- */
+/** Read-only Claude OAuth usage; token refresh remains owned by Claude Code. */
 export async function fetchClaudeLimits(
     claudeDir: string,
     nowMs: number,
     fetchFn: typeof fetch = fetch,
     timeoutMs = 10_000,
     pollingStorage?: string,
+    options: { reader?: ClaudeCredentialReader; onCredentialStatus?: (status: CredentialStatus) => void; customDirectory?: boolean } = {},
 ): Promise<ProviderLimits | undefined> {
-    const cred = await readClaudeCredentials(claudeDir);
-    if (!cred || (cred.expiresAt !== undefined && cred.expiresAt <= nowMs)) {
+    const credential = await (options.reader ?? claudeCredentialReader).read(claudeDir, nowMs, options.customDirectory);
+    options.onCredentialStatus?.(credential.status);
+    if (credential.status !== 'available') {
         return undefined;
     }
+    const cred = credential.credentials;
     const request = async (): Promise<PollResult<ProviderLimits>> => {
     let body: unknown;
     try {
@@ -150,24 +141,6 @@ export async function fetchClaudeLimits(
     const result = pollingStorage === undefined ? await request()
         : await usagePolling.poll(pollingStorage, 'claude:' + cred.accessToken, nowMs, request);
     return result.value;
-}
-
-async function readClaudeCredentials(claudeDir: string): Promise<ClaudeCredentials | undefined> {
-    let raw: any;
-    try {
-        raw = JSON.parse(await fsp.readFile(path.join(claudeDir, '.credentials.json'), 'utf8'));
-    } catch {
-        return undefined;
-    }
-    const oauth = raw?.claudeAiOauth;
-    if (typeof oauth?.accessToken !== 'string' || oauth.accessToken === '') {
-        return undefined;
-    }
-    return {
-        accessToken: oauth.accessToken,
-        expiresAt: typeof oauth.expiresAt === 'number' ? oauth.expiresAt : undefined,
-        subscriptionType: typeof oauth.subscriptionType === 'string' ? oauth.subscriptionType : undefined,
-    };
 }
 
 /** Parse the /api/oauth/usage response body ({ five_hour, seven_day, limits, ... }). */

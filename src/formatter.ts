@@ -1,3 +1,4 @@
+import { CredentialStatus } from './claudeCredentials';
 import { ProviderSummary } from './aggregator';
 import { CLAUDE_SVG_PATH, OPENAI_SVG_PATH, brandIconImg } from './brandIcons';
 import { I18n } from './i18n';
@@ -55,6 +56,7 @@ export interface ProviderView {
     show: boolean;
     /** subscription rate-limit snapshot; undefined = unknown or disabled */
     limits?: ProviderLimits;
+    credentialStatus?: CredentialStatus;
 }
 
 export interface RtkView {
@@ -355,6 +357,17 @@ function providerColumn(title: string, icon: string, view: ProviderView, i18n: I
     }
     const usageUrl = title === 'Claude Code' ? CLAUDE_USAGE_PAGE : title === 'Codex CLI' ? CODEX_USAGE_PAGE : undefined;
     const limits = limitRows(view.limits, updatedAt, i18n, usageUrl);
+    if (view.credentialStatus && view.credentialStatus !== 'available') {
+        const reasons: Record<Exclude<CredentialStatus, 'available'>, string> = {
+            missing: 'Claude limits: credentials not found. Sign in with Claude Code.',
+            expired: 'Claude limits: token expired. Renew your login in Claude Code.',
+            invalid: 'Claude limits: credentials could not be read. Sign in again with Claude Code.',
+            denied: 'Claude limits: Keychain access denied. Allow access, then click Refresh.',
+            unavailable: 'Claude limits: credential store unavailable. Check access, then click Refresh.',
+        };
+        const reason = reasons[view.credentialStatus];
+        if (reason) { limits.push(reason); }
+    }
     const models = view.summary.models;
     if (models.length === 0) {
         return { header, limits, usage: [`_${i18n.t('tooltip.noUsageThisMonth')}_`], total: undefined };
