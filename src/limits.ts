@@ -38,6 +38,8 @@ export interface ProviderLimits {
      * the account did not report a count (API-key plans, failed fetch).
      */
     bankedResets?: number;
+    /** Freshness of the independently fetched reset count. */
+    bankedResetsAsOfMs?: number;
     /** subscription plan, e.g. "max" (Claude) or "pro" (Codex) */
     planType?: string;
     /** when this snapshot was produced (epoch ms) */
@@ -62,18 +64,19 @@ export function effectiveLimits(limits: ProviderLimits | undefined, nowMs: numbe
     if (!limits) {
         return undefined;
     }
-    if (nowMs - limits.asOfMs > LIMITS_FRESHNESS_MS) {
-        return undefined;
-    }
-    const primary = effectiveWindow(limits.primary, nowMs);
-    const secondary = effectiveWindow(limits.secondary, nowMs);
-    const scoped = limits.scoped
+    const windowsFresh = nowMs - limits.asOfMs <= LIMITS_FRESHNESS_MS;
+    const bankedResets = nowMs - (limits.bankedResetsAsOfMs ?? limits.asOfMs) <= LIMITS_FRESHNESS_MS
+        ? limits.bankedResets : undefined;
+    const primary = effectiveWindow(windowsFresh ? limits.primary : undefined, nowMs);
+    const secondary = effectiveWindow(windowsFresh ? limits.secondary : undefined, nowMs);
+    const scoped = (windowsFresh ? limits.scoped : undefined)
         ?.map((window) => effectiveWindow(window, nowMs))
         .filter((window): window is LimitWindow => window !== undefined);
-    if (!primary && !secondary && (!scoped || scoped.length === 0) && limits.bankedResets === undefined) {
+    if (!primary && !secondary && (!scoped || scoped.length === 0) && bankedResets === undefined) {
         return undefined;
     }
-    const next = { ...limits, primary, secondary };
+    const next = { ...limits, primary, secondary, bankedResets };
+    if (bankedResets === undefined) { delete next.bankedResets; }
     if (scoped && scoped.length > 0) {
         next.scoped = scoped;
     } else {
@@ -481,14 +484,13 @@ export function withCodexBankedResets(
     fetched: number | undefined,
     nowMs: number,
 ): ProviderLimits | undefined {
-    const count = fetched ?? latest?.bankedResets ?? previous?.bankedResets;
-    if (latest) {
-        return count === undefined ? latest : { ...latest, bankedResets: count };
-    }
-    if (count === undefined) {
-        return previous;
-    }
-    return { ...(previous ?? { asOfMs: nowMs }), bankedResets: count };
+    const base = latest ?? previous;
+    const source = fetched !== undefined ? { bankedResets: fetched, bankedResetsAsOfMs: nowMs }
+        : latest?.bankedResets !== undefined ? { bankedResets: latest.bankedResets, bankedResetsAsOfMs: latest.bankedResetsAsOfMs ?? latest.asOfMs }
+            : previous?.bankedResets !== undefined ? { bankedResets: previous.bankedResets, bankedResetsAsOfMs: previous.bankedResetsAsOfMs ?? previous.asOfMs }
+                : undefined;
+    if (!source) { return base; }
+    return { ...(base ?? { asOfMs: nowMs }), ...source };
 }
 
 /** Read available_count from a usage payload or a rollout rate_limits object. */
