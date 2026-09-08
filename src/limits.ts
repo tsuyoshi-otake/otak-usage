@@ -343,13 +343,14 @@ export async function readCodexLimits(codexHome: string, nowMs: number, known?: 
         files.sort((a, b) => b.mtimeMs - a.mtimeMs);
         files = files.slice(0, CODEX_MAX_FILES);
     }
-    for (const file of files) {
+    let newest: ProviderLimits | undefined;
+    for (const file of files.slice(0, CODEX_MAX_FILES)) {
         const found = await lastRateLimitsInFile(file.path, file.size);
-        if (found) {
-            return found;
+        if (found && (!newest || found.asOfMs > newest.asOfMs)) {
+            newest = found;
         }
     }
-    return undefined;
+    return newest;
 }
 
 async function lastRateLimitsInFile(filePath: string, size: number): Promise<ProviderLimits | undefined> {
@@ -484,6 +485,9 @@ export function withCodexBankedResets(
     fetched: number | undefined,
     nowMs: number,
 ): ProviderLimits | undefined {
+    if (latest && previous && (previous.primary || previous.secondary || previous.scoped?.length) && previous.asOfMs > latest.asOfMs) {
+        latest = previous;
+    }
     const base = latest ?? previous;
     const source = fetched !== undefined ? { bankedResets: fetched, bankedResetsAsOfMs: nowMs }
         : latest?.bankedResets !== undefined ? { bankedResets: latest.bankedResets, bankedResetsAsOfMs: latest.bankedResetsAsOfMs ?? latest.asOfMs }

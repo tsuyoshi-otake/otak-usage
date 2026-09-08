@@ -23,4 +23,9 @@ suite('independent banked freshness #60', () => {
         assert.strictEqual(effective?.primary?.usedPercent, 20);
         assert.strictEqual(effective?.bankedResets, undefined);
     });
+    test('older candidate cannot replace newer retained windows #61', () => {
+        const result = withCodexBankedResets({ asOfMs: old, primary: { usedPercent: 90 } }, { asOfMs: now, primary: { usedPercent: 20 } }, 4, now);
+        assert.strictEqual(result?.primary?.usedPercent, 20);
+        assert.strictEqual(result?.bankedResets, 4);
+    });
 });
