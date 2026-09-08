@@ -2,6 +2,20 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.7] - 2026-09-08
+
+### Added
+
+- Claude subscription limits can now read the OAuth login from the macOS Keychain using Claude Code's service and account convention, including custom configuration directories. Credential lookup is bounded, access denial suppresses repeated prompts until an explicit refresh, and the tooltip explains missing, expired, malformed, denied, or unavailable credentials. (#64)
+
+### Fixed
+
+- Codex optimization now edits `config.toml` through a TOML parser, preserving quoted and dotted keys, inline tables, multiline strings, comments, and unrelated values. Unreadable or malformed files are no longer replaced. (#58)
+- A failed or interrupted log read now rolls back usage totals together with file offsets and deduplication state, so the next scan cannot double-count partially processed Claude or Codex records. (#59)
+- Codex limit windows and banked reset counts now expire independently, and snapshots are selected by their embedded event time within a bounded recent-file search instead of by file modification time alone. (#60, #61)
+- Manual refresh waits for an active scan, coalesces repeated requests, and completes only after the replacement scan reaches its terminal state. (#62)
+- Provider polling persists cooldowns across VS Code window leadership changes, honors `Retry-After`, coalesces concurrent requests, and applies bounded exponential backoff with jitter. (#63)
+
 ## [1.26.6] - 2026-09-05
 
 ### Added
