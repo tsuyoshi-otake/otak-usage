@@ -21,6 +21,7 @@ import { FENCED_CACHE_PREFIX, fencedCacheGroupPrefix, fencedCacheKey, makeFenced
 import { groupKey, lockPathFor, snapshotPathFor } from './coordination/group';
 import { SNAPSHOT_VERSION, SharedSnapshot, readFencedSnapshot, writeFencedSnapshot } from './coordination/sharedSnapshot';
 import { ScanIndex } from './scanner/scanIndex';
+import { ScanQueue } from './scanner/scanQueue';
 import { ProviderView, RtkView, StatusBarMode, clipboardText, cycleStatusBarView, detectSubscriptionMode, formatCost, formatTokenLimit, limitWindowLabel, statusBarText, tooltipMarkdown } from './formatter';
 import { unscannedRemoteLabel } from './remoteHost';
 import { I18n } from './i18n';
@@ -118,6 +119,7 @@ class UsageController implements vscode.Disposable {
     /** Directory listings and stat backoff, kept across ticks; see scanIndex.ts. */
     private scanIndex = new ScanIndex();
     private scanning = false;
+    private readonly scanQueue = new ScanQueue();
     /** Identifies this window in the lock file; regenerated on every activation. */
     private readonly instanceId = randomUUID();
     /** Where the lock and snapshot live; empty when coordination is unavailable. */
@@ -1275,7 +1277,11 @@ class UsageController implements vscode.Disposable {
         }
     }
 
-    private async tick(): Promise<void> {
+    private tick(): Promise<void> {
+        return this.scanQueue.tick(() => this.performTick());
+    }
+
+    private async performTick(): Promise<void> {
         if (this.scanning) {
             return;
         }
@@ -1298,7 +1304,9 @@ class UsageController implements vscode.Disposable {
     private async leaderTick(now: number): Promise<void> {
         const targets = await this.resolveTargets();
         this.lastTargets = targets;
-        const changed = await scanAll(this.cache, targets, now, this.scanIndex);
+        const cache = this.cache;
+        const changed = await scanAll(cache, targets, now, this.scanIndex);
+        if (cache !== this.cache) { return; }
         this.initialScanDone = true;
         if (!(await this.confirmLeadership())) {
             return;
@@ -1911,7 +1919,11 @@ class UsageController implements vscode.Disposable {
         void this.renderAndCheckAlert();
     }
 
-    private async refresh(): Promise<void> {
+    private refresh(): Promise<void> {
+        return this.scanQueue.refresh(() => this.performRefresh());
+    }
+
+    private async performRefresh(): Promise<void> {
         // An explicit refresh should rescan here and now, in the window the
         // user asked in — so take the lock rather than wait for a snapshot the
         // current leader will publish on its own schedule.
@@ -1928,7 +1940,7 @@ class UsageController implements vscode.Disposable {
         this.lastPublished = '';
         await this.clearPersistedCaches();
         this.statusBarItem.text = '$(loading~spin) usage';
-        await this.tick();
+        await this.performTick();
     }
 
     private ensureRoleSteal(): Promise<void> {
