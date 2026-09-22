@@ -30,8 +30,8 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-09-02: https://platform.claude.com/docs/en/about-claude/pricing
- * - OpenAI prices on 2026-09-05: https://developers.openai.com/api/docs/pricing
+ * - Claude prices on 2026-09-23: https://platform.claude.com/docs/en/about-claude/pricing
+ * - OpenAI prices on 2026-09-23: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -47,6 +47,7 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-mythos-5': { input: 10, output: 50 },
     // Claude 4.6 and later bill their full 1M context window at standard rates,
     // so no long-context premium applies.
+    'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
     'claude-opus-5': { input: 5, output: 25 },
     'claude-opus-4-8': { input: 5, output: 25 },
     'claude-opus-4-7': { input: 5, output: 25 },
@@ -57,6 +58,7 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Fast mode (usage.speed === "fast"): premium prices that apply across the
     // full context window; the cache-write/read multipliers stack on top of the
     // fast input price.
+    'claude-opus-5-5-fast': { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10, cacheWrite1h: 16 },
     'claude-opus-5-fast': { input: 10, output: 50 },
     'claude-opus-4-8-fast': { input: 10, output: 50 },
     'claude-opus-4-7-fast': { input: 30, output: 150 },
@@ -73,6 +75,9 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
+    // GPT-6 Sol and Luna use the published 272K long-context multipliers.
+    'gpt-6-luna': { input: 0.1, cachedInput: 0.01, output: 0.5, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-6-sol': { input: 2, cachedInput: 0.2, output: 10, ...GPT_LONG_CONTEXT_PRICING },
     // GPT-6 Astra: official model id / snapshot is gpt-6-astra only
     // (https://developers.openai.com/api/docs/models/gpt-6-astra).
     // Standard short-context rates and the 272K long-context multipliers are

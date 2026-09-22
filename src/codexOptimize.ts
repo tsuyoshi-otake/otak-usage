@@ -16,6 +16,8 @@ export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 export const CODEX_CONTEXT_MANAGEMENT_TABLE = 'features.context_management';
 export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
+const DEFAULT_CODEX_MODEL = 'gpt-6-luna';
+const PREVIOUS_DEFAULT_CODEX_MODEL = 'gpt-6-sol';
 
 import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { editToml } from './tomlEdit';
@@ -161,6 +163,23 @@ export function hasAppliedPreviousCodexContextDefaults(text: string): boolean {
     return objectProperty(root, CODEX_CONTEXT_WINDOW_KEY) === PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW
         && objectProperty(root, CODEX_AUTO_COMPACT_KEY) === PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT
         && objectProperty(contextManagement, CODEX_EXPERIMENTAL_MODE_KEY) === true;
+}
+
+/**
+ * Move Codex's unset / previous default model to Luna once, while keeping any
+ * other explicitly configured model as the user's choice. The caller owns the
+ * one-time marker and the fenced, atomic config.toml write.
+ */
+export function migrateCodexDefaultModelToml(text: string): string {
+    const root = getStaticTOMLValue(parseTOML(text)) as unknown;
+    const model = objectProperty(root, 'model');
+    if (model === DEFAULT_CODEX_MODEL) {
+        return text;
+    }
+    if (model !== undefined && model !== PREVIOUS_DEFAULT_CODEX_MODEL) {
+        return text;
+    }
+    return editToml(text, ['model'], JSON.stringify(DEFAULT_CODEX_MODEL));
 }
 
 /**

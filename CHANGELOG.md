@@ -2,6 +2,17 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.10] - 2026-09-23
+
+### Added
+
+- Added GPT-6 Sol and Luna pricing, including their published 272K long-context rates, and Claude Opus 5.5 standard and fast-mode pricing.
+- On the first leader sync, migrate an unset Codex model or the previous `gpt-6-sol` default to `gpt-6-luna` once. Explicitly configured models remain unchanged.
+
+### Fixed
+
+- Claude's status-bar percentage now uses its all-models 7d window, matching Codex's provider-wide weekly comparison. The model-scoped Fable cap remains available separately in the tooltip and limit alerts.
+
 ## [1.26.9] - 2026-09-08
 
 ### Fixed

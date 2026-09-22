@@ -393,14 +393,14 @@ suite('limits: formatting', () => {
             assert.strictEqual(statusBarText(weeklyOnly, view(undefined), 'today', false, 'limits'), '$(otak-claude) 42%');
         });
 
-        test('limits mode uses the most used weekly window, including Fable', () => {
+        test('limits mode uses Claude all-model weekly usage, not the separate Fable cap', () => {
             const withFable = view({
                 primary: { usedPercent: 5 },
                 secondary: { usedPercent: 8 },
                 scoped: [{ usedPercent: 68, windowMinutes: 10080, label: 'Fable' }],
                 asOfMs: NOW_MS,
             });
-            assert.strictEqual(statusBarText(withFable, view(undefined), 'today', false, 'limits'), '$(otak-claude) 68%');
+            assert.strictEqual(statusBarText(withFable, view(undefined), 'today', false, 'limits'), '$(otak-claude) 8%');
         });
 
         test('limits mode falls back to cost when no snapshot is available', () => {

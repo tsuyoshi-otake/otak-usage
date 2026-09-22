@@ -162,20 +162,14 @@ export function detectSubscriptionMode(claude: ProviderLimits | undefined, codex
  * Prefer the provider's longer subscription window for a comparable status-bar
  * view. Providers conventionally place it in `secondary`; weekly-only Codex
  * plans report that same long window in `primary`, which remains the fallback.
- * Claude model-scoped weeklies (Fable and later named sub-caps) sit on that
- * same cycle, so the most used of those numbers is what the bar shows — the
- * tooltip still lists every window in full.
+ * Claude model-scoped weeklies (Fable and later named sub-caps) are separate
+ * caps, so the status bar keeps using the all-models weekly window for the
+ * same provider-wide comparison as Codex. The tooltip still lists every
+ * window in full.
  */
 function statusBarUsedPercent(limits: ProviderLimits | undefined): number | undefined {
-    const weekly: number[] = [];
     if (limits?.secondary) {
-        weekly.push(limits.secondary.usedPercent);
-    }
-    for (const window of limits?.scoped ?? []) {
-        weekly.push(window.usedPercent);
-    }
-    if (weekly.length > 0) {
-        return Math.max(...weekly);
+        return limits.secondary.usedPercent;
     }
     return limits?.primary?.usedPercent;
 }

@@ -8,7 +8,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -42,6 +42,7 @@ const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 const CODEX_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.codexContextDefaultMigration';
+const CODEX_DEFAULT_MODEL_MIGRATION_KEY = 'otakUsage.codexDefaultModelMigrated';
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigration';
 /**
  * Bumped independently whenever a provider's shipped context defaults move,
@@ -981,7 +982,46 @@ class UsageController implements vscode.Disposable {
      * values are never removed unless they opted in first.
      */
     private syncCodexOptimize(showStatus = true, requireFence = true): Promise<boolean> {
-        return this.enqueueCodexConfigSync(() => this.performCodexOptimizeSync(showStatus, requireFence));
+        return this.enqueueCodexConfigSync(async () => {
+            if (requireFence) {
+                await this.performCodexDefaultModelMigration();
+            }
+            return this.performCodexOptimizeSync(showStatus, requireFence);
+        });
+    }
+
+    /**
+     * Set the Codex CLI model default to Luna once. Only an unset model or the
+     * previous Sol default moves; explicit model choices stay untouched.
+     * Shares the config queue with optimization writes and uses the leader
+     * fence before committing the atomic TOML update.
+     */
+    private async performCodexDefaultModelMigration(): Promise<void> {
+        if (this.context.globalState.get<boolean>(CODEX_DEFAULT_MODEL_MIGRATION_KEY, false)) {
+            return;
+        }
+        if (!(await this.allowManagedFileCommit(true))) {
+            return;
+        }
+        const configPath = path.join(this.codexHomeDir(), 'config.toml');
+        try {
+            const current = await readOptionalTextFile(configPath);
+            const next = migrateCodexDefaultModelToml(current ?? '');
+            if (next !== current) {
+                if (!(await this.allowManagedFileCommit(true))) {
+                    return;
+                }
+                await writeTransformedTextFile(configPath, this.instanceId, current, next);
+            }
+            if (!(await this.allowManagedFileCommit(true))) {
+                return;
+            }
+            await this.context.globalState.update(CODEX_DEFAULT_MODEL_MIGRATION_KEY, true);
+        } catch (err) {
+            // Leave the marker unset so a later leader sync can retry after a
+            // transient read/write failure or repair of malformed TOML.
+            console.error('otak-usage: could not migrate the Codex default model', err);
+        }
     }
 
     /**
