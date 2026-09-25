@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.12] - 2026-09-25
+
+### Fixed
+
+- Codex Optimize now waits for the context-default migration before opening its picker and uses the extension's current defaults for unset settings even when VS Code still has the previous manifest defaults cached during an in-place update. Explicitly configured values retain their scope precedence. (#69)
+
 ## [1.26.11] - 2026-09-25
 
 ### Changed

@@ -128,6 +128,17 @@ export function normalizeCodexTokenLimit(value: unknown, fallback: number): numb
     return Math.floor(value);
 }
 
+/** Resolve explicit VS Code settings without trusting a cached extension default. */
+export function configuredCodexTokenLimit(
+    inspected: { defaultValue?: unknown; globalValue?: unknown; workspaceValue?: unknown; workspaceFolderValue?: unknown } | undefined,
+    fallback: number,
+): number {
+    const value = inspected?.workspaceFolderValue !== undefined ? inspected.workspaceFolderValue
+        : inspected?.workspaceValue !== undefined ? inspected.workspaceValue
+            : inspected?.globalValue;
+    return normalizeCodexTokenLimit(value, fallback);
+}
+
 export type CodexContextSettingKey = 'codexContextWindow' | 'codexAutoCompactLimit';
 
 /**

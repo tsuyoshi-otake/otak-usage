@@ -4,7 +4,7 @@ import * as path from 'path';
 import { addEvent, pruneDaysBefore, summarize } from '../aggregator';
 import { AlertMode, LimitAlertWindow, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidAlertSnooze, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameLimitAlertState, snoozeUntilEndOfDay } from '../alert';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, SHIPPED_CLAUDE_CONTEXT_DEFAULTS, ClaudeOptimizeBackupV2, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from '../claudeOptimize';
-import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, SHIPPED_CODEX_CONTEXT_DEFAULTS, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
+import { CODEX_AUTO_COMPACT_RATIO, CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, SHIPPED_CODEX_CONTEXT_DEFAULTS, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from '../codexOptimize';
 import { CODEX_DEFAULT_REASONING_EFFORTS, CODEX_ENABLED_REASONING_EFFORTS_KEY, CODEX_PERSISTED_ATOM_STATE_KEY, MementoLike, addCodexMaxReasoningEffort, syncCodexMaxReasoningEffort } from '../codexModelFeatures';
 import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
@@ -655,6 +655,18 @@ suite('codex optimize', () => {
                 clear: [],
                 write: {},
             });
+        });
+
+        test('uses the new code default when VS Code still caches the previous manifest default', () => {
+            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 180000 }, DEFAULT_CODEX_CONTEXT_WINDOW), 272000);
+            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 150000 }, DEFAULT_CODEX_AUTO_COMPACT_LIMIT), 231200);
+        });
+
+        test('keeps explicit values at the most specific VS Code configuration scope', () => {
+            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 180000, globalValue: 300000 }, 272000), 300000);
+            assert.strictEqual(configuredCodexTokenLimit({ globalValue: 300000, workspaceValue: 320000 }, 272000), 320000);
+            assert.strictEqual(configuredCodexTokenLimit({ globalValue: 300000, workspaceValue: 320000, workspaceFolderValue: 340000 }, 272000), 340000);
+            assert.strictEqual(configuredCodexTokenLimit({ globalValue: 300000, workspaceValue: 0 }, 272000), 272000);
         });
 
         test('clears a half-written pair whose other half was the previous default', () => {

@@ -8,7 +8,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -168,6 +168,8 @@ class UsageController implements vscode.Disposable {
     private claudeConfigSyncQueue: Promise<void> = Promise.resolve();
     /** All Codex config.toml rewrites share one queue so transforms cannot race. */
     private codexConfigSyncQueue: Promise<void> = Promise.resolve();
+    /** The picker and startup sync must see the same completed migration. */
+    private contextDefaultsMigration: Promise<void> | undefined;
     /** The Codex extension's hidden model-feature state has its own queue. */
     private codexModelFeatureSyncQueue: Promise<void> = Promise.resolve();
     private codexModelFeatureSyncWarned = false;
@@ -368,7 +370,7 @@ class UsageController implements vscode.Disposable {
     private async startCoordination(): Promise<void> {
         // Before any window can reconcile config.toml or settings.json, so the
         // leader's activation sync already writes the migrated values.
-        await this.migrateContextDefaults();
+        await this.ensureContextDefaultsMigrated();
         try {
             const dir = this.context.globalStorageUri.fsPath;
             await fsp.mkdir(dir, { recursive: true });
@@ -494,6 +496,7 @@ class UsageController implements vscode.Disposable {
     }
 
     private async configureContextOptimization(): Promise<void> {
+        await this.ensureContextDefaultsMigrated();
         const config = this.config();
         const claudeValues = this.currentClaudeOptimizeValues(config);
         const codexValues = this.currentCodexOptimizeValues(config);
@@ -660,6 +663,11 @@ class UsageController implements vscode.Disposable {
         await this.migrateClaudeContextDefaults();
     }
 
+    private ensureContextDefaultsMigrated(): Promise<void> {
+        this.contextDefaultsMigration ??= this.migrateContextDefaults();
+        return this.contextDefaultsMigration;
+    }
+
     private async migrateCodexContextDefaults(): Promise<void> {
         const priorGeneration = this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0);
         if (priorGeneration >= CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
@@ -722,8 +730,8 @@ class UsageController implements vscode.Disposable {
 
     private currentCodexOptimizeValues(config = this.config()): CodexOptimizeValues {
         return {
-            contextWindow: normalizeCodexTokenLimit(config.get<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
-            autoCompactLimit: normalizeCodexTokenLimit(config.get<unknown>('codexAutoCompactLimit'), DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
+            contextWindow: configuredCodexTokenLimit(config.inspect<unknown>('codexContextWindow'), DEFAULT_CODEX_CONTEXT_WINDOW),
+            autoCompactLimit: configuredCodexTokenLimit(config.inspect<unknown>('codexAutoCompactLimit'), DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
         };
     }
 
