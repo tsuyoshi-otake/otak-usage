@@ -51,9 +51,12 @@ const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigr
  * aligned both providers at 250k; Codex generation 3 moves to 180k/150k;
  * generation 4 also recognizes that old pair in config.toml when the managed
  * experimental flag proves it was applied. Generation 5 widens Codex to
- * 272k/231.2k. Claude remains on generation 2.
+ * 272k/231.2k. Generation 6 retries that move for installations whose
+ * generation-5 marker was set before an in-place update still showed the old
+ * pair, or whose old pair was restored before the corrective update. Claude
+ * remains on generation 2.
  */
-const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 5;
+const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 6;
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */

@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.13] - 2026-09-25
+
+### Fixed
+
+- Retry the Codex 180k / 150k to 272k / 231.2k default migration for installations that already recorded the previous migration generation before the old pair was restored. The new generation runs once; later explicit 180k choices remain intact. (#69)
+
 ## [1.26.12] - 2026-09-25
 
 ### Fixed
