@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.11] - 2026-09-25
+
+### Changed
+
+- Codex context optimization now defaults to a 272k configured window and starts its context transition at 231.2k (85%). The 180k / 150k preset remains available. Upgrades migrate the previously shipped 180k / 150k default while preserving other chosen pairs and half-customized values; installations that skipped the 180k release retain their older inherited values. (#69)
+
 ## [1.26.10] - 2026-09-23
 
 ### Added

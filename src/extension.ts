@@ -8,7 +8,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, normalizeCodexTokenLimit, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -50,9 +50,10 @@ const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigr
  * Generation 1 was the boolean-flagged Codex move off 272k/250k; generation 2
  * aligned both providers at 250k; Codex generation 3 moves to 180k/150k;
  * generation 4 also recognizes that old pair in config.toml when the managed
- * experimental flag proves it was applied. Claude remains on generation 2.
+ * experimental flag proves it was applied. Generation 5 widens Codex to
+ * 272k/231.2k. Claude remains on generation 2.
  */
-const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 4;
+const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 5;
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
@@ -660,7 +661,8 @@ class UsageController implements vscode.Disposable {
     }
 
     private async migrateCodexContextDefaults(): Promise<void> {
-        if (this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
+        const priorGeneration = this.context.globalState.get<number>(CODEX_CONTEXT_DEFAULT_MIGRATION_KEY, 0);
+        if (priorGeneration >= CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
             return;
         }
         const config = this.config();
@@ -679,6 +681,7 @@ class UsageController implements vscode.Disposable {
             config.inspect<number>('codexContextWindow')?.globalValue,
             config.inspect<number>('codexAutoCompactLimit')?.globalValue,
             appliedPreviousDefaults,
+            priorGeneration < 3 ? LEGACY_CODEX_CONTEXT_DEFAULTS : undefined,
         );
         try {
             for (const key of plan.clear) {

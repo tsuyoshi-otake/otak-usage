@@ -593,13 +593,14 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers stable 180k and 272k preset pairs, default first', () => {
+    test('offers 272k by default and retains the compact 180k preset', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '180k', contextWindow: 180000, autoCompactLimit: 150000 },
             { id: '272k', contextWindow: 272000, autoCompactLimit: 231200 },
+            { id: '180k', contextWindow: 180000, autoCompactLimit: 150000 },
         ]);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 180000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 150000);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 272000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 231200);
+        assert.strictEqual(matchingCodexOptimizePreset(272000, 231200)?.id, '272k');
         assert.strictEqual(matchingCodexOptimizePreset(180000, 150000)?.id, '180k');
         assert.strictEqual(matchingCodexOptimizePreset(180000, 153000), undefined);
     });
@@ -611,10 +612,10 @@ suite('codex optimize', () => {
         assert.strictEqual(properties['otakUsage.codexAutoCompactLimit'].default, DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
     });
 
-    test('keeps the compact default exact and suggests 85% for wider or custom windows', () => {
+    test('keeps the 272k default at 85% and suggests 85% for custom windows', () => {
         assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.85);
-        assert.strictEqual(suggestedCodexAutoCompactLimit(DEFAULT_CODEX_CONTEXT_WINDOW), 153000);
-        assert.strictEqual(CODEX_OPTIMIZE_PRESETS[1].autoCompactLimit, suggestedCodexAutoCompactLimit(272000));
+        assert.strictEqual(suggestedCodexAutoCompactLimit(DEFAULT_CODEX_CONTEXT_WINDOW), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+        assert.strictEqual(CODEX_OPTIMIZE_PRESETS[1].autoCompactLimit, 150000);
         // A custom window keeps the established treatment, rounded down to an integer.
         assert.strictEqual(suggestedCodexAutoCompactLimit(400000), 340000);
         assert.strictEqual(suggestedCodexAutoCompactLimit(1), 1);
@@ -629,6 +630,7 @@ suite('codex optimize', () => {
                 { contextWindow: 230000, autoCompactLimit: 195500 },
                 { contextWindow: 240000, autoCompactLimit: 216000 },
                 { contextWindow: 250000, autoCompactLimit: 212500 },
+                { contextWindow: 180000, autoCompactLimit: 150000 },
             ]);
         });
 
@@ -642,14 +644,10 @@ suite('codex optimize', () => {
             }
         });
 
-        test('leaves every pair the current picker offers untouched', () => {
-            for (const preset of CODEX_OPTIMIZE_PRESETS) {
-                assert.deepStrictEqual(
-                    planCodexContextDefaultMigration(preset.contextWindow, preset.autoCompactLimit),
-                    { clear: [], write: {} },
-                    preset.id + ' must survive the migration',
-                );
-            }
+        test('leaves the 272k pair alone when already explicitly selected', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, 231200), {
+                clear: [], write: {},
+            });
         });
 
         test('writes nothing when neither value was ever set', () => {
@@ -660,11 +658,11 @@ suite('codex optimize', () => {
         });
 
         test('clears a half-written pair whose other half was the previous default', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(250000, undefined), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(180000, undefined), {
                 clear: ['codexContextWindow'],
                 write: {},
             });
-            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 212500), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 150000), {
                 clear: ['codexAutoCompactLimit'],
                 write: {},
             });
@@ -673,11 +671,11 @@ suite('codex optimize', () => {
         test('leaves chosen values alone and pins the unset half to the previous default', () => {
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, undefined), {
                 clear: [],
-                write: { codexAutoCompactLimit: 212500 },
+                write: { codexAutoCompactLimit: 150000 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 120000), {
                 clear: [],
-                write: { codexContextWindow: 250000 },
+                write: { codexContextWindow: 180000 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, 380000), {
                 clear: [],
@@ -685,8 +683,18 @@ suite('codex optimize', () => {
             });
         });
 
+        test('keeps half-customized settings from releases before the 180k default', () => {
+            const legacy = { contextWindow: 250000, autoCompactLimit: 212500 };
+            assert.deepStrictEqual(planCodexContextDefaultMigration(400000, undefined, false, legacy), {
+                clear: [], write: { codexAutoCompactLimit: 212500 },
+            });
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 120000, false, legacy), {
+                clear: [], write: { codexContextWindow: 250000 },
+            });
+        });
+
         test('treats an unusable stored value as the previous default and clears it', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 212500), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 150000), {
                 clear: ['codexContextWindow', 'codexAutoCompactLimit'],
                 write: {},
             });
@@ -699,8 +707,40 @@ suite('codex optimize', () => {
             });
         });
 
+        test('upgrades an existing managed Codex config to the new default pair', () => {
+            for (const previous of [
+                { contextWindow: 180000, autoCompactLimit: 150000 },
+                { contextWindow: 250000, autoCompactLimit: 212500 },
+            ]) {
+                const original = [
+                    'model = "gpt-6-sol"',
+                    `model_context_window = ${previous.contextWindow}`,
+                    `model_auto_compact_token_limit = ${previous.autoCompactLimit}`,
+                    '[features.context_management]',
+                    'experimental_mode = true',
+                    '',
+                ].join('\n');
+                assert.strictEqual(hasAppliedPreviousCodexContextDefaults(original), true);
+                assert.deepStrictEqual(
+                    planCodexContextDefaultMigration(previous.contextWindow, previous.autoCompactLimit, true),
+                    { clear: ['codexContextWindow', 'codexAutoCompactLimit'], write: {} },
+                );
+
+                const migrated = applyCodexOptimizeToml(original, {
+                    contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW,
+                    autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
+                });
+                assert.match(migrated, /^model = "gpt-6-sol"$/m);
+                assert.match(migrated, /^model_context_window = 272000$/m);
+                assert.match(migrated, /^model_auto_compact_token_limit = 231200$/m);
+                assert.match(migrated, /^experimental_mode = true$/m);
+                assert.strictEqual(hasAppliedPreviousCodexContextDefaults(migrated), false);
+            }
+        });
+
         test('recognizes the applied previous defaults across valid TOML structures', () => {
             for (const source of [
+                'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = true\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = true\n',
                 '"model_context_window" = 250_000\nmodel_auto_compact_token_limit = 212_500\nfeatures.context_management.experimental_mode = true\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features]\ncontext_management = { experimental_mode = true, keep = true }\n',
@@ -711,7 +751,8 @@ suite('codex optimize', () => {
 
         test('requires the exact previous pair and an enabled experimental flag', () => {
             for (const source of [
-                'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = true\n',
+                'model_context_window = 272000\nmodel_auto_compact_token_limit = 231200\n[features.context_management]\nexperimental_mode = true\n',
+                'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = false\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = false\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 200000\n[features.context_management]\nexperimental_mode = true\n',
@@ -1090,11 +1131,11 @@ suite('claude optimize', () => {
         });
     });
 
-    test('keeps Claude summary compaction independent from the compact Codex default', () => {
+    test('keeps Claude summary compaction independent from the Codex default', () => {
         assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 250000);
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 180000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 150000);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 272000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 231200);
         assert.notStrictEqual(claudeAutoCompactTokenLimit(values), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
     });
 

@@ -23,35 +23,41 @@ import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { editToml } from './tomlEdit';
 
 /**
- * The wider preset and the Custom flow's suggestion start compaction at this
- * share of the configured window. The compact 180k default below deliberately
- * uses a round 150k transition point instead, leaving 30k of configured
- * headroom for context hand-off and the token-budget fallback buffer.
+ * The 272k default and the Custom flow's suggestion start compaction at this
+ * share of the configured window. The compact 180k preset retains its round
+ * 150k transition point and 30k of configured headroom.
  */
 export const CODEX_AUTO_COMPACT_RATIO = 0.85;
 
-// Experimental context management can move long-running work into a fresh
-// window and recover selected prior context through notes/history. Keep the
-// configured Codex working set compact by default; 150k leaves 30k before the
-// configured maximum for the hand-off. Claude remains independently tuned to
-// its own native summary-compaction behaviour.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = 180000;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 150000;
+/** Highest configured window within OpenAI's short-context pricing band. */
+export const STANDARD_RATE_CODEX_CONTEXT_WINDOW = 272000;
+
+// Stay within OpenAI's short-context pricing band while allowing a wider
+// working set. The 85% transition leaves 40.8k for context hand-off and output.
+// Claude remains independently tuned to its native summary compaction.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = STANDARD_RATE_CODEX_CONTEXT_WINDOW;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 231200;
 
 /**
  * The pair that shipped as the default immediately before the current one. An
  * unset setting used to mean exactly this, so the migration reads a missing key
  * as this value and pins it when the rest of the pair was chosen by hand.
  */
-export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 250000;
-export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 212500;
+export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 180000;
+export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 150000;
+
+/** Defaults inherited by installations that skipped the 180k release. */
+export const LEGACY_CODEX_CONTEXT_DEFAULTS: CodexOptimizeValues = {
+    contextWindow: 250000,
+    autoCompactLimit: 212500,
+};
 
 /**
  * Every pair otak-usage has ever shipped as its Codex default, oldest first.
  * Holding one of these numbers proves nothing about intent — it is what an
  * installation was handed — so the migration clears such a pair and lets the
- * current default take over. The live 272k preset (which now pairs with
- * 231.2k) is deliberately absent: that pair can only come from a real choice.
+ * current default take over. The 272k / 231.2k pair is deliberately absent:
+ * before this release it could only come from a real choice.
  */
 export const SHIPPED_CODEX_CONTEXT_DEFAULTS: readonly CodexOptimizeValues[] = [
     { contextWindow: 250000, autoCompactLimit: 230000 },
@@ -59,10 +65,8 @@ export const SHIPPED_CODEX_CONTEXT_DEFAULTS: readonly CodexOptimizeValues[] = [
     { contextWindow: 200000, autoCompactLimit: 184000 },
     { contextWindow: 230000, autoCompactLimit: 195500 },
     { contextWindow: 240000, autoCompactLimit: 216000 },
-    {
-        contextWindow: PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW,
-        autoCompactLimit: PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
-    },
+    LEGACY_CODEX_CONTEXT_DEFAULTS,
+    { contextWindow: PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
 ];
 
 /** Whether a pair is one this extension once shipped rather than a choice. */
@@ -72,12 +76,6 @@ export function isShippedCodexContextDefault(values: CodexOptimizeValues): boole
         shipped.autoCompactLimit === values.autoCompactLimit,
     );
 }
-
-/**
- * OpenAI charges the long-context rate above this many input tokens, making it
- * the largest window still billed at the standard rate.
- */
-export const STANDARD_RATE_CODEX_CONTEXT_WINDOW = 272000;
 
 export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
     return Math.max(1, Math.floor(contextWindow * CODEX_AUTO_COMPACT_RATIO));
@@ -91,16 +89,15 @@ export interface CodexOptimizePreset {
 
 /**
  * Curated context-size pairs exposed by the Optimize quick pick, default first.
- * The compact default uses its explicit 180k / 150k hand-off pair. The wider
- * 272k choice and Custom suggestions retain the established 85% rule.
+ * The compact 180k choice keeps its explicit 150k hand-off point.
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
-    { id: '180k', contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
     {
         id: '272k',
-        contextWindow: STANDARD_RATE_CODEX_CONTEXT_WINDOW,
-        autoCompactLimit: suggestedCodexAutoCompactLimit(STANDARD_RATE_CODEX_CONTEXT_WINDOW),
+        contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW,
+        autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
     },
+    { id: '180k', contextWindow: 180000, autoCompactLimit: 150000 },
 ];
 
 export function matchingCodexOptimizePreset(contextWindow: number, autoCompactLimit: number): CodexOptimizePreset | undefined {
@@ -160,8 +157,13 @@ export function hasAppliedPreviousCodexContextDefaults(text: string): boolean {
     const root = getStaticTOMLValue(parseTOML(text)) as unknown;
     const features = objectProperty(root, 'features');
     const contextManagement = objectProperty(features, 'context_management');
-    return objectProperty(root, CODEX_CONTEXT_WINDOW_KEY) === PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW
-        && objectProperty(root, CODEX_AUTO_COMPACT_KEY) === PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT
+    const contextWindow = objectProperty(root, CODEX_CONTEXT_WINDOW_KEY);
+    const autoCompactLimit = objectProperty(root, CODEX_AUTO_COMPACT_KEY);
+    const matchesPrevious = contextWindow === PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW
+        && autoCompactLimit === PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT;
+    const matchesLegacy = contextWindow === LEGACY_CODEX_CONTEXT_DEFAULTS.contextWindow
+        && autoCompactLimit === LEGACY_CODEX_CONTEXT_DEFAULTS.autoCompactLimit;
+    return (matchesPrevious || matchesLegacy)
         && objectProperty(contextManagement, CODEX_EXPERIMENTAL_MODE_KEY) === true;
 }
 
@@ -208,6 +210,10 @@ export function planCodexContextDefaultMigration(
     contextWindow: unknown,
     autoCompactLimit: unknown,
     appliedPreviousDefaults = false,
+    inheritedDefaults: CodexOptimizeValues = {
+        contextWindow: PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW,
+        autoCompactLimit: PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
+    },
 ): CodexContextDefaultMigration {
     if (appliedPreviousDefaults) {
         return {
@@ -216,8 +222,8 @@ export function planCodexContextDefaultMigration(
         };
     }
     const effective: CodexOptimizeValues = {
-        contextWindow: normalizeCodexTokenLimit(contextWindow, PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW),
-        autoCompactLimit: normalizeCodexTokenLimit(autoCompactLimit, PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT),
+        contextWindow: normalizeCodexTokenLimit(contextWindow, inheritedDefaults.contextWindow),
+        autoCompactLimit: normalizeCodexTokenLimit(autoCompactLimit, inheritedDefaults.autoCompactLimit),
     };
     if (isShippedCodexContextDefault(effective)) {
         const clear: CodexContextSettingKey[] = [];
@@ -231,10 +237,10 @@ export function planCodexContextDefaultMigration(
     }
     const write: Partial<Record<CodexContextSettingKey, number>> = {};
     if (contextWindow === undefined) {
-        write.codexContextWindow = PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW;
+        write.codexContextWindow = inheritedDefaults.contextWindow;
     }
     if (autoCompactLimit === undefined) {
-        write.codexAutoCompactLimit = PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT;
+        write.codexAutoCompactLimit = inheritedDefaults.autoCompactLimit;
     }
     return { clear: [], write };
 }
