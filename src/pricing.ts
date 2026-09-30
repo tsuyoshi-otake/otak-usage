@@ -30,8 +30,8 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-09-23: https://platform.claude.com/docs/en/about-claude/pricing
- * - OpenAI prices on 2026-09-23: https://developers.openai.com/api/docs/pricing
+ * - Claude prices on 2026-09-30: https://platform.claude.com/docs/en/about-claude/pricing
+ * - OpenAI prices on 2026-09-30: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -63,6 +63,8 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-opus-4-8-fast': { input: 10, output: 50 },
     'claude-opus-4-7-fast': { input: 30, output: 150 },
     'claude-opus-4-6-fast': { input: 30, output: 150 },
+    // Sonnet 5.5 uses standard rates throughout its 1M context window.
+    'claude-sonnet-5-5': { input: 2, output: 10 },
     'claude-sonnet-5': { input: 2, output: 10 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-sonnet-4-5': { input: 3, output: 15 },
@@ -75,7 +77,9 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
-    // GPT-6 Sol and Luna use the published 272K long-context multipliers.
+    // GPT-6.1 Sol has a 5% cached-input rate; all GPT-6 models below use the
+    // published 272K long-context multipliers.
+    'gpt-6.1-sol': { input: 2, cachedInput: 0.1, output: 10, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-6-luna': { input: 0.1, cachedInput: 0.01, output: 0.5, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-6-sol': { input: 2, cachedInput: 0.2, output: 10, ...GPT_LONG_CONTEXT_PRICING },
     // GPT-6 Astra: official model id / snapshot is gpt-6-astra only

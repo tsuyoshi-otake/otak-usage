@@ -2,6 +2,13 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.14] - 2026-09-30
+
+### Added
+
+- Added GPT-6.1 Sol API-equivalent pricing: $2 input, $0.10 cached input, and $10 output per million tokens, with published long-context rates above 272K input tokens.
+- Added Claude Sonnet 5.5 API-equivalent pricing: $2 input, $0.20 cache reads, $2.50/ $4 cache writes (5-minute / 1-hour), and $10 output per million tokens.
+
 ## [1.26.13] - 2026-09-25
 
 ### Fixed

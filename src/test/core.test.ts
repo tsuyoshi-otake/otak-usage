@@ -75,6 +75,24 @@ suite('pricing', () => {
         assert.ok(Math.abs((standard?.cacheRead ?? 0) - 0.3) < 1e-12);
     });
 
+    test('claude sonnet 5.5 resolves published cache rates without a long-context premium', () => {
+        const p = resolvePricing('claude-sonnet-5-5', undefined, '2026-09-30');
+        assert.strictEqual(p?.input, 2);
+        assert.strictEqual(p?.output, 10);
+        assert.strictEqual(p?.cacheRead, 0.2);
+        assert.strictEqual(p?.cacheWrite, 2.5);
+        assert.strictEqual(p?.cacheWrite1h, 4);
+        assert.strictEqual(p?.longContextThreshold, undefined);
+        assert.strictEqual(resolvePricing('claude-sonnet-5-5-20260928', undefined, '2026-09-30')?.input, 2);
+        assert.strictEqual(resolvePricing('claude-sonnet-5', undefined, '2026-09-30')?.input, 3);
+
+        const usage = {
+            ...emptyUsage(), input: 1_000_000, output: 1_000_000,
+            cacheRead: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000,
+        };
+        assert.ok(Math.abs((calcCost('claude-sonnet-5-5', usage, undefined, '2026-09-30') ?? 0) - 18.7) < 1e-12);
+    });
+
     test('claude fable 5.1 resolves published cache prices, variants and cost', () => {
         const p = resolvePricing('claude-fable-5-1');
         assert.strictEqual(p?.input, 10);
@@ -162,6 +180,29 @@ suite('pricing', () => {
     test('dated fast ids resolve to the -fast entry, not the base prefix', () => {
         assert.strictEqual(resolvePricing('claude-opus-4-7-20260120-fast')?.input, 30);
         assert.strictEqual(resolvePricing('claude-opus-4-6-20260101-fast')?.output, 150);
+    });
+
+    test('gpt-6.1-sol resolves official Standard and long-context prices', () => {
+        const p = resolvePricing('gpt-6.1-sol');
+        assert.strictEqual(p?.input, 2);
+        assert.strictEqual(p?.cachedInput, 0.1);
+        assert.strictEqual(p?.cacheWrite, 2.5);
+        assert.strictEqual(p?.output, 10);
+        assert.strictEqual(p?.longContextThreshold, 272_000);
+        assert.strictEqual(p?.longContextInputMultiplier, 2);
+        assert.strictEqual(p?.longContextOutputMultiplier, 1.5);
+        assert.strictEqual(resolvePricing('gpt-6.1-sol-20260929')?.cachedInput, 0.1);
+        assert.strictEqual(resolvePricing('gpt-6-sol')?.cachedInput, 0.2);
+
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        assert.ok(Math.abs((calcCost('gpt-6.1-sol', usage) ?? 0) - 1.22) < 1e-12);
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCachedInput: usage.cachedInput,
+            longContextOutput: usage.output,
+        };
+        assert.ok(Math.abs((calcCost('gpt-6.1-sol', longUsage) ?? 0) - 1.94) < 1e-12);
     });
 
     test('gpt-6-astra resolves official Standard and long-context prices', () => {
@@ -375,6 +416,7 @@ suite('aggregator', () => {
     test('model breakdowns are newest-first with unknown models last', () => {
         const days: DayBuckets = {};
         addEvent(days, ev(10, 'gpt-5.4', 1_000_000, 'codex'));
+        addEvent(days, ev(10, 'gpt-6.1-sol', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-6-astra', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.6-sol-20260710', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.5', 1_000, 'codex'));
@@ -389,6 +431,7 @@ suite('aggregator', () => {
 
         const s = summarize(days, '2026-07-10');
         assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
+            'gpt-6.1-sol',
             'gpt-6-astra',
             'gpt-5.6-sol-20260710',
             'gpt-5.5',

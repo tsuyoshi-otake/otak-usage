@@ -142,6 +142,22 @@ suite('parseCodexLine', () => {
         assert.strictEqual(event, undefined);
     });
 
+    test('gpt-6.1-sol preserves the model id and marks only requests above 272K', () => {
+        const state: CodexParseState = {};
+        parseCodexLine(JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6.1-sol' } }), state);
+        const boundary = parseCodexLine(codexTokenCount('2026-09-30T03:00:00.000Z', 272_000, 270_000, 100), state);
+        assert.ok(boundary);
+        assert.strictEqual(boundary.model, 'gpt-6.1-sol');
+        assert.strictEqual(boundary.usage.longContextInput, undefined);
+
+        const long = parseCodexLine(codexTokenCount('2026-09-30T03:00:01.000Z', 272_001, 270_000, 100), state);
+        assert.ok(long);
+        assert.strictEqual(long.model, 'gpt-6.1-sol');
+        assert.strictEqual(long.usage.longContextInput, 2_001);
+        assert.strictEqual(long.usage.longContextCachedInput, 270_000);
+        assert.strictEqual(long.usage.longContextOutput, 100);
+    });
+
     test('gpt-6-astra marks only requests above 272K for long-context pricing', () => {
         const state: CodexParseState = { lastModel: 'gpt-6-astra' };
         const boundary = parseCodexLine(codexTokenCount('2026-09-05T03:00:00.000Z', 272_000, 270_000, 100), state);
