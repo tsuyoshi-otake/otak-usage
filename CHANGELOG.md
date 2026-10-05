@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.15] - 2026-10-05
+
+### Added
+
+- Added `otakUsage.disableFastModeOnStartup`, enabled by default, to migrate existing Claude Code and Codex CLI fast-mode defaults to standard mode at startup or leader acquisition while preserving unrelated configuration. The setting can be disabled to opt out. (#70)
+
 ## [1.26.14] - 2026-09-30
 
 ### Added

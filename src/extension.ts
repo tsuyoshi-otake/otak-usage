@@ -13,7 +13,7 @@ import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFea
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
 import { ScanTargets, scanAll } from './engine';
-import { FastModeState, claudeFastActive, codexFastModeEnabled, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
+import { FastModeState, claudeFastActive, codexFastModeEnabled, disableClaudeFastModeJson, disableCodexFastModeToml, isValidFastModeState, newlyActiveFastProviders } from './fastMode';
 import { writeFileAtomic, writeTextFileIfChanged } from './coordination/atomicFile';
 import { allowInPlaceCommit } from './coordination/inPlaceCommit';
 import { HEARTBEAT_MS, LeaderLock } from './coordination/leaderLock';
@@ -171,6 +171,8 @@ class UsageController implements vscode.Disposable {
     private claudeConfigSyncQueue: Promise<void> = Promise.resolve();
     /** All Codex config.toml rewrites share one queue so transforms cannot race. */
     private codexConfigSyncQueue: Promise<void> = Promise.resolve();
+    /** Complete the startup reset before detecting fast-mode transitions. */
+    private startupFastModeReset: Promise<boolean> | undefined;
     /** The picker and startup sync must see the same completed migration. */
     private contextDefaultsMigration: Promise<void> | undefined;
     /** The Codex extension's hidden model-feature state has its own queue. */
@@ -886,6 +888,54 @@ class UsageController implements vscode.Disposable {
         return this.confirmLeadership();
     }
 
+    /**
+     * Repeat on each startup/leader acquisition, independently of alerts and
+     * context optimization. Queue each transform with that provider's other
+     * writes; a failed provider never prevents the other one from resetting.
+     */
+    private async disableFastModeOnStartup(): Promise<boolean> {
+        if (!this.config().get<boolean>('disableFastModeOnStartup', true)) {
+            return true;
+        }
+        const claudeTask = this.claudeConfigSyncQueue.then(() => this.resetProviderFastMode('claude'));
+        this.claudeConfigSyncQueue = claudeTask.then(() => undefined, () => undefined);
+        const codexTask = this.enqueueCodexConfigSync(() => this.resetProviderFastMode('codex'));
+        const results = await Promise.all([claudeTask, codexTask]);
+        return results.every(Boolean);
+    }
+
+    private async resetProviderFastMode(provider: Provider): Promise<boolean> {
+        try {
+            if (!this.config().get<boolean>('disableFastModeOnStartup', true) ||
+                !(await this.allowManagedFileCommit(true))) {
+                return false;
+            }
+            const configPath = provider === 'claude'
+                ? path.join(this.claudeConfigDir(), 'settings.json')
+                : path.join(this.codexHomeDir(), 'config.toml');
+            const current = await readOptionalTextFile(configPath);
+            if (current === undefined) {
+                return true;
+            }
+            const next = provider === 'claude'
+                ? disableClaudeFastModeJson(current)
+                : disableCodexFastModeToml(current);
+            if (next === current) {
+                return true;
+            }
+            // A queued operation can lose either authorization while reading.
+            if (!this.config().get<boolean>('disableFastModeOnStartup', true) ||
+                !(await this.allowManagedFileCommit(true))) {
+                return false;
+            }
+            await writeTransformedTextFile(configPath, this.instanceId, current, next);
+            return true;
+        } catch (err) {
+            console.error(`otak-usage: could not disable ${provider} fast mode on startup`, err);
+            return false;
+        }
+    }
+
     private async performClaudeOptimizeSync(showStatus: boolean, requireFence: boolean): Promise<boolean> {
         if (!(await this.allowManagedFileCommit(requireFence))) {
             return false;
@@ -1337,6 +1387,7 @@ class UsageController implements vscode.Disposable {
             this.initialScanDone = Object.keys(this.cache.days).length > 0;
             // Activation-time reconciliation of the provider config files is
             // the leader's job, and this window has just taken it on.
+            this.startupFastModeReset = this.disableFastModeOnStartup();
             void this.syncClaudeOptimize();
             void this.syncCodexOptimize();
             void this.syncCodexModelFeatures();
@@ -1361,6 +1412,7 @@ class UsageController implements vscode.Disposable {
             const now = Date.now();
             await this.ensureRole(now);
             if (this.leader) {
+                await this.startupFastModeReset;
                 await this.leaderTick(now);
             } else {
                 await this.followerTick();
@@ -1828,8 +1880,8 @@ class UsageController implements vscode.Disposable {
     /**
      * Detect fast mode per provider and warn on every off → on transition with
      * the same notification the cost and limit alerts use, "Not Today" button
-     * included. Claude Code keeps no config flag
-     * this extension could read — fast mode surfaces as "<model>-fast" usage in
+     * included. Claude's saved preference is reset separately at startup;
+     * active-session fast mode surfaces as "<model>-fast" usage in
      * today's scan buckets, so its warning fires on the first fast-billed
      * response of a day. Codex CLI declares `fast_mode` in config.toml, so its
      * warning fires as soon as the flag appears. Leader-only (called from the

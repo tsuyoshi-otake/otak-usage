@@ -1,25 +1,74 @@
 /**
- * Fast-mode detection for both providers. Fast mode bills at premium
+ * Fast-mode detection and startup resets for both providers. Fast mode bills at premium
  * per-token rates, so the extension warns once when it turns on and — the
  * first time only — re-enables context optimization for that provider (a
  * compact context matters more at premium prices).
  *
  * The two providers expose fast mode very differently:
- * - Claude Code keeps the /fast toggle out of any config file this extension
- *   reads; what it does leave behind is `usage.speed === "fast"` on transcript
- *   lines, which the scanner maps to "<model>-fast" buckets. Detection is
- *   therefore usage-based: any fast-billed tokens in today's bucket.
+ * - Claude Code persists its /fast preference as `fastMode` in settings.json.
+ *   Alerts use `usage.speed === "fast"` on transcript lines, which the scanner
+ *   maps to "<model>-fast" buckets: any fast-billed tokens in today's bucket.
  * - Codex CLI declares it as `fast_mode = true` under `[features]` in
  *   `~/.codex/config.toml`, so detection is config-based.
  */
 
+import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { FAST_SUFFIX } from './pricing';
+import { editToml } from './tomlEdit';
 import { DayBuckets, Provider, parseBucketKey, totalTokens } from './types';
 
 /** Which providers currently have fast mode on. */
 export interface FastModeState {
     claude: boolean;
     codex: boolean;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Clear an enabled saved preference, preserving all other Claude settings. */
+export function disableClaudeFastModeJson(text: string): string {
+    const settings: unknown = JSON.parse(text);
+    if (!isObject(settings)) {
+        throw new Error('Claude settings must contain a JSON object.');
+    }
+    if (settings.fastMode !== true) {
+        return text;
+    }
+    settings.fastMode = false;
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const indent = text.match(/\r?\n([\t ]+)"/)?.[1] ?? '  ';
+    return JSON.stringify(settings, null, indent).replace(/\n/g, eol)
+        + (/\r?\n$/.test(text) ? eol : '');
+}
+
+/**
+ * Reset only enabled fast-mode values in the user config and its profiles.
+ * Removing a fast service tier restores the client's standard default. AST
+ * edits preserve comments/strings and reject malformed TOML before a write.
+ */
+export function disableCodexFastModeToml(text: string): string {
+    const config = getStaticTOMLValue(parseTOML(text));
+    let next = text;
+    const reset = (value: unknown, prefix: string[]) => {
+        if (!isObject(value)) {
+            return;
+        }
+        if (value.service_tier === 'fast' || value.service_tier === 'priority') {
+            next = editToml(next, [...prefix, 'service_tier']);
+        }
+        if (isObject(value.features) && value.features.fast_mode === true) {
+            next = editToml(next, [...prefix, 'features', 'fast_mode'], 'false');
+        }
+    };
+    reset(config, []);
+    if (isObject(config) && isObject(config.profiles)) {
+        for (const [name, profile] of Object.entries(config.profiles)) {
+            reset(profile, ['profiles', name]);
+        }
+    }
+    return next;
 }
 
 export function isValidFastModeState(raw: unknown): raw is FastModeState {

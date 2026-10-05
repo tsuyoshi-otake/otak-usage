@@ -24,6 +24,7 @@
   "config.pricingOverrides": "100万トークンあたり USD のモデル別価格上書き。例: `{\"claude-opus-4-8\": {\"input\": 5, \"output\": 25, \"cacheWrite\": 6.25, \"cacheRead\": 0.5}}`。OpenAI モデルでは `input`、`cachedInput`、`output` を使用します。",
   "config.claudeConfigDir": "Claude Code 設定ディレクトリへのパス。空の場合は $CLAUDE_CONFIG_DIR または ~/.claude を使用します。",
   "config.codexHome": "Codex ホームディレクトリへのパス。空の場合は $CODEX_HOME または ~/.codex を使用します。",
+  "config.disableFastModeOnStartup": "**デフォルトで有効です。** 起動時またはこのウィンドウがリーダーになったとき、Claude Code の `fastMode: true` を `false` にし、Codex の `service_tier = \"fast\"` または `\"priority\"` を削除し、Codex 設定とプロファイルにある `features.fast_mode = true` を `false` にします。設定がない場合や既にオフの場合は変更せず、ほかの設定も保持します。保存済みの既定値を変更する設定であり、実行中のセッションは制御しません。",
   "config.optimizeClaudeContext": "**デフォルトで有効です。** 有効にすると、otak-usage は Claude Code の `settings.json` の `env` に `CLAUDE_CODE_AUTO_COMPACT_WINDOW` と `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` を書き込みます。Optimize からオフにすると、otak-usage が管理を始める前の値を復元します。",
   "config.claudeContextWindow": "Claude Code コンテキスト最適化が有効なとき、`CLAUDE_CODE_AUTO_COMPACT_WINDOW` に書き込まれる有効コンテキストウィンドウです。Claude のネイティブな要約コンパクション向けに、独立して調整した 250k をデフォルトにしています。",
   "config.claudeAutoCompactPercent": "`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` に書き込まれる自動コンパクション発火率（1〜100）です。デフォルトでは 250k の 85% にあたる 212.5k トークンで発火し、要約の生成に 37.5k を残します。Anthropic が long-context 料金に切り替わる入力 200k の境界は超えるため、その手前に収めたい場合はウィンドウか発火率を下げてください。",

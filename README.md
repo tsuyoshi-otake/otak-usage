@@ -78,7 +78,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **Stable model ordering**: per-provider breakdowns list known models newest-first; unrecognized models appear last in name order.
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
-- **Fast-mode warning**: when Claude Code or Codex CLI fast mode turns on, the same warning notification the cost and limit alerts use points out that usage is billed at premium fast-mode rates. See [Fast-mode detection](#fast-mode-detection).
+- **Fast-mode startup reset and warning**: saved Claude Code and Codex CLI fast-mode defaults are turned off on every startup by default; disable `otakUsage.disableFastModeOnStartup` to opt out. Fast-mode usage still triggers the same warning notification the cost and limit alerts use. See [Fast-mode detection](#fast-mode-detection).
 - **Claude + Codex context optimization — on by default**: Claude gets a 250k context window with native auto-compaction at 212.5k (85%). Codex gets a 272k configured window with a 231.2k transition target and experimental notes/history context management on supported setups. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The configured values for both providers are shown directly in the tooltip.
 - **Codex model controls — Max enabled automatically**: On activation, otak-usage updates the Codex VS Code extension's persisted model state, preserves the reasoning efforts you already have selected, and appends `max`. If Codex is already open, its webviews are refreshed after a change so the picker updates immediately. This does not modify `config.toml`.
 - **Optional conversation hooks (off by default)**: Tooltip toggles can prefix Claude Code and Codex conversation titles with the Git repository name and play prompt/stop chimes. The hook runner is a dependency-free Node script that works on Windows, macOS, Linux, WSL, SSH remotes, Dev Containers, and GitHub Codespaces; unrelated user hooks remain untouched.
@@ -299,10 +299,20 @@ from the command palette.
 
 Both CLIs offer a fast mode that bills at **premium per-token rates**. otak-usage watches for it and warns with the same notification the cost and limit alerts use — **Open Settings** and **Not Today** buttons included, so one click silences it for the rest of the day:
 
-- **Claude Code**: fast mode leaves no config flag to read, but every fast response is marked in the session transcripts (`usage.speed: "fast"`, tracked as `<model>-fast` and priced at the fast rates). The warning therefore fires on the first fast-billed response of a day.
-- **Codex CLI**: fast mode is declared as `fast_mode = true` under `[features]` in `~/.codex/config.toml`, so the warning fires as soon as the flag appears — before any tokens are spent.
+- **Claude Code**: saved fast mode is declared as `fastMode: true` in `settings.json`. Alerts use the session transcripts (`usage.speed: "fast"`, tracked as `<model>-fast` and priced at the fast rates), so the warning fires on the first fast-billed response of a day.
+- **Codex CLI**: saved fast mode can be selected with `service_tier = "fast"` (or `"priority"`) and enabled with `fast_mode = true` under `[features]` in `config.toml` or a profile. Alerts continue to check the top-level `[features]` flag in `config.toml`.
 
 The warning fires once per off → on transition (for Claude, at most once per day of fast usage), is raised only by the leader window like every other alert, and stays quiet while `otakUsage.alertMode` is `off` or alerts are silenced with **Not Today**.
+
+**Disable saved fast-mode defaults on startup:** `otakUsage.disableFastModeOnStartup` is enabled by default. On startup or when this window becomes the leader, otak-usage changes an existing Claude `fastMode: true` to `false`; in Codex config and profiles it removes an existing `service_tier = "fast"` or `"priority"` and changes `features.fast_mode = true` to `false`. Missing or already-off values are left alone, and the config transaction preserves unrelated settings. It uses the configured Claude and Codex directories and does not run on every polling tick. The migration changes saved defaults only: already-running CLI sessions are not forcibly changed, and project settings, profile selection, or command-line/session overrides may still take precedence. Turn it off to opt out:
+
+```json
+{
+  "otakUsage.disableFastModeOnStartup": false
+}
+```
+
+Claude Code officially documents `fastMode` and `fastModePerSessionOptIn` in its [Fast mode settings](https://code.claude.com/docs/en/fast-mode). Codex documents `service_tier` and `[features].fast_mode` in its [Fast mode guide](https://developers.openai.com/codex/speed).
 
 **One-time context-optimization migration**: the first time fast mode is detected while that provider's [context optimization](#context-optimization--default-on) is turned off, otak-usage re-enables it once. At premium fast-mode prices a compact, auto-compacted context is where the savings are largest, so the trade-off that justified opting out at standard rates usually no longer holds. The migration runs exactly once per provider — turn the optimization off again afterwards and that choice is final. Cost tracking itself is unaffected: fast usage is priced with its own `-fast` table entries either way.
 
@@ -324,6 +334,7 @@ The warning fires once per off → on transition (for Claude, at most once per d
 | `otakUsage.pricingOverrides` | `{}` | Per-model price overrides in USD per million tokens, for example `{"gpt-6": {"input": 5, "cachedInput": 0.5, "output": 30}}`. |
 | `otakUsage.claudeConfigDir` | `""` | Claude Code config directory. Empty means `$CLAUDE_CONFIG_DIR` or `~/.claude`. |
 | `otakUsage.codexHome` | `""` | Codex home directory. Empty means `$CODEX_HOME` or `~/.codex`. |
+| `otakUsage.disableFastModeOnStartup` | `true` | Change existing saved Claude and Codex fast-mode defaults to standard mode at startup or leader acquisition. Turn off to preserve them. Running sessions and higher-precedence project, profile, or session overrides are not controlled. |
 | `otakUsage.includeRepositoryNameInHistory` | `false` | When enabled from the tooltip or Settings, install a managed Stop hook for Claude Code and Codex that prefixes conversation history titles with the repository name. |
 | `otakUsage.enableHookSounds` | `false` | When enabled from the tooltip or Settings, install managed `UserPromptSubmit` and `Stop` hooks that play short sounds. Uses platform players where available and degrades quietly on headless Codespaces. |
 | `otakUsage.optimizeClaudeContext` | `true` | **On by default.** Writes the two official auto-compaction values below under `env` in Claude Code `settings.json`. Turning it off through **Optimize** restores the values that existed before otak-usage took ownership. |
