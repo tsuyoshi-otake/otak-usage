@@ -10,7 +10,7 @@ import { applyHookFeaturesJson, hasManagedHook } from '../hookFeatures';
 import { RtkView, clipboardText, formatCost, formatTokenLimit, formatTokens, statusBarText, tooltipMarkdown } from '../formatter';
 import { I18n, SUPPORTED_LOCALES, resolveSupportedLocale } from '../i18n';
 import { dayKey, lastDayOfPrevMonth, startOfMonth, startOfToday } from '../period';
-import { calcCost, resolvePricing } from '../pricing';
+import { calcCost, isLongContextRequest, resolvePricing } from '../pricing';
 import { emptyRtkPeriod, parseRtkGain, rtkSavingsPct } from '../rtk';
 import { ALL_TELEMETRY_METRICS, buildMetricsPayload, metricsUrl, TelemetryConfig, TelemetrySnapshot } from '../telemetry';
 import { DayBuckets, TokenUsage, UsageEvent, emptyUsage } from '../types';
@@ -91,6 +91,37 @@ suite('pricing', () => {
             cacheRead: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000,
         };
         assert.ok(Math.abs((calcCost('claude-sonnet-5-5', usage, undefined, '2026-09-30') ?? 0) - 18.7) < 1e-12);
+    });
+
+    test('claude haiku 5.5 resolves published standard rates and a 5x tier above 100K', () => {
+        const p = resolvePricing('claude-haiku-5-5');
+        assert.strictEqual(p?.input, 0.1);
+        assert.strictEqual(p?.output, 0.5);
+        assert.ok(Math.abs((p?.cacheRead ?? 0) - 0.01) < 1e-12);
+        assert.strictEqual(p?.cacheWrite, 0.125);
+        assert.strictEqual(p?.cacheWrite1h, 0.2);
+        assert.strictEqual(p?.longContextThreshold, 100_000);
+        assert.strictEqual(resolvePricing('claude-haiku-5-5-20261001')?.input, 0.1);
+        assert.strictEqual(resolvePricing('claude-haiku-4-5')?.longContextThreshold, undefined);
+        assert.strictEqual(isLongContextRequest('claude-haiku-5-5', 100_000), false);
+        assert.strictEqual(isLongContextRequest('claude-haiku-5-5', 100_001), true);
+
+        const usage = {
+            ...emptyUsage(), input: 1_000_000, output: 1_000_000,
+            cacheRead: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000,
+        };
+        assert.ok(Math.abs((calcCost('claude-haiku-5-5', usage) ?? 0) - 0.935) < 1e-12);
+        // Above 100K every dimension, cache reads and writes included, bills at
+        // the published long-prompt rates: $0.50 / $0.05 / $0.625 / $1 / $2.50.
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCacheRead: usage.cacheRead,
+            longContextCacheWrite5m: usage.cacheWrite5m,
+            longContextCacheWrite1h: usage.cacheWrite1h,
+            longContextOutput: usage.output,
+        };
+        assert.ok(Math.abs((calcCost('claude-haiku-5-5', longUsage) ?? 0) - 4.675) < 1e-12);
     });
 
     test('claude fable 5.1 resolves published cache prices, variants and cost', () => {
@@ -424,6 +455,7 @@ suite('aggregator', () => {
         addEvent(days, ev(10, 'a-future-model', 10_000_000, 'codex'));
 
         addEvent(days, ev(10, 'claude-haiku-4-5', 1_000_000));
+        addEvent(days, ev(10, 'claude-haiku-5-5', 1));
         addEvent(days, ev(10, 'claude-fable-5', 1));
         addEvent(days, ev(10, 'claude-fable-5-1', 1));
         addEvent(days, ev(10, 'claude-opus-4-8', 1_000));
@@ -444,6 +476,7 @@ suite('aggregator', () => {
             'claude-fable-5',
             'claude-opus-5',
             'claude-opus-4-8',
+            'claude-haiku-5-5',
             'claude-haiku-4-5',
         ]);
     });

@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { FAST_SUFFIX } from '../pricing';
+import { FAST_SUFFIX, isLongContextRequest } from '../pricing';
 import { TokenUsage, UsageEvent } from '../types';
 import { ScanIndex } from './scanIndex';
 
@@ -98,6 +98,15 @@ export function parseClaudeLine(line: string): ClaudeParseResult | undefined {
     // Fast mode is billed at premium rates — keep it as a separate
     // "<model>-fast" SKU for pricing and the per-model breakdown.
     const model = usage.speed === 'fast' ? msg.model + FAST_SUFFIX : msg.model;
+    // Prompt length counts every input token, cache reads and writes included.
+    const promptTokens = tokenUsage.input + tokenUsage.cacheRead + tokenUsage.cacheWrite5m + tokenUsage.cacheWrite1h;
+    if (isLongContextRequest(model, promptTokens)) {
+        tokenUsage.longContextInput = tokenUsage.input;
+        tokenUsage.longContextCacheRead = tokenUsage.cacheRead;
+        tokenUsage.longContextCacheWrite5m = tokenUsage.cacheWrite5m;
+        tokenUsage.longContextCacheWrite1h = tokenUsage.cacheWrite1h;
+        tokenUsage.longContextOutput = tokenUsage.output;
+    }
     const dedupeKey = typeof msg.id === 'string' && typeof rec.requestId === 'string'
         ? `${msg.id}:${rec.requestId}`
         : `anon:${rec.timestamp}:${model}:${tokenUsage.input}:${tokenUsage.cacheRead}:${tokenUsage.cacheWrite5m}:${tokenUsage.cacheWrite1h}:${tokenUsage.output}`;

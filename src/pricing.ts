@@ -30,7 +30,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-09-30: https://platform.claude.com/docs/en/about-claude/pricing
+ * - Claude prices on 2026-10-12: https://platform.claude.com/docs/en/about-claude/pricing
  * - OpenAI prices on 2026-09-30: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
@@ -69,6 +69,13 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-sonnet-4-5': { input: 3, output: 15 },
     'claude-sonnet-4': { input: 3, output: 15 },
+    // Haiku 5.5 is the exception to standard-rate 1M context: a request whose
+    // prompt (input + cache reads + cache writes) exceeds 100K tokens bills
+    // every dimension, cache reads and writes included, at 5x.
+    'claude-haiku-5-5': {
+        input: 0.1, output: 0.5,
+        longContextThreshold: 100_000, longContextInputMultiplier: 5, longContextOutputMultiplier: 5,
+    },
     'claude-haiku-4-5': { input: 1, output: 5 },
     'claude-3-7-sonnet': { input: 3, output: 15 },
     'claude-3-5-sonnet': { input: 3, output: 15 },
@@ -265,9 +272,19 @@ function withDefaults(p: Partial<ModelPricing>): ModelPricing | undefined {
     };
 }
 
+// Scanners ask once per log line, so the per-model prefix lookup is memoized.
+// Thresholds come only from the built-in table, which never changes at runtime.
+const longContextThresholds = new Map<string, number | undefined>();
+
 /** Whether one request crosses the model's long-context pricing threshold. */
 export function isLongContextRequest(model: string, inputTokens: number): boolean {
-    const threshold = resolvePricing(model)?.longContextThreshold;
+    let threshold: number | undefined;
+    if (longContextThresholds.has(model)) {
+        threshold = longContextThresholds.get(model);
+    } else {
+        threshold = resolvePricing(model)?.longContextThreshold;
+        longContextThresholds.set(model, threshold);
+    }
     return threshold !== undefined && inputTokens > threshold;
 }
 
@@ -290,6 +307,9 @@ export function calcCost(model: string, usage: TokenUsage, overrides?: PricingOv
             usage.output * p.output +
             (usage.longContextInput ?? 0) * p.input * longInputPremium +
             (usage.longContextCachedInput ?? 0) * (p.cachedInput ?? 0) * longInputPremium +
+            (usage.longContextCacheRead ?? 0) * (p.cacheRead ?? 0) * longInputPremium +
+            (usage.longContextCacheWrite5m ?? 0) * (p.cacheWrite ?? 0) * longInputPremium +
+            (usage.longContextCacheWrite1h ?? 0) * (p.cacheWrite1h ?? 0) * longInputPremium +
             (usage.longContextOutput ?? 0) * p.output * longOutputPremium) / M
     );
 }

@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.16] - 2026-10-12
+
+### Added
+
+- Added Claude Haiku 5.5 API-equivalent pricing: $0.10 input, $0.01 cache reads, $0.125 / $0.20 cache writes (5-minute / 1-hour), and $0.50 output per million tokens. Requests whose prompt (input + cache reads + cache writes) exceeds 100K tokens bill every dimension at the published 5x rates ($0.50 / $0.05 / $0.625 / $1 / $2.50). Existing usage history is re-ingested once so earlier Haiku 5.5 requests are classified. (#71)
+
 ## [1.26.15] - 2026-10-05
 
 ### Added

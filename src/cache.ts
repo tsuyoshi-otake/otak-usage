@@ -16,9 +16,11 @@ import { DayBuckets, TokenUsage } from './types';
  * v8: Claude lines without message.id+requestId get a fallback identity, and
  * Codex listing walks every sessions/YYYY/MM folder (mtime-filtered) so a
  * long-lived rollout is not dropped after two calendar months.
+ * v9: Claude requests above a model's prompt threshold (Haiku 5.5: 100K) carry
+ * long-context counters, including cache reads and writes.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 8;
+export const CACHE_VERSION = 9;
 
 /**
  * A record that may still be superseded. Claude logs a streaming partial

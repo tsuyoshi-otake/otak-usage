@@ -23,6 +23,9 @@ const usageArbitrary: fc.Arbitrary<TokenUsage> = fc.record({
     longContextInput: optionalCount,
     longContextCachedInput: optionalCount,
     longContextOutput: optionalCount,
+    longContextCacheRead: optionalCount,
+    longContextCacheWrite5m: optionalCount,
+    longContextCacheWrite1h: optionalCount,
 });
 const ratesArbitrary: fc.Arbitrary<RequirementRates> = fc.record({
     input: fc.integer({ min: 1, max: 1_000 }).map(value => value / 10),
@@ -46,6 +49,9 @@ function normalized(usage: TokenUsage): Required<TokenUsage> {
         longContextInput: usage.longContextInput ?? 0,
         longContextCachedInput: usage.longContextCachedInput ?? 0,
         longContextOutput: usage.longContextOutput ?? 0,
+        longContextCacheRead: usage.longContextCacheRead ?? 0,
+        longContextCacheWrite5m: usage.longContextCacheWrite5m ?? 0,
+        longContextCacheWrite1h: usage.longContextCacheWrite1h ?? 0,
     };
 }
 
@@ -75,6 +81,7 @@ suite('domain quality: requirement-derived examples', () => {
             input: 1_000_000, cachedInput: 500_000, cacheRead: 400_000,
             cacheWrite5m: 300_000, cacheWrite1h: 200_000, output: 100_000,
             longContextInput: 50_000, longContextCachedInput: 40_000, longContextOutput: 30_000,
+            longContextCacheRead: 20_000, longContextCacheWrite5m: 15_000, longContextCacheWrite1h: 10_000,
         };
         const rates: RequirementRates = {
             input: 2, cachedInput: 0.2, cacheRead: 0.25, cacheWrite5m: 2.5,
@@ -208,7 +215,8 @@ suite('domain quality: deterministic properties', () => {
             subtractUsage(target, right);
             assert.deepStrictEqual(normalized(target), normalized(left));
         }));
-        for (const id of ['T-LCI-TARGET', 'T-LCI-SOURCE', 'T-LCC-TARGET', 'T-LCC-SOURCE', 'T-LCO-TARGET', 'T-LCO-SOURCE']) {
+        for (const id of ['T-LCI-TARGET', 'T-LCI-SOURCE', 'T-LCC-TARGET', 'T-LCC-SOURCE', 'T-LCO-TARGET', 'T-LCO-SOURCE',
+            'T-LCR-TARGET', 'T-LCR-SOURCE', 'T-LCW5-TARGET', 'T-LCW5-SOURCE', 'T-LCW1-TARGET', 'T-LCW1-SOURCE']) {
             c2.record(id, true, false);
         }
     });

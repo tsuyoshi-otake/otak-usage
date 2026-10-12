@@ -96,6 +96,28 @@ suite('parseClaudeLine', () => {
         assert.strictEqual(normal?.event.model, 'claude-opus-4-8');
     });
 
+    test('claude haiku 5.5 marks every dimension once the whole prompt exceeds 100K', () => {
+        const line = (cacheRead: number) => {
+            const rec = JSON.parse(claudeLine({ id: 'm', requestId: 'r', model: 'claude-haiku-5-5', iso: '2026-10-12T03:00:00.000Z' }));
+            rec.message.usage.cache_read_input_tokens = cacheRead;
+            return JSON.stringify(rec);
+        };
+        // input 100 + cache writes 240 + cache reads: the cache reads alone push it over.
+        const boundary = parseClaudeLine(line(100_000 - 340));
+        assert.strictEqual(boundary?.event.usage.longContextInput, undefined);
+        assert.strictEqual(boundary?.event.usage.longContextCacheRead, undefined);
+
+        const long = parseClaudeLine(line(100_000 - 339))?.event.usage;
+        assert.strictEqual(long?.longContextInput, 100);
+        assert.strictEqual(long?.longContextCacheRead, 99_661);
+        assert.strictEqual(long?.longContextCacheWrite5m, 200);
+        assert.strictEqual(long?.longContextCacheWrite1h, 40);
+        assert.strictEqual(long?.longContextOutput, 336);
+
+        const sonnet = parseClaudeLine(claudeLine({ id: 'm', requestId: 'r', model: 'claude-sonnet-5-5', iso: '2026-10-12T03:00:00.000Z' }));
+        assert.strictEqual(sonnet?.event.usage.longContextInput, undefined);
+    });
+
     test('id-less usage lines still get a fallback identity', () => {
         const rec = JSON.parse(claudeLine({ id: 'm', requestId: 'r', iso: '2026-06-10T03:00:00.000Z', output: 10 }));
         delete rec.message.id;

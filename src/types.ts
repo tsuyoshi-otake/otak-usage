@@ -17,6 +17,9 @@ export interface TokenUsage {
     longContextInput?: number;
     longContextCachedInput?: number;
     longContextOutput?: number;
+    longContextCacheRead?: number;
+    longContextCacheWrite5m?: number;
+    longContextCacheWrite1h?: number;
 }
 
 export interface UsageEvent {
@@ -41,6 +44,9 @@ export function emptyUsage(): TokenUsage {
         longContextInput: 0,
         longContextCachedInput: 0,
         longContextOutput: 0,
+        longContextCacheRead: 0,
+        longContextCacheWrite5m: 0,
+        longContextCacheWrite1h: 0,
     };
 }
 
@@ -54,6 +60,9 @@ export function addUsage(target: TokenUsage, source: TokenUsage): void {
     target.longContextInput = (target.longContextInput ?? 0) + (source.longContextInput ?? 0);
     target.longContextCachedInput = (target.longContextCachedInput ?? 0) + (source.longContextCachedInput ?? 0);
     target.longContextOutput = (target.longContextOutput ?? 0) + (source.longContextOutput ?? 0);
+    target.longContextCacheRead = (target.longContextCacheRead ?? 0) + (source.longContextCacheRead ?? 0);
+    target.longContextCacheWrite5m = (target.longContextCacheWrite5m ?? 0) + (source.longContextCacheWrite5m ?? 0);
+    target.longContextCacheWrite1h = (target.longContextCacheWrite1h ?? 0) + (source.longContextCacheWrite1h ?? 0);
 }
 
 /** Reverse a prior addUsage so a superseded record's contribution can be replaced. */
@@ -67,6 +76,9 @@ export function subtractUsage(target: TokenUsage, source: TokenUsage): void {
     target.longContextInput = (target.longContextInput ?? 0) - (source.longContextInput ?? 0);
     target.longContextCachedInput = (target.longContextCachedInput ?? 0) - (source.longContextCachedInput ?? 0);
     target.longContextOutput = (target.longContextOutput ?? 0) - (source.longContextOutput ?? 0);
+    target.longContextCacheRead = (target.longContextCacheRead ?? 0) - (source.longContextCacheRead ?? 0);
+    target.longContextCacheWrite5m = (target.longContextCacheWrite5m ?? 0) - (source.longContextCacheWrite5m ?? 0);
+    target.longContextCacheWrite1h = (target.longContextCacheWrite1h ?? 0) - (source.longContextCacheWrite1h ?? 0);
 }
 
 export function totalTokens(u: TokenUsage): number {

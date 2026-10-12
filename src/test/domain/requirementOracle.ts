@@ -32,6 +32,9 @@ export function requirementCost(usage: TokenUsage, rates: RequirementRates): num
         usage.output * rates.output +
         (usage.longContextInput ?? 0) * rates.input * inputPremium +
         (usage.longContextCachedInput ?? 0) * rates.cachedInput * inputPremium +
+        (usage.longContextCacheRead ?? 0) * rates.cacheRead * inputPremium +
+        (usage.longContextCacheWrite5m ?? 0) * rates.cacheWrite5m * inputPremium +
+        (usage.longContextCacheWrite1h ?? 0) * rates.cacheWrite1h * inputPremium +
         (usage.longContextOutput ?? 0) * rates.output * outputPremium;
     return billedUnits / TOKENS_PER_MILLION;
 }
@@ -47,6 +50,9 @@ export function requirementAdd(left: TokenUsage, right: TokenUsage): TokenUsage 
         longContextInput: (left.longContextInput ?? 0) + (right.longContextInput ?? 0),
         longContextCachedInput: (left.longContextCachedInput ?? 0) + (right.longContextCachedInput ?? 0),
         longContextOutput: (left.longContextOutput ?? 0) + (right.longContextOutput ?? 0),
+        longContextCacheRead: (left.longContextCacheRead ?? 0) + (right.longContextCacheRead ?? 0),
+        longContextCacheWrite5m: (left.longContextCacheWrite5m ?? 0) + (right.longContextCacheWrite5m ?? 0),
+        longContextCacheWrite1h: (left.longContextCacheWrite1h ?? 0) + (right.longContextCacheWrite1h ?? 0),
     };
 }
 
