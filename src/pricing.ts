@@ -143,9 +143,8 @@ const DEFAULT_PRICING_ORDER = new Map(DEFAULT_PRICING_KEYS.map((key, index) => [
  * force on that day. Keep revisions oldest-first per model.
  */
 const DEFAULT_PRICING_REVISIONS: Record<string, Array<{ from: string; pricing: Partial<ModelPricing> }>> = {
-    'claude-sonnet-5': [
-        { from: '2026-09-01', pricing: { input: 3, output: 15 } },
-    ],
+    // No claude-sonnet-5 entry: the $3/$15 increase announced for 2026-09-01
+    // was withdrawn on 2026-08-10, so $2/$10 stays its permanent price (#72).
     // 2026-07-30 price cut: Luna -80%, Terra -20%. Sol was left out of that one.
     'gpt-5.6-terra': [
         { from: '2026-07-30', pricing: { input: 2, cachedInput: 0.2, output: 12 } },
