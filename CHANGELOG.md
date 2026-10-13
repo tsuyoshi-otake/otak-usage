@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.17] - 2026-10-14
+
+### Fixed
+
+- Claude Sonnet 5 is costed at $2 input / $10 output per million tokens (cache writes $2.50 / $4, cache reads $0.20) on every day again. The $3 / $15 increase scheduled for 2026-09-01 was withdrawn by Anthropic on 2026-08-10, so usage from September onward had been overstated by 1.5x. (#72)
+
 ## [1.26.16] - 2026-10-12
 
 ### Added

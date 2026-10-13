@@ -59,20 +59,19 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('gpt-4.1-mini')?.input, 0.4);
     });
 
-    test('claude sonnet 5 resolves introductory and standard prices', () => {
-        const intro = resolvePricing('claude-sonnet-5', undefined, '2026-08-31');
-        assert.strictEqual(intro?.input, 2);
-        assert.strictEqual(intro?.output, 10);
-        assert.strictEqual(intro?.cacheWrite, 2.5);
-        assert.strictEqual(intro?.cacheWrite1h, 4);
-        assert.strictEqual(intro?.cacheRead, 0.2);
-
-        const standard = resolvePricing('claude-sonnet-5-20260630', undefined, '2026-09-01');
-        assert.strictEqual(standard?.input, 3);
-        assert.strictEqual(standard?.output, 15);
-        assert.strictEqual(standard?.cacheWrite, 3.75);
-        assert.strictEqual(standard?.cacheWrite1h, 6);
-        assert.ok(Math.abs((standard?.cacheRead ?? 0) - 0.3) < 1e-12);
+    test('claude sonnet 5 keeps $2/$10 after the withdrawn 2026-09-01 increase (#72)', () => {
+        for (const [model, day] of [
+            ['claude-sonnet-5', '2026-08-31'],
+            ['claude-sonnet-5-20260630', '2026-09-01'],
+            ['claude-sonnet-5', '2026-10-13'],
+        ]) {
+            const p = resolvePricing(model, undefined, day);
+            assert.strictEqual(p?.input, 2, `${model} ${day}`);
+            assert.strictEqual(p?.output, 10, `${model} ${day}`);
+            assert.strictEqual(p?.cacheWrite, 2.5, `${model} ${day}`);
+            assert.strictEqual(p?.cacheWrite1h, 4, `${model} ${day}`);
+            assert.strictEqual(p?.cacheRead, 0.2, `${model} ${day}`);
+        }
     });
 
     test('claude sonnet 5.5 resolves published cache rates without a long-context premium', () => {
@@ -84,7 +83,7 @@ suite('pricing', () => {
         assert.strictEqual(p?.cacheWrite1h, 4);
         assert.strictEqual(p?.longContextThreshold, undefined);
         assert.strictEqual(resolvePricing('claude-sonnet-5-5-20260928', undefined, '2026-09-30')?.input, 2);
-        assert.strictEqual(resolvePricing('claude-sonnet-5', undefined, '2026-09-30')?.input, 3);
+        assert.strictEqual(resolvePricing('claude-sonnet-5', undefined, '2026-09-30')?.input, 2);
 
         const usage = {
             ...emptyUsage(), input: 1_000_000, output: 1_000_000,
@@ -409,10 +408,11 @@ suite('aggregator', () => {
 
     test('pricing uses the aggregation day for scheduled model prices', () => {
         const days: DayBuckets = {};
-        addEvent(days, { ...ev(2, 'claude-sonnet-5', 1_000_000), timestamp: new Date(2026, 8, 2, 10).getTime() });
-        const s = summarize(days, '2026-09-02');
-        assert.strictEqual(s.claude.monthCost, 15);
-        assert.strictEqual(s.claude.hasUnknownModel, false);
+        // gpt-5.6-sol output: $30/M before the 2026-08-21 cut, $20/M from it.
+        addEvent(days, { ...ev(2, 'gpt-5.6-sol', 1_000_000, 'codex'), timestamp: new Date(2026, 7, 22, 10).getTime() });
+        const s = summarize(days, '2026-08-22');
+        assert.strictEqual(s.codex.monthCost, 20);
+        assert.strictEqual(s.codex.hasUnknownModel, false);
     });
 
     test('a mid-month price cut leaves the days before it at the old price', () => {
