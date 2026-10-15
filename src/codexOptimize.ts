@@ -23,28 +23,29 @@ import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { editToml } from './tomlEdit';
 
 /**
- * The 272k default and the Custom flow's suggestion start compaction at this
+ * The 320k default and the Custom flow's suggestion start compaction at this
  * share of the configured window. The compact 180k preset retains its round
  * 150k transition point and 30k of configured headroom.
  */
 export const CODEX_AUTO_COMPACT_RATIO = 0.85;
 
-/** Highest configured window within OpenAI's short-context pricing band. */
-export const STANDARD_RATE_CODEX_CONTEXT_WINDOW = 272000;
-
-// Stay within OpenAI's short-context pricing band while allowing a wider
-// working set. The 85% transition leaves 40.8k for context hand-off and output.
-// Claude remains independently tuned to its native summary compaction.
-export const DEFAULT_CODEX_CONTEXT_WINDOW = STANDARD_RATE_CODEX_CONTEXT_WINDOW;
-export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 231200;
+// Both providers use 320k with an 85% transition, leaving 48k of headroom.
+export const DEFAULT_CODEX_CONTEXT_WINDOW = 320000;
+export const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 272000;
 
 /**
  * The pair that shipped as the default immediately before the current one. An
  * unset setting used to mean exactly this, so the migration reads a missing key
  * as this value and pins it when the rest of the pair was chosen by hand.
  */
-export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 180000;
-export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 150000;
+export const PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW = 272000;
+export const PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 231200;
+
+/** The compact default inherited by migration generations 3 and 4. */
+export const COMPACT_CODEX_CONTEXT_DEFAULTS: CodexOptimizeValues = {
+    contextWindow: 180000,
+    autoCompactLimit: 150000,
+};
 
 /** Defaults inherited by installations that skipped the 180k release. */
 export const LEGACY_CODEX_CONTEXT_DEFAULTS: CodexOptimizeValues = {
@@ -56,7 +57,7 @@ export const LEGACY_CODEX_CONTEXT_DEFAULTS: CodexOptimizeValues = {
  * Every pair otak-usage has ever shipped as its Codex default, oldest first.
  * Holding one of these numbers proves nothing about intent — it is what an
  * installation was handed — so the migration clears such a pair and lets the
- * current default take over. The 272k / 231.2k pair is deliberately absent:
+ * current default take over. The 320k / 272k pair is deliberately absent:
  * before this release it could only come from a real choice.
  */
 export const SHIPPED_CODEX_CONTEXT_DEFAULTS: readonly CodexOptimizeValues[] = [
@@ -66,6 +67,7 @@ export const SHIPPED_CODEX_CONTEXT_DEFAULTS: readonly CodexOptimizeValues[] = [
     { contextWindow: 230000, autoCompactLimit: 195500 },
     { contextWindow: 240000, autoCompactLimit: 216000 },
     LEGACY_CODEX_CONTEXT_DEFAULTS,
+    COMPACT_CODEX_CONTEXT_DEFAULTS,
     { contextWindow: PREVIOUS_DEFAULT_CODEX_CONTEXT_WINDOW, autoCompactLimit: PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT },
 ];
 
@@ -82,7 +84,7 @@ export function suggestedCodexAutoCompactLimit(contextWindow: number): number {
 }
 
 export interface CodexOptimizePreset {
-    id: '180k' | '272k';
+    id: '180k' | '320k';
     contextWindow: number;
     autoCompactLimit: number;
 }
@@ -93,11 +95,11 @@ export interface CodexOptimizePreset {
  */
 export const CODEX_OPTIMIZE_PRESETS: readonly CodexOptimizePreset[] = [
     {
-        id: '272k',
+        id: '320k',
         contextWindow: DEFAULT_CODEX_CONTEXT_WINDOW,
         autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
     },
-    { id: '180k', contextWindow: 180000, autoCompactLimit: 150000 },
+    { id: '180k', ...COMPACT_CODEX_CONTEXT_DEFAULTS },
 ];
 
 export function matchingCodexOptimizePreset(contextWindow: number, autoCompactLimit: number): CodexOptimizePreset | undefined {
@@ -174,7 +176,9 @@ export function hasAppliedPreviousCodexContextDefaults(text: string): boolean {
         && autoCompactLimit === PREVIOUS_DEFAULT_CODEX_AUTO_COMPACT_LIMIT;
     const matchesLegacy = contextWindow === LEGACY_CODEX_CONTEXT_DEFAULTS.contextWindow
         && autoCompactLimit === LEGACY_CODEX_CONTEXT_DEFAULTS.autoCompactLimit;
-    return (matchesPrevious || matchesLegacy)
+    const matchesCompact = contextWindow === COMPACT_CODEX_CONTEXT_DEFAULTS.contextWindow
+        && autoCompactLimit === COMPACT_CODEX_CONTEXT_DEFAULTS.autoCompactLimit;
+    return (matchesPrevious || matchesLegacy || matchesCompact)
         && objectProperty(contextManagement, CODEX_EXPERIMENTAL_MODE_KEY) === true;
 }
 

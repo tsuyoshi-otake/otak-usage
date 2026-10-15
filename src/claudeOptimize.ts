@@ -14,13 +14,10 @@ export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 /**
  * Current Claude models offer a larger native window, but pinning this working
  * window makes compaction land on a fixed token count instead of a share of
- * whatever model happens to be active. At 85%, 250k triggers at 212.5k and
- * leaves 37.5k to write the summary. That trigger sits above the 200k input
- * tokens at which Anthropic switches to the long-context rate — the larger
- * working window is taken in exchange. Codex is tuned independently because
- * its experimental context management can recover work across fresh windows.
+ * whatever model happens to be active. Both providers use 320k with an 85%
+ * trigger at 272k, leaving 48k to write the summary or transition context.
  */
-export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 250000;
+export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 320000;
 
 /**
  * Claude Code compacts at this share of the managed window, leaving the rest to
@@ -34,12 +31,12 @@ export interface ClaudeOptimizeValues {
 }
 
 export interface ClaudeOptimizePreset extends ClaudeOptimizeValues {
-    id: '250k';
+    id: '320k';
 }
 
 export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
     {
-        id: '250k',
+        id: '320k',
         contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
     },
@@ -50,8 +47,14 @@ export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
  * unset setting used to mean exactly this, so the migration reads a missing key
  * as this value and pins it when the rest of the pair was chosen by hand.
  */
-export const PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW = 240000;
-export const PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
+export const PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW = 250000;
+export const PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
+
+/** Defaults inherited by installations that skipped the 250k release. */
+export const LEGACY_CLAUDE_CONTEXT_DEFAULTS: ClaudeOptimizeValues = {
+    contextWindow: 240000,
+    autoCompactPercent: 90,
+};
 
 /**
  * Every pair otak-usage has ever shipped as its Claude default, oldest first.
@@ -59,11 +62,12 @@ export const PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 90;
  * installation was handed — so the migration clears such a pair and lets the
  * current default take over. The release that managed the percentage alone left
  * the window unset, which reads as the previous default and so is covered by
- * the last entry.
+ * the legacy 240k entry.
  */
 export const SHIPPED_CLAUDE_CONTEXT_DEFAULTS: readonly ClaudeOptimizeValues[] = [
     { contextWindow: 200000, autoCompactPercent: 92 },
     { contextWindow: 230000, autoCompactPercent: 85 },
+    LEGACY_CLAUDE_CONTEXT_DEFAULTS,
     {
         contextWindow: PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
@@ -99,12 +103,16 @@ export interface ClaudeContextDefaultMigration {
 export function planClaudeContextDefaultMigration(
     contextWindow: unknown,
     autoCompactPercent: unknown,
+    inheritedDefaults: ClaudeOptimizeValues = {
+        contextWindow: PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW,
+        autoCompactPercent: PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
+    },
 ): ClaudeContextDefaultMigration {
     const effective: ClaudeOptimizeValues = {
-        contextWindow: normalizeClaudeTokenLimit(contextWindow, PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW),
+        contextWindow: normalizeClaudeTokenLimit(contextWindow, inheritedDefaults.contextWindow),
         autoCompactPercent: normalizeClaudeAutoCompactPercent(
             autoCompactPercent,
-            PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
+            inheritedDefaults.autoCompactPercent,
         ),
     };
     if (isShippedClaudeContextDefault(effective)) {
@@ -119,10 +127,10 @@ export function planClaudeContextDefaultMigration(
     }
     const write: Partial<Record<ClaudeContextSettingKey, number>> = {};
     if (contextWindow === undefined) {
-        write.claudeContextWindow = PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW;
+        write.claudeContextWindow = inheritedDefaults.contextWindow;
     }
     if (autoCompactPercent === undefined) {
-        write.claudeAutoCompactPercent = PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT;
+        write.claudeAutoCompactPercent = inheritedDefaults.autoCompactPercent;
     }
     return { clear: [], write };
 }

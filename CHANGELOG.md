@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.18] - 2026-10-15
+
+### Changed
+
+- Both providers now default to a 320k context window with an 85% compaction target (272k tokens). Existing installations migrate once through otak-usage, including the previous Codex 272k / 231.2k and Claude 250k / 85% defaults. Custom pairs and their inherited unset values are preserved; providers opted out of optimization stay off. Optimize resolves bundled defaults immediately after an in-place update. (#74)
+
 ## [1.26.17] - 2026-10-14
 
 ### Fixed

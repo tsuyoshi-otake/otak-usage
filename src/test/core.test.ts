@@ -669,14 +669,14 @@ suite('codex optimize', () => {
         assert.strictEqual(normalizeCodexTokenLimit(300500.9, 272000), 300500);
     });
 
-    test('offers 272k by default and retains the compact 180k preset', () => {
+    test('offers 320k by default and retains the compact 180k preset', () => {
         assert.deepStrictEqual(CODEX_OPTIMIZE_PRESETS, [
-            { id: '272k', contextWindow: 272000, autoCompactLimit: 231200 },
+            { id: '320k', contextWindow: 320000, autoCompactLimit: 272000 },
             { id: '180k', contextWindow: 180000, autoCompactLimit: 150000 },
         ]);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 272000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 231200);
-        assert.strictEqual(matchingCodexOptimizePreset(272000, 231200)?.id, '272k');
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 320000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 272000);
+        assert.strictEqual(matchingCodexOptimizePreset(320000, 272000)?.id, '320k');
         assert.strictEqual(matchingCodexOptimizePreset(180000, 150000)?.id, '180k');
         assert.strictEqual(matchingCodexOptimizePreset(180000, 153000), undefined);
     });
@@ -688,7 +688,7 @@ suite('codex optimize', () => {
         assert.strictEqual(properties['otakUsage.codexAutoCompactLimit'].default, DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
     });
 
-    test('keeps the 272k default at 85% and suggests 85% for custom windows', () => {
+    test('keeps the 320k default at 85% and suggests 85% for custom windows', () => {
         assert.strictEqual(CODEX_AUTO_COMPACT_RATIO, 0.85);
         assert.strictEqual(suggestedCodexAutoCompactLimit(DEFAULT_CODEX_CONTEXT_WINDOW), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
         assert.strictEqual(CODEX_OPTIMIZE_PRESETS[1].autoCompactLimit, 150000);
@@ -707,6 +707,7 @@ suite('codex optimize', () => {
                 { contextWindow: 240000, autoCompactLimit: 216000 },
                 { contextWindow: 250000, autoCompactLimit: 212500 },
                 { contextWindow: 180000, autoCompactLimit: 150000 },
+                { contextWindow: 272000, autoCompactLimit: 231200 },
             ]);
         });
 
@@ -720,8 +721,8 @@ suite('codex optimize', () => {
             }
         });
 
-        test('leaves the 272k pair alone when already explicitly selected', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, 231200), {
+        test('leaves the 320k pair alone when already explicitly selected', () => {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(320000, 272000), {
                 clear: [], write: {},
             });
         });
@@ -734,8 +735,8 @@ suite('codex optimize', () => {
         });
 
         test('uses the new code default when VS Code still caches the previous manifest default', () => {
-            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 180000 }, DEFAULT_CODEX_CONTEXT_WINDOW), 272000);
-            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 150000 }, DEFAULT_CODEX_AUTO_COMPACT_LIMIT), 231200);
+            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 272000 }, DEFAULT_CODEX_CONTEXT_WINDOW), 320000);
+            assert.strictEqual(configuredCodexTokenLimit({ defaultValue: 231200 }, DEFAULT_CODEX_AUTO_COMPACT_LIMIT), 272000);
         });
 
         test('keeps explicit values at the most specific VS Code configuration scope', () => {
@@ -746,11 +747,11 @@ suite('codex optimize', () => {
         });
 
         test('clears a half-written pair whose other half was the previous default', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(180000, undefined), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(272000, undefined), {
                 clear: ['codexContextWindow'],
                 write: {},
             });
-            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 150000), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 231200), {
                 clear: ['codexAutoCompactLimit'],
                 write: {},
             });
@@ -759,11 +760,11 @@ suite('codex optimize', () => {
         test('leaves chosen values alone and pins the unset half to the previous default', () => {
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, undefined), {
                 clear: [],
-                write: { codexAutoCompactLimit: 150000 },
+                write: { codexAutoCompactLimit: 231200 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(undefined, 120000), {
                 clear: [],
-                write: { codexContextWindow: 180000 },
+                write: { codexContextWindow: 272000 },
             });
             assert.deepStrictEqual(planCodexContextDefaultMigration(400000, 380000), {
                 clear: [],
@@ -782,7 +783,7 @@ suite('codex optimize', () => {
         });
 
         test('treats an unusable stored value as the previous default and clears it', () => {
-            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 150000), {
+            assert.deepStrictEqual(planCodexContextDefaultMigration(0, 231200), {
                 clear: ['codexContextWindow', 'codexAutoCompactLimit'],
                 write: {},
             });
@@ -797,6 +798,7 @@ suite('codex optimize', () => {
 
         test('upgrades an existing managed Codex config to the new default pair', () => {
             for (const previous of [
+                { contextWindow: 272000, autoCompactLimit: 231200 },
                 { contextWindow: 180000, autoCompactLimit: 150000 },
                 { contextWindow: 250000, autoCompactLimit: 212500 },
             ]) {
@@ -819,8 +821,8 @@ suite('codex optimize', () => {
                     autoCompactLimit: DEFAULT_CODEX_AUTO_COMPACT_LIMIT,
                 });
                 assert.match(migrated, /^model = "gpt-6-sol"$/m);
-                assert.match(migrated, /^model_context_window = 272000$/m);
-                assert.match(migrated, /^model_auto_compact_token_limit = 231200$/m);
+                assert.match(migrated, /^model_context_window = 320000$/m);
+                assert.match(migrated, /^model_auto_compact_token_limit = 272000$/m);
                 assert.match(migrated, /^experimental_mode = true$/m);
                 assert.strictEqual(hasAppliedPreviousCodexContextDefaults(migrated), false);
             }
@@ -828,6 +830,7 @@ suite('codex optimize', () => {
 
         test('recognizes the applied previous defaults across valid TOML structures', () => {
             for (const source of [
+                'model_context_window = 272000\nmodel_auto_compact_token_limit = 231200\n[features.context_management]\nexperimental_mode = true\n',
                 'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = true\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = true\n',
                 '"model_context_window" = 250_000\nmodel_auto_compact_token_limit = 212_500\nfeatures.context_management.experimental_mode = true\n',
@@ -839,7 +842,7 @@ suite('codex optimize', () => {
 
         test('requires the exact previous pair and an enabled experimental flag', () => {
             for (const source of [
-                'model_context_window = 272000\nmodel_auto_compact_token_limit = 231200\n[features.context_management]\nexperimental_mode = true\n',
+                'model_context_window = 320000\nmodel_auto_compact_token_limit = 272000\n[features.context_management]\nexperimental_mode = true\n',
                 'model_context_window = 180000\nmodel_auto_compact_token_limit = 150000\n[features.context_management]\nexperimental_mode = false\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n[features.context_management]\nexperimental_mode = false\n',
                 'model_context_window = 250000\nmodel_auto_compact_token_limit = 212500\n',
@@ -1138,17 +1141,17 @@ suite('optional hooks', () => {
 });
 
 suite('claude optimize', () => {
-    const values = { contextWindow: 250000, autoCompactPercent: 85 };
+    const values = { contextWindow: 320000, autoCompactPercent: 85 };
 
-    test('offers a 250k preset that compacts at 212.5k, leaving 37.5k for the summary', () => {
+    test('offers a 320k preset that compacts at 272k, leaving 48k for the summary', () => {
         assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
-            { id: '250k', contextWindow: 250000, autoCompactPercent: 85 },
+            { id: '320k', contextWindow: 320000, autoCompactPercent: 85 },
         ]);
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 250000);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 320000);
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
-        assert.strictEqual(claudeAutoCompactTokenLimit(values), 212500);
-        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 37500);
-        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '250k');
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 272000);
+        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 48000);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '320k');
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 90 }), undefined);
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, contextWindow: 200000 }), undefined);
     });
@@ -1159,6 +1162,7 @@ suite('claude optimize', () => {
                 { contextWindow: 200000, autoCompactPercent: 92 },
                 { contextWindow: 230000, autoCompactPercent: 85 },
                 { contextWindow: 240000, autoCompactPercent: 90 },
+                { contextWindow: 250000, autoCompactPercent: 85 },
             ]);
         });
 
@@ -1190,7 +1194,7 @@ suite('claude optimize', () => {
         });
 
         test('clears the percentage-only release, whose window was never written', () => {
-            assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 90), {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 90, { contextWindow: 240000, autoCompactPercent: 90 }), {
                 clear: ['claudeAutoCompactPercent'],
                 write: {},
             });
@@ -1199,11 +1203,11 @@ suite('claude optimize', () => {
         test('leaves chosen values alone and pins the unset half to the previous default', () => {
             assert.deepStrictEqual(planClaudeContextDefaultMigration(1000000, undefined), {
                 clear: [],
-                write: { claudeAutoCompactPercent: 90 },
+                write: { claudeAutoCompactPercent: 85 },
             });
             assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 70), {
                 clear: [],
-                write: { claudeContextWindow: 240000 },
+                write: { claudeContextWindow: 250000 },
             });
             assert.deepStrictEqual(planClaudeContextDefaultMigration(1000000, 70), {
                 clear: [],
@@ -1212,19 +1216,23 @@ suite('claude optimize', () => {
         });
 
         test('treats an out-of-range percentage as the previous default and clears it', () => {
-            assert.deepStrictEqual(planClaudeContextDefaultMigration(240000, 0), {
+            assert.deepStrictEqual(planClaudeContextDefaultMigration(250000, 0), {
                 clear: ['claudeContextWindow', 'claudeAutoCompactPercent'],
                 write: {},
             });
         });
     });
 
-    test('keeps Claude summary compaction independent from the Codex default', () => {
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 250000);
+    test('aligns both provider defaults and the manifest at 320k / 272k', () => {
+        const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf8'));
+        const properties = manifest.contributes.configuration.properties;
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 320000);
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
-        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 272000);
-        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 231200);
-        assert.notStrictEqual(claudeAutoCompactTokenLimit(values), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+        assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 320000);
+        assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 272000);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+        assert.strictEqual(properties['otakUsage.claudeContextWindow'].default, DEFAULT_CLAUDE_CONTEXT_WINDOW);
+        assert.strictEqual(properties['otakUsage.claudeAutoCompactPercent'].default, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT);
     });
 
     test('normalizes percentages and token limits', () => {
@@ -1255,7 +1263,7 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
         assert.strictEqual(parsed.autoCompactEnabled, true);
         assert.strictEqual(parsed.env.EXISTING, 'keep-me');
-        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '250000');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '320000');
         assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
         assert.ok(applied.includes('\n    "permissions"'));
 
@@ -1321,7 +1329,7 @@ suite('claude optimize', () => {
             autoCompactPercent: { present: true, value: '80' },
         });
         const applied = JSON.parse(applyClaudeOptimizeJson(current, values));
-        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '250000');
+        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '320000');
         const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), adopted));
         assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
         assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '80');

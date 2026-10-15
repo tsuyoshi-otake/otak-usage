@@ -7,8 +7,8 @@ import { randomUUID } from 'crypto';
 import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
-import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, LEGACY_CLAUDE_CONTEXT_DEFAULTS, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
+import { CODEX_OPTIMIZE_PRESETS, COMPACT_CODEX_CONTEXT_DEFAULTS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -54,10 +54,10 @@ const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigr
  * 272k/231.2k. Generation 6 retries that move for installations whose
  * generation-5 marker was set before an in-place update still showed the old
  * pair, or whose old pair was restored before the corrective update. Claude
- * remains on generation 2.
+ * then advances to generation 3 alongside Codex generation 7 for 320k/272k.
  */
-const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 6;
-const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 2;
+const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 7;
+const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 3;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
 const REMOTE_HOST_HINT_KEY = 'otakUsage.remoteHostHintShown';
@@ -494,9 +494,11 @@ class UsageController implements vscode.Disposable {
     }
 
     private currentClaudeOptimizeValues(config = this.config()): ClaudeOptimizeValues {
+        const window = config.inspect<unknown>('claudeContextWindow');
+        const percent = config.inspect<unknown>('claudeAutoCompactPercent');
         return {
-            contextWindow: normalizeClaudeTokenLimit(config.get<unknown>('claudeContextWindow'), DEFAULT_CLAUDE_CONTEXT_WINDOW),
-            autoCompactPercent: normalizeClaudeAutoCompactPercent(config.get<unknown>('claudeAutoCompactPercent'), DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT),
+            contextWindow: normalizeClaudeTokenLimit(window?.workspaceFolderValue ?? window?.workspaceValue ?? window?.globalValue, DEFAULT_CLAUDE_CONTEXT_WINDOW),
+            autoCompactPercent: normalizeClaudeAutoCompactPercent(percent?.workspaceFolderValue ?? percent?.workspaceValue ?? percent?.globalValue, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT),
         };
     }
 
@@ -694,7 +696,8 @@ class UsageController implements vscode.Disposable {
             config.inspect<number>('codexContextWindow')?.globalValue,
             config.inspect<number>('codexAutoCompactLimit')?.globalValue,
             appliedPreviousDefaults,
-            priorGeneration < 3 ? LEGACY_CODEX_CONTEXT_DEFAULTS : undefined,
+            priorGeneration < 3 ? LEGACY_CODEX_CONTEXT_DEFAULTS
+                : priorGeneration < 5 ? COMPACT_CODEX_CONTEXT_DEFAULTS : undefined,
         );
         try {
             for (const key of plan.clear) {
@@ -711,13 +714,15 @@ class UsageController implements vscode.Disposable {
     }
 
     private async migrateClaudeContextDefaults(): Promise<void> {
-        if (this.context.globalState.get<number>(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, 0) >= CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
+        const priorGeneration = this.context.globalState.get<number>(CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY, 0);
+        if (priorGeneration >= CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION) {
             return;
         }
         const config = this.config();
         const plan = planClaudeContextDefaultMigration(
             config.inspect<number>('claudeContextWindow')?.globalValue,
             config.inspect<number>('claudeAutoCompactPercent')?.globalValue,
+            priorGeneration < 2 ? LEGACY_CLAUDE_CONTEXT_DEFAULTS : undefined,
         );
         try {
             for (const key of plan.clear) {
