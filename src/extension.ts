@@ -8,7 +8,7 @@ import { ProviderSummary, summarize } from './aggregator';
 import { AlertMode, DailyAlertState, LimitAlertState, LimitAlertWindow, alertModeIncludesCost, alertModeIncludesLimit, evaluateDailyAlert, evaluateLimitAlert, isSnoozed, isValidDailyAlertState, isValidLimitAlertState, normalizeAlertMode, normalizeDailyAlertThresholdUsd, normalizeLimitAlertThresholdPercent, sameDailyAlertState, sameLimitAlertState, snoozeUntilEndOfDay } from './alert';
 import { ScanCacheData, emptyCache, isValidCache } from './cache';
 import { CLAUDE_OPTIMIZE_PRESETS, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, DEFAULT_CLAUDE_CONTEXT_WINDOW, LEGACY_CLAUDE_CONTEXT_DEFAULTS, ClaudeContextSettingKey, ClaudeOptimizeBackup, ClaudeOptimizeBackupV2, ClaudeOptimizeValues, LegacyClaudeOptimizeBackup, adoptClaudeOptimizeBackupV2, applyClaudeOptimizeJson, captureClaudeOptimizeBackup, claudeAutoCompactTokenLimit, matchingClaudeOptimizePreset, normalizeClaudeAutoCompactPercent, normalizeClaudeTokenLimit, parseClaudeAutoCompactPercent, parseClaudeTokenLimit, planClaudeContextDefaultMigration, restoreClaudeOptimizeJson, restoreClaudeOptimizeV2Json, restoreLegacyClaudeOptimizeJson, upgradeLegacyClaudeOptimizeBackup } from './claudeOptimize';
-import { CODEX_OPTIMIZE_PRESETS, COMPACT_CODEX_CONTEXT_DEFAULTS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
+import { CODEX_OPTIMIZE_PRESETS, COMPACT_CODEX_CONTEXT_DEFAULTS, DEFAULT_CODEX_AUTO_COMPACT_LIMIT, DEFAULT_CODEX_CONTEXT_WINDOW, LEGACY_CODEX_CONTEXT_DEFAULTS, CodexContextSettingKey, CodexOptimizeValues, applyCodexOptimizeToml, configuredCodexTokenLimit, hasAppliedPreviousCodexContextDefaults, matchingCodexOptimizePreset, migrateCodexDefaultModelToml, parseCodexTokenLimit, planCodexContextDefaultMigration, removeCodexOptimizeToml, removeLegacyCodexContextManagementToml, suggestedCodexAutoCompactLimit } from './codexOptimize';
 import { CODEX_EXTENSION_ID, syncCodexMaxReasoningEffort } from './codexModelFeatures';
 import { HOOK_RUNNER_FILE, HookFeatureSettings, applyHookFeaturesJson } from './hookFeatures';
 import { HookToggleQueue, HookToggleRequest, hookToggleProgressMessage, hookToggleSuccessMessage, hookToggleSyncFailureMessage, hookToggleUnsavedMessage } from './hookToggle';
@@ -767,7 +767,7 @@ class UsageController implements vscode.Disposable {
             },
             {
                 label: `${!optimizeEnabled ? '$(check) ' : ''}$(circle-slash) Turn Off`,
-                description: 'Remove the context window keys and experimental context-management flag from Codex config.toml.',
+                description: 'Remove the managed context window keys from Codex config.toml.',
                 disable: true,
             },
         );
@@ -1044,11 +1044,9 @@ class UsageController implements vscode.Disposable {
 
     /**
      * Reconcile `~/.codex/config.toml` with the optimize toggle. When enabled,
-     * pin the two window keys to the configured values and turn on Astra's
-     * experimental context-management flag; when it is turned off (a
-     * previously-applied → off transition), remove them again. Leaves the
-     * file untouched while the toggle is and stays off, so a user's own manual
-     * values are never removed unless they opted in first.
+     * pin the two window keys; when turned off, remove previously managed keys.
+     * Always repair the obsolete experimental flag, including opted-out installs.
+     * Manual numeric values remain untouched while optimization stays off.
      */
     private syncCodexOptimize(showStatus = true, requireFence = true): Promise<boolean> {
         return this.enqueueCodexConfigSync(async () => {
@@ -1289,53 +1287,36 @@ class UsageController implements vscode.Disposable {
         const config = this.config();
         const desired = config.get<boolean>('optimizeCodexContext', true);
         const applied = this.context.globalState.get<boolean>(CODEX_OPTIMIZE_APPLIED_KEY, false);
-        if (!desired && !applied) {
-            return true;
-        }
         const configPath = path.join(this.codexHomeDir(), 'config.toml');
         try {
-            if (desired) {
-                const values = this.currentCodexOptimizeValues(config);
-                if (!(await this.allowManagedFileCommit(requireFence))) {
-                    return false;
+            const current = await readOptionalTextFile(configPath);
+            if (current === undefined && !desired) {
+                if (applied) {
+                    await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, false);
                 }
-                const changed = await this.rewriteCodexConfig(configPath, (text) => applyCodexOptimizeToml(text, values), true);
-                await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, true);
-                if (changed && showStatus) {
-                    vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeApplied'), 4000);
-                }
-            } else {
-                if (!(await this.allowManagedFileCommit(requireFence))) {
-                    return false;
-                }
-                const changed = await this.rewriteCodexConfig(configPath, (text) => removeCodexOptimizeToml(text), false);
-                await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, false);
-                if (changed && showStatus) {
-                    vscode.window.setStatusBarMessage(this.i18n.t('message.codexOptimizeRemoved'), 4000);
-                }
+                return true;
+            }
+            // Repair on every sync without a one-time marker: failed writes retry,
+            // and a config restored from backup is repaired on the next startup.
+            const next = desired ? applyCodexOptimizeToml(current ?? '', this.currentCodexOptimizeValues(config))
+                : applied ? removeCodexOptimizeToml(current ?? '')
+                    : removeLegacyCodexContextManagementToml(current ?? '');
+            if (!(await this.allowManagedFileCommit(requireFence))) {
+                return false;
+            }
+            const changed = next !== current
+                && await writeTransformedTextFile(configPath, this.instanceId, current, next);
+            if (desired || applied) {
+                await this.context.globalState.update(CODEX_OPTIMIZE_APPLIED_KEY, desired);
+            }
+            if (changed && showStatus && (desired || applied)) {
+                vscode.window.setStatusBarMessage(this.i18n.t(desired ? 'message.codexOptimizeApplied' : 'message.codexOptimizeRemoved'), 4000);
             }
             return true;
         } catch (err) {
             console.error('otak-usage: codex optimize sync failed', err);
             return false;
         }
-    }
-
-    /**
-     * Read the config, transform it, and write it back only when the content
-     * actually changes. When `createIfMissing` is false a missing file is a
-     * no-op (nothing to remove).
-     */
-    private async rewriteCodexConfig(configPath: string, transform: (text: string) => string, createIfMissing: boolean): Promise<boolean> {
-        const current = await readOptionalTextFile(configPath);
-        if (current === undefined && !createIfMissing) {
-            return false;
-        }
-        const next = transform(current ?? '');
-        if (next === current) {
-            return false;
-        }
-        return writeTransformedTextFile(configPath, this.instanceId, current, next);
     }
 
     /** Serialize role changes: the scan tick and the heartbeat both drive them. */

@@ -1,20 +1,19 @@
 /**
  * Optimization toggle for the Codex CLI's context settings. When enabled, the
  * extension keeps two top-level keys in `~/.codex/config.toml` pinned to the
- * configured values and turns on Astra's experimental context-management
- * feature; when disabled it removes those keys and that flag again.
+ * configured values; when disabled it removes those keys again.
+ * Legacy experimental context-management settings are removed in either mode.
  *
  * Editing is done in place on the raw TOML text so the rest of the file — and
  * its ordering, comments, and unrelated keys — is preserved. TOML forbids
  * duplicate keys, so an existing occurrence is rewritten rather than appended.
  * The window keys live in the file preamble (everything before the first
- * `[table]` header). The context-management flag is a table setting, so that
- * pass may also edit `[features]` / `[features.context_management]`.
+ * `[table]` header). Legacy cleanup may also edit `[features]` or
+ * `[features.context_management]` without adding experimental settings.
  */
 
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
-export const CODEX_CONTEXT_MANAGEMENT_TABLE = 'features.context_management';
 export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
 const DEFAULT_CODEX_MODEL = 'gpt-6-luna';
 const PREVIOUS_DEFAULT_CODEX_MODEL = 'gpt-6-sol';
@@ -261,14 +260,26 @@ export function planCodexContextDefaultMigration(
 }
 
 /** Preserve TOML syntax and unrelated text through syntax-node edits. */
+export function removeLegacyCodexContextManagementToml(text: string): string {
+    const next = editToml(text, ['features', 'context_management', CODEX_EXPERIMENTAL_MODE_KEY]);
+    const root = getStaticTOMLValue(parseTOML(next)) as unknown;
+    const context = objectProperty(objectProperty(root, 'features'), 'context_management');
+    // An empty map still fails on CLIs whose feature values must be booleans.
+    // Keep user-owned siblings and valid boolean values rather than guessing.
+    if (context && typeof context === 'object' && !Array.isArray(context) && Object.keys(context).length === 0) {
+        return editToml(next, ['features', 'context_management']);
+    }
+    return next;
+}
+
 export function applyCodexOptimizeToml(text: string, values: CodexOptimizeValues): string {
     let next = editToml(text, [CODEX_AUTO_COMPACT_KEY], String(values.autoCompactLimit));
     next = editToml(next, [CODEX_CONTEXT_WINDOW_KEY], String(values.contextWindow));
-    return editToml(next, ['features', 'context_management', CODEX_EXPERIMENTAL_MODE_KEY], 'true');
+    return removeLegacyCodexContextManagementToml(next);
 }
 
 export function removeCodexOptimizeToml(text: string): string {
     let next = editToml(text, [CODEX_CONTEXT_WINDOW_KEY]);
     next = editToml(next, [CODEX_AUTO_COMPACT_KEY]);
-    return editToml(next, ['features', 'context_management', CODEX_EXPERIMENTAL_MODE_KEY]);
+    return removeLegacyCodexContextManagementToml(next);
 }

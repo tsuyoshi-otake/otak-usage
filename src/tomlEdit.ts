@@ -9,6 +9,7 @@ export function editToml(text: string, key: string[], value?: string): string {
     let found: AST.TOMLKeyValue | undefined;
     let inline: { node: AST.TOMLInlineTable; path: string[] } | undefined;
     let table: AST.TOMLTable | undefined;
+    let emptyTable: AST.TOMLTable | undefined;
     let features: AST.TOMLTable | undefined;
     const visit = (nodes: AST.TOMLKeyValue[], parent: string[]) => {
         for (const node of nodes) {
@@ -23,6 +24,7 @@ export function editToml(text: string, key: string[], value?: string): string {
     for (const node of ast.body[0].body) {
         if (node.type === 'TOMLKeyValue') { visit([node], []); }
         else {
+            if (equal(node.resolvedKey, key) && node.body.length === 0 && node.kind === 'standard') { emptyTable = node; }
             if (equal(node.resolvedKey, key.slice(0, -1))) { table = node; }
             if (equal(node.resolvedKey, ['features'])) { features = node; }
             visit(node.body, node.resolvedKey as string[]);
@@ -41,10 +43,11 @@ export function editToml(text: string, key: string[], value?: string): string {
             const end = i === 0 && siblings.length > 1 ? siblings[1].range[0] : found.range[1];
             next = splice(start, end, '');
         } else {
-            const start = found.parent.type === 'TOMLTable' && found.parent.body.length === 1 && equal(found.parent.resolvedKey, ['features', 'context_management'])
-                ? lineStart(found.parent.range[0]) : lineStart(found.range[0]);
+            const start = lineStart(found.range[0]);
             next = splice(start, lineEnd(found.range[1]), '');
         }
+    } else if (value === undefined && emptyTable) {
+        next = splice(lineStart(emptyTable.range[0]), lineEnd(emptyTable.key.range[1]), '');
     } else if (value !== undefined) {
         if (inline) {
             const at = inline.node.range[1] - 1;

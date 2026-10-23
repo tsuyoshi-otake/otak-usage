@@ -823,7 +823,7 @@ suite('codex optimize', () => {
                 assert.match(migrated, /^model = "gpt-6-sol"$/m);
                 assert.match(migrated, /^model_context_window = 320000$/m);
                 assert.match(migrated, /^model_auto_compact_token_limit = 272000$/m);
-                assert.match(migrated, /^experimental_mode = true$/m);
+                assert.doesNotMatch(migrated, /experimental_mode|context_management/);
                 assert.strictEqual(hasAppliedPreviousCodexContextDefaults(migrated), false);
             }
         });
@@ -915,7 +915,7 @@ suite('codex optimize', () => {
         assert.ok(out.includes('model_auto_compact_token_limit = 230000'));
     });
 
-    test('pins Astra experimental context management after [features]', () => {
+    test('keeps feature and marketplace sections without adding experimental settings', () => {
         const input = [
             'model = "gpt-5.6-sol"',
             '',
@@ -927,29 +927,27 @@ suite('codex optimize', () => {
         ].join('\n');
         const out = applyCodexOptimizeToml(input, values);
         const featuresAt = out.indexOf('[features]\nfast_mode = true');
-        const contextAt = out.indexOf('[features.context_management]\nexperimental_mode = true');
         const marketAt = out.indexOf('[marketplaces.openai-bundled]');
-        assert.ok(featuresAt >= 0 && contextAt > featuresAt && marketAt > contextAt);
-        assert.strictEqual(out.match(/^\[features\.context_management\]/gm)?.length, 1);
-        assert.strictEqual(out.match(/^\s*experimental_mode\s*=/gm)?.length, 1);
+        assert.ok(featuresAt >= 0 && marketAt > featuresAt);
+        assert.doesNotMatch(out, /experimental_mode|context_management/);
     });
 
-    test('rewrites an existing experimental_mode flag in place without duplicating the table', () => {
+    test('removes the obsolete flag while preserving unrelated table keys', () => {
         const input = [
             '[features.context_management]',
             'experimental_mode = false',
             'other = 1',
         ].join('\n');
         const out = applyCodexOptimizeToml(input, values);
-        assert.ok(out.includes('[features.context_management]\nexperimental_mode = true\nother = 1'));
+        assert.ok(out.includes('[features.context_management]\nother = 1'));
         assert.ok(!out.includes('experimental_mode = false'));
         assert.strictEqual(out.match(/^\[features\.context_management\]/gm)?.length, 1);
     });
 
-    test('rewrites the dotted features.context_management.experimental_mode form', () => {
+    test('removes the dotted legacy feature form', () => {
         const input = 'features.context_management.experimental_mode = false\nmodel = "x"\n';
         const out = applyCodexOptimizeToml(input, values);
-        assert.ok(out.includes('features.context_management.experimental_mode = true'));
+        assert.ok(!out.includes('features.context_management.experimental_mode'));
         assert.ok(!out.includes('experimental_mode = false'));
         assert.ok(!out.includes('[features.context_management]'));
     });

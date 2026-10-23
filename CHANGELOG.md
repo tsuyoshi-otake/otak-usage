@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.19] - 2026-10-23
+
+### Fixed
+
+- Stop enabling experimental Codex context management, which caused some CLI versions to reject config.toml with "invalid type: map, expected a boolean". Automatically remove the legacy experimental flag and empty context-management containers on startup and Optimize changes, even when optimization is off. Keep unrelated settings and the numeric context-window/compaction controls. (#75)
+
 ## [1.26.18] - 2026-10-15
 
 ### Changed
