@@ -164,6 +164,21 @@ suite('parseCodexLine', () => {
         assert.strictEqual(event, undefined);
     });
 
+    test('gpt-6.1-terra preserves the model and bills the full request above 272K', () => {
+        for (const model of ['gpt-6.1-terra', 'gpt-6.1-terra-20261027']) {
+            const state: CodexParseState = {};
+            parseCodexLine(JSON.stringify({ type: 'turn_context', payload: { model } }), state);
+            const boundary = parseCodexLine(codexTokenCount('2026-10-27T03:00:00.000Z', 272_000, 270_000, 100), state);
+            assert.strictEqual(boundary?.model, model);
+            assert.strictEqual(boundary?.usage.longContextInput, undefined);
+            const long = parseCodexLine(codexTokenCount('2026-10-27T03:00:01.000Z', 272_001, 270_000, 100), state);
+            assert.strictEqual(long?.model, model);
+            assert.strictEqual(long?.usage.longContextInput, 2_001);
+            assert.strictEqual(long?.usage.longContextCachedInput, 270_000);
+            assert.strictEqual(long?.usage.longContextOutput, 100);
+        }
+    });
+
     test('gpt-6.1-sol preserves the model id and marks only requests above 272K', () => {
         const state: CodexParseState = {};
         parseCodexLine(JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6.1-sol' } }), state);

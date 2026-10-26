@@ -18,9 +18,10 @@ import { DayBuckets, TokenUsage } from './types';
  * long-lived rollout is not dropped after two calendar months.
  * v9: Claude requests above a model's prompt threshold (Haiku 5.5: 100K) carry
  * long-context counters, including cache reads and writes.
+ * v10: reclassify GPT-6.1 Terra requests above 272K with long-context counters.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 9;
+export const CACHE_VERSION = 10;
 
 /**
  * A record that may still be superseded. Claude logs a streaming partial

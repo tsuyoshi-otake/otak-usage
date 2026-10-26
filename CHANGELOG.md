@@ -2,6 +2,16 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- GPT-6.1 Terra API-equivalent pricing: $1 input / $0.05 cached input / $5 output per million tokens, with 2x input/cache and 1.5x output above 272K input tokens. Existing logs are re-ingested once to classify long-context usage. (#76)
+
+### Changed
+
+- Force a one-time migration of saved Codex model defaults and explicit profile overrides to `gpt-6.1-terra` with `medium` reasoning effort, including installations already migrated to Luna and those with context optimization off. Preserve unrelated settings and later user choices; retry failed writes without marking migration complete. (#76)
+
 ## [1.26.19] - 2026-10-23
 
 ### Fixed

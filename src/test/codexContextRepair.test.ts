@@ -7,7 +7,7 @@ import * as vm from 'vm';
 import { createRequire } from 'module';
 import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 
-suite('Codex context-management repair #75', () => {
+suite('Codex config migration and context-management repair #75 #76', () => {
     let home: string;
     let file: string;
     let controller: any;
@@ -17,6 +17,7 @@ suite('Codex context-management repair #75', () => {
     let failWrite: boolean;
     let afterRead: () => void;
     let writes: number;
+    const modelMigrationKey = 'otakUsage.codexTerraMediumModelMigrated';
     const original = 'model = "chosen"\nmodel_context_window = 400000\n'
         + 'model_auto_compact_token_limit = 300000\n[features]\nfast_mode = false\n'
         + '[features.context_management]\nexperimental_mode = true\n';
@@ -26,7 +27,7 @@ suite('Codex context-management repair #75', () => {
         fs.mkdirSync(tmp, { recursive: true });
         home = fs.mkdtempSync(path.join(tmp, 'otak-usage-context-repair-'));
         file = path.join(home, 'config.toml');
-        state = new Map([['otakUsage.codexDefaultModelMigrated', true]]);
+        state = new Map([['otakUsage.codexDefaultModelMigrated', true], [modelMigrationKey, true]]);
         desired = false; fence = true; failWrite = false; writes = 0;
         afterRead = () => {};
         const entry = path.join(__dirname, '..', 'extension.js');
@@ -62,6 +63,53 @@ suite('Codex context-management repair #75', () => {
         controller.allowManagedFileCommit = async () => fence;
     });
     teardown(() => fs.rmSync(home, { recursive: true, force: true }));
+
+    test('old Luna marker does not skip Terra migration; queued syncs migrate once with optimization off', async () => {
+        state.delete(modelMigrationKey);
+        fs.writeFileSync(file, 'model = "chosen"\nmodel_reasoning_effort = "max"\n');
+        assert.deepStrictEqual(await Promise.all([controller.syncCodexOptimize(false), controller.syncCodexOptimize(false)]), [true, true]);
+        const parsed = getStaticTOMLValue(parseTOML(fs.readFileSync(file, 'utf8'))) as any;
+        assert.strictEqual(parsed.model, 'gpt-6.1-terra');
+        assert.strictEqual(parsed.model_reasoning_effort, 'medium');
+        assert.strictEqual(state.get(modelMigrationKey), true);
+        assert.strictEqual(writes, 1);
+        // Once complete, a later explicit choice survives the next startup sync.
+        fs.writeFileSync(file, 'model = "later-choice"\nmodel_reasoning_effort = "high"\n');
+        assert.strictEqual(await controller.syncCodexOptimize(false), true);
+        assert.strictEqual(fs.readFileSync(file, 'utf8'), 'model = "later-choice"\nmodel_reasoning_effort = "high"\n');
+        assert.strictEqual(writes, 1);
+    });
+
+    test('Terra migration creates missing config and completes an already-correct config without writing', async () => {
+        state.clear();
+        assert.strictEqual(await controller.syncCodexOptimize(false), true);
+        const next = fs.readFileSync(file, 'utf8');
+        assert.match(next, /model = "gpt-6.1-terra"/);
+        assert.match(next, /model_reasoning_effort = "medium"/);
+        state.clear();
+        assert.strictEqual(await controller.syncCodexOptimize(false), true);
+        assert.strictEqual(state.get(modelMigrationKey), true);
+        assert.strictEqual(writes, 1);
+    });
+
+    test('Terra migration reports failures, leaves the marker unset, and retries', async () => {
+        for (const failure of ['write', 'fence', 'invalid', 'read'] as const) {
+            state.delete(modelMigrationKey);
+            const source = failure === 'invalid' ? '[broken' : 'model = "chosen"\n';
+            fs.writeFileSync(file, source);
+            failWrite = failure === 'write';
+            afterRead = failure === 'fence' ? () => { fence = false; }
+                : failure === 'read' ? () => { throw new Error('injected read failure'); } : () => {};
+            assert.strictEqual(await controller.syncCodexOptimize(false), false, failure);
+            assert.strictEqual(state.has(modelMigrationKey), false, failure);
+            assert.strictEqual(fs.readFileSync(file, 'utf8'), source, failure);
+            failWrite = false; fence = true; afterRead = () => {};
+            fs.writeFileSync(file, 'model = "chosen"\n');
+            assert.strictEqual(await controller.syncCodexOptimize(false), true, failure);
+            assert.strictEqual(state.get(modelMigrationKey), true, failure);
+            assert.match(fs.readFileSync(file, 'utf8'), /model = "gpt-6.1-terra"/);
+        }
+    });
 
     test('repairs with optimization off and no ownership marker, once across queued syncs', async () => {
         fs.writeFileSync(file, original);

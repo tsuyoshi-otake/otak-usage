@@ -212,6 +212,20 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('claude-opus-4-6-20260101-fast')?.output, 150);
     });
 
+    test('gpt-6.1-terra resolves official prices including cached input and long context', () => {
+        const p = resolvePricing('gpt-6.1-terra');
+        assert.strictEqual(p?.input, 1);
+        assert.strictEqual(p?.cachedInput, 0.05);
+        assert.strictEqual(p?.output, 5);
+        assert.strictEqual(p?.longContextThreshold, 272_000);
+        assert.strictEqual(resolvePricing('gpt-6.1-terra-20261027')?.cachedInput, 0.05);
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        assert.ok(Math.abs((calcCost('gpt-6.1-terra', usage) ?? 0) - 0.61) < 1e-12);
+        const longUsage = { ...usage, longContextInput: usage.input, longContextCachedInput: usage.cachedInput, longContextOutput: usage.output };
+        assert.ok(Math.abs((calcCost('gpt-6.1-terra', longUsage) ?? 0) - 0.97) < 1e-12);
+        assert.strictEqual(resolvePricing('gpt-6.1-terra', { 'gpt-6.1-terra': { input: 2 } })?.cachedInput, 0.05);
+    });
+
     test('gpt-6.1-sol resolves official Standard and long-context prices', () => {
         const p = resolvePricing('gpt-6.1-sol');
         assert.strictEqual(p?.input, 2);
@@ -448,6 +462,7 @@ suite('aggregator', () => {
         const days: DayBuckets = {};
         addEvent(days, ev(10, 'gpt-5.4', 1_000_000, 'codex'));
         addEvent(days, ev(10, 'gpt-6.1-sol', 1, 'codex'));
+        addEvent(days, ev(10, 'gpt-6.1-terra', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-6-astra', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.6-sol-20260710', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.5', 1_000, 'codex'));
@@ -463,6 +478,7 @@ suite('aggregator', () => {
 
         const s = summarize(days, '2026-07-10');
         assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
+            'gpt-6.1-terra',
             'gpt-6.1-sol',
             'gpt-6-astra',
             'gpt-5.6-sol-20260710',

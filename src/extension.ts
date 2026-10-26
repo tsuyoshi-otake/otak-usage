@@ -42,7 +42,7 @@ const CLAUDE_OPTIMIZE_OWNERSHIP_KEY = 'otakUsage.claudeOptimizeOwnership';
 const BASE_STATUS_BAR_MODE_KEY = 'otakUsage.baseStatusBarMode';
 const STATUS_BAR_MODE_INITIALIZED_KEY = 'otakUsage.statusBarModeInitialized';
 const CODEX_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.codexContextDefaultMigration';
-const CODEX_DEFAULT_MODEL_MIGRATION_KEY = 'otakUsage.codexDefaultModelMigrated';
+const CODEX_DEFAULT_MODEL_MIGRATION_KEY = 'otakUsage.codexTerraMediumModelMigrated';
 const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigration';
 /**
  * Bumped independently whenever a provider's shipped context defaults move,
@@ -1050,25 +1050,25 @@ class UsageController implements vscode.Disposable {
      */
     private syncCodexOptimize(showStatus = true, requireFence = true): Promise<boolean> {
         return this.enqueueCodexConfigSync(async () => {
-            if (requireFence) {
-                await this.performCodexDefaultModelMigration();
+            if (requireFence && !(await this.performCodexDefaultModelMigration())) {
+                return false;
             }
             return this.performCodexOptimizeSync(showStatus, requireFence);
         });
     }
 
     /**
-     * Set the Codex CLI model default to Luna once. Only an unset model or the
-     * previous Sol default moves; explicit model choices stay untouched.
+     * Force the saved Codex model and effort to Terra / medium once, even for
+     * installations that completed the older Luna migration.
      * Shares the config queue with optimization writes and uses the leader
      * fence before committing the atomic TOML update.
      */
-    private async performCodexDefaultModelMigration(): Promise<void> {
+    private async performCodexDefaultModelMigration(): Promise<boolean> {
         if (this.context.globalState.get<boolean>(CODEX_DEFAULT_MODEL_MIGRATION_KEY, false)) {
-            return;
+            return true;
         }
         if (!(await this.allowManagedFileCommit(true))) {
-            return;
+            return false;
         }
         const configPath = path.join(this.codexHomeDir(), 'config.toml');
         try {
@@ -1076,18 +1076,20 @@ class UsageController implements vscode.Disposable {
             const next = migrateCodexDefaultModelToml(current ?? '');
             if (next !== current) {
                 if (!(await this.allowManagedFileCommit(true))) {
-                    return;
+                    return false;
                 }
                 await writeTransformedTextFile(configPath, this.instanceId, current, next);
             }
             if (!(await this.allowManagedFileCommit(true))) {
-                return;
+                return false;
             }
             await this.context.globalState.update(CODEX_DEFAULT_MODEL_MIGRATION_KEY, true);
+            return true;
         } catch (err) {
             // Leave the marker unset so a later leader sync can retry after a
             // transient read/write failure or repair of malformed TOML.
             console.error('otak-usage: could not migrate the Codex default model', err);
+            return false;
         }
     }
 

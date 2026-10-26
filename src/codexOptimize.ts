@@ -15,8 +15,8 @@
 export const CODEX_CONTEXT_WINDOW_KEY = 'model_context_window';
 export const CODEX_AUTO_COMPACT_KEY = 'model_auto_compact_token_limit';
 export const CODEX_EXPERIMENTAL_MODE_KEY = 'experimental_mode';
-const DEFAULT_CODEX_MODEL = 'gpt-6-luna';
-const PREVIOUS_DEFAULT_CODEX_MODEL = 'gpt-6-sol';
+const DEFAULT_CODEX_MODEL = 'gpt-6.1-terra';
+const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 
 import { getStaticTOMLValue, parseTOML } from 'toml-eslint-parser';
 import { editToml } from './tomlEdit';
@@ -182,20 +182,26 @@ export function hasAppliedPreviousCodexContextDefaults(text: string): boolean {
 }
 
 /**
- * Move Codex's unset / previous default model to Luna once, while keeping any
- * other explicitly configured model as the user's choice. The caller owns the
- * one-time marker and the fenced, atomic config.toml write.
+ * Force saved Codex defaults to Terra / medium once, including explicit
+ * profile overrides. Profiles without an override inherit the root defaults.
+ * The caller owns the new one-time marker and fenced, atomic config.toml write;
+ * later user choices survive once that marker is recorded.
  */
 export function migrateCodexDefaultModelToml(text: string): string {
     const root = getStaticTOMLValue(parseTOML(text)) as unknown;
-    const model = objectProperty(root, 'model');
-    if (model === DEFAULT_CODEX_MODEL) {
-        return text;
+    let next = editToml(text, ['model'], JSON.stringify(DEFAULT_CODEX_MODEL));
+    next = editToml(next, ['model_reasoning_effort'], JSON.stringify(DEFAULT_CODEX_REASONING_EFFORT));
+    const profiles = objectProperty(root, 'profiles');
+    if (typeof profiles === 'object' && profiles !== null && !Array.isArray(profiles)) {
+        for (const [name, profile] of Object.entries(profiles)) {
+            for (const [key, value] of [['model', DEFAULT_CODEX_MODEL], ['model_reasoning_effort', DEFAULT_CODEX_REASONING_EFFORT]]) {
+                if (objectProperty(profile, key) !== undefined) {
+                    next = editToml(next, ['profiles', name, key], JSON.stringify(value));
+                }
+            }
+        }
     }
-    if (model !== undefined && model !== PREVIOUS_DEFAULT_CODEX_MODEL) {
-        return text;
-    }
-    return editToml(text, ['model'], JSON.stringify(DEFAULT_CODEX_MODEL));
+    return next;
 }
 
 /**
