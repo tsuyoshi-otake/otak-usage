@@ -55,9 +55,10 @@ const CLAUDE_CONTEXT_DEFAULT_MIGRATION_KEY = 'otakUsage.claudeContextDefaultMigr
  * generation-5 marker was set before an in-place update still showed the old
  * pair, or whose old pair was restored before the corrective update. Claude
  * then advances to generation 3 alongside Codex generation 7 for 320k/272k.
+ * Claude generation 4 moves its default to 400k/340k.
  */
 const CODEX_CONTEXT_DEFAULT_MIGRATION_GENERATION = 7;
-const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 3;
+const CLAUDE_CONTEXT_DEFAULT_MIGRATION_GENERATION = 4;
 const FAST_MODE_STATE_KEY = 'otakUsage.fastModeState';
 /** Remote kinds already told about, so the placement hint is stated once each. */
 const REMOTE_HOST_HINT_KEY = 'otakUsage.remoteHostHintShown';
@@ -722,7 +723,9 @@ class UsageController implements vscode.Disposable {
         const plan = planClaudeContextDefaultMigration(
             config.inspect<number>('claudeContextWindow')?.globalValue,
             config.inspect<number>('claudeAutoCompactPercent')?.globalValue,
-            priorGeneration < 2 ? LEGACY_CLAUDE_CONTEXT_DEFAULTS : undefined,
+            priorGeneration < 2 ? LEGACY_CLAUDE_CONTEXT_DEFAULTS
+                : priorGeneration < 3 ? { contextWindow: 250000, autoCompactPercent: 85 }
+                : undefined,
         );
         try {
             for (const key of plan.clear) {

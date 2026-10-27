@@ -1155,17 +1155,17 @@ suite('optional hooks', () => {
 });
 
 suite('claude optimize', () => {
-    const values = { contextWindow: 320000, autoCompactPercent: 85 };
+    const values = { contextWindow: 400000, autoCompactPercent: 85 };
 
-    test('offers a 320k preset that compacts at 272k, leaving 48k for the summary', () => {
+    test('offers a 400k preset that compacts at 340k, leaving 60k for the summary', () => {
         assert.deepStrictEqual(CLAUDE_OPTIMIZE_PRESETS, [
-            { id: '320k', contextWindow: 320000, autoCompactPercent: 85 },
+            { id: '400k', contextWindow: 400000, autoCompactPercent: 85 },
         ]);
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 320000);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 400000);
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
-        assert.strictEqual(claudeAutoCompactTokenLimit(values), 272000);
-        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 48000);
-        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '320k');
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 340000);
+        assert.strictEqual(values.contextWindow - claudeAutoCompactTokenLimit(values), 60000);
+        assert.strictEqual(matchingClaudeOptimizePreset(values)?.id, '400k');
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, autoCompactPercent: 90 }), undefined);
         assert.strictEqual(matchingClaudeOptimizePreset({ ...values, contextWindow: 200000 }), undefined);
     });
@@ -1177,6 +1177,7 @@ suite('claude optimize', () => {
                 { contextWindow: 230000, autoCompactPercent: 85 },
                 { contextWindow: 240000, autoCompactPercent: 90 },
                 { contextWindow: 250000, autoCompactPercent: 85 },
+                { contextWindow: 320000, autoCompactPercent: 85 },
             ]);
         });
 
@@ -1221,7 +1222,7 @@ suite('claude optimize', () => {
             });
             assert.deepStrictEqual(planClaudeContextDefaultMigration(undefined, 70), {
                 clear: [],
-                write: { claudeContextWindow: 250000 },
+                write: { claudeContextWindow: 320000 },
             });
             assert.deepStrictEqual(planClaudeContextDefaultMigration(1000000, 70), {
                 clear: [],
@@ -1237,14 +1238,14 @@ suite('claude optimize', () => {
         });
     });
 
-    test('aligns both provider defaults and the manifest at 320k / 272k', () => {
+    test('keeps provider defaults and the manifest consistent', () => {
         const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf8'));
         const properties = manifest.contributes.configuration.properties;
-        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 320000);
+        assert.strictEqual(DEFAULT_CLAUDE_CONTEXT_WINDOW, 400000);
         assert.strictEqual(DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT, 85);
         assert.strictEqual(DEFAULT_CODEX_CONTEXT_WINDOW, 320000);
         assert.strictEqual(DEFAULT_CODEX_AUTO_COMPACT_LIMIT, 272000);
-        assert.strictEqual(claudeAutoCompactTokenLimit(values), DEFAULT_CODEX_AUTO_COMPACT_LIMIT);
+        assert.strictEqual(claudeAutoCompactTokenLimit(values), 340000);
         assert.strictEqual(properties['otakUsage.claudeContextWindow'].default, DEFAULT_CLAUDE_CONTEXT_WINDOW);
         assert.strictEqual(properties['otakUsage.claudeAutoCompactPercent'].default, DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT);
     });
@@ -1277,7 +1278,7 @@ suite('claude optimize', () => {
         assert.deepStrictEqual(parsed.permissions, { allow: ['Bash(npm test)'] });
         assert.strictEqual(parsed.autoCompactEnabled, true);
         assert.strictEqual(parsed.env.EXISTING, 'keep-me');
-        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '320000');
+        assert.strictEqual(parsed.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
         assert.strictEqual(parsed.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
         assert.ok(applied.includes('\n    "permissions"'));
 
@@ -1343,7 +1344,7 @@ suite('claude optimize', () => {
             autoCompactPercent: { present: true, value: '80' },
         });
         const applied = JSON.parse(applyClaudeOptimizeJson(current, values));
-        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '320000');
+        assert.strictEqual(applied.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
         const restored = JSON.parse(restoreClaudeOptimizeJson(JSON.stringify(applied), adopted));
         assert.strictEqual(restored.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '750000');
         assert.strictEqual(restored.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '80');

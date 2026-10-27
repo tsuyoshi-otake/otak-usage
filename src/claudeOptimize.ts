@@ -14,10 +14,10 @@ export const CLAUDE_AUTO_COMPACT_PERCENT_ENV = 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 /**
  * Current Claude models offer a larger native window, but pinning this working
  * window makes compaction land on a fixed token count instead of a share of
- * whatever model happens to be active. Both providers use 320k with an 85%
- * trigger at 272k, leaving 48k to write the summary or transition context.
+ * whatever model happens to be active. At 400k, the 85% trigger lands at
+ * 340k, leaving 60k to write the summary or transition context.
  */
-export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 320000;
+export const DEFAULT_CLAUDE_CONTEXT_WINDOW = 400000;
 
 /**
  * Claude Code compacts at this share of the managed window, leaving the rest to
@@ -31,12 +31,12 @@ export interface ClaudeOptimizeValues {
 }
 
 export interface ClaudeOptimizePreset extends ClaudeOptimizeValues {
-    id: '320k';
+    id: '400k';
 }
 
 export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
     {
-        id: '320k',
+        id: '400k',
         contextWindow: DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,
     },
@@ -47,7 +47,7 @@ export const CLAUDE_OPTIMIZE_PRESETS: readonly ClaudeOptimizePreset[] = [
  * unset setting used to mean exactly this, so the migration reads a missing key
  * as this value and pins it when the rest of the pair was chosen by hand.
  */
-export const PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW = 250000;
+export const PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW = 320000;
 export const PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT = 85;
 
 /** Defaults inherited by installations that skipped the 250k release. */
@@ -68,6 +68,7 @@ export const SHIPPED_CLAUDE_CONTEXT_DEFAULTS: readonly ClaudeOptimizeValues[] = 
     { contextWindow: 200000, autoCompactPercent: 92 },
     { contextWindow: 230000, autoCompactPercent: 85 },
     LEGACY_CLAUDE_CONTEXT_DEFAULTS,
+    { contextWindow: 250000, autoCompactPercent: 85 },
     {
         contextWindow: PREVIOUS_DEFAULT_CLAUDE_CONTEXT_WINDOW,
         autoCompactPercent: PREVIOUS_DEFAULT_CLAUDE_AUTO_COMPACT_PERCENT,

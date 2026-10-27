@@ -26,7 +26,7 @@ otak-usage reads local Claude Code and OpenAI Codex CLI session logs, converts t
 ---
 
 > [!IMPORTANT]
-> **Context optimization is enabled by default for both Claude Code and Codex CLI, with a 320k configured window and an 85% compaction target (272k tokens).** This leaves 48k of configured headroom for a summary or context transition. Codex uses its normal compaction behavior. A compact 180k Codex preset remains available. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter custom values, or turn that provider off. Turning optimization off restores the values that existed before otak-usage took ownership.
+> **Context optimization is enabled by default for both Claude Code and Codex CLI, with an 85% compaction target: Claude uses a 400k window and compacts at 340k; Codex uses 320k and compacts at 272k.** This leaves 60k and 48k of configured headroom respectively for a summary or context transition. Codex uses its normal compaction behavior. A compact 180k Codex preset remains available. Use **Optimize** in the status-bar tooltip to choose a provider, select a preset, enter custom values, or turn that provider off. Turning optimization off restores the values that existed before otak-usage took ownership.
 
 AI coding tools leave useful token-count metadata in local session logs, but comparing day-to-day usage across providers usually means opening separate files or tools. **otak-usage turns those logs into one status-bar readout**: today or month-to-date, combined or per provider/model, with configurable alerts and optional metric export when you want dashboards.
 
@@ -79,7 +79,7 @@ Period: This Month · Updated 16:09 · Click to switch view
 - **RTK token savings**: when [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is available, the tooltip adds Input / Output / Saved / Rate for Today, This Month, and All Time.
 - **Usage alerts**: a VS Code notification appears when today's combined Claude + Codex estimate reaches your configured USD threshold, and/or when a subscription rate-limit window (5-hour or weekly) reaches your configured percentage. `otakUsage.alertMode` chooses which triggers fire (`cost`, `limit`, `both`, or `off`).
 - **Fast-mode startup reset and warning**: saved Claude Code and Codex CLI fast-mode defaults are turned off on every startup by default; disable `otakUsage.disableFastModeOnStartup` to opt out. Fast-mode usage still triggers the same warning notification the cost and limit alerts use. See [Fast-mode detection](#fast-mode-detection).
-- **Claude + Codex context optimization — on by default**: Both providers use a 320k configured context window with a 272k target (85%). Both providers use their normal compaction behavior. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The configured values for both providers are shown directly in the tooltip.
+- **Claude + Codex context optimization — on by default**: Claude uses a 400k configured context window with a 340k target (85%); Codex uses 320k with a 272k target (85%). Both providers use their normal compaction behavior. Click **Optimize** in the tooltip, choose a provider, then select a preset, enter **Custom** values, or **Turn Off** that provider. The configured values for both providers are shown directly in the tooltip.
 - **Codex model controls — Max enabled automatically**: On activation, otak-usage updates the Codex VS Code extension's persisted model state, preserves the reasoning efforts you already have selected, and appends `max`. If Codex is already open, its webviews are refreshed after a change so the picker updates immediately. This does not modify `config.toml`.
 - **Optional conversation hooks (off by default)**: Tooltip toggles can prefix Claude Code and Codex conversation titles with the Git repository name and play prompt/stop chimes. The hook runner is a dependency-free Node script that works on Windows, macOS, Linux, WSL, SSH remotes, Dev Containers, and GitHub Codespaces; unrelated user hooks remain untouched.
 - **OpenTelemetry telemetry**: opt in to export aggregate token and cost metrics to any OTLP/HTTP endpoint, including a local OpenTelemetry Collector, Grafana Cloud, Honeycomb, or Datadog.
@@ -338,8 +338,8 @@ Claude Code officially documents `fastMode` and `fastModePerSessionOptIn` in its
 | `otakUsage.includeRepositoryNameInHistory` | `false` | When enabled from the tooltip or Settings, install a managed Stop hook for Claude Code and Codex that prefixes conversation history titles with the repository name. |
 | `otakUsage.enableHookSounds` | `false` | When enabled from the tooltip or Settings, install managed `UserPromptSubmit` and `Stop` hooks that play short sounds. Uses platform players where available and degrades quietly on headless Codespaces. |
 | `otakUsage.optimizeClaudeContext` | `true` | **On by default.** Writes the two official auto-compaction values below under `env` in Claude Code `settings.json`. Turning it off through **Optimize** restores the values that existed before otak-usage took ownership. |
-| `otakUsage.claudeContextWindow` | `320000` | Effective context window written to `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. Both providers default to 320k. |
-| `otakUsage.claudeAutoCompactPercent` | `85` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default fires at 272k tokens, leaving 48k for the summary. |
+| `otakUsage.claudeContextWindow` | `400000` | Effective context window written to `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. |
+| `otakUsage.claudeAutoCompactPercent` | `85` | Trigger percentage written to `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Custom values may be 1–100; the default fires at 340k tokens, leaving 60k for the summary. |
 | `otakUsage.optimizeCodexContext` | `true` | When on, write `model_context_window` and `model_auto_compact_token_limit` (from the two settings below) into your Codex `config.toml`, rewriting them in place if present; when off, remove the previously managed numeric keys. The legacy experimental context-management flag and its empty container are removed even while optimization is off; unrelated settings are preserved. |
 | `otakUsage.codexContextWindow` | `320000` | Value written for `model_context_window` when optimization is on. The Optimize picker offers the 320k default, a compact 180k preset, or a custom positive integer. |
 | `otakUsage.codexAutoCompactLimit` | `272000` | Value written for `model_auto_compact_token_limit` when optimization is on. The default starts its context transition at 85% of the 320k window, leaving 48k of configured headroom. The 180k preset pairs with 150k; custom values must remain below the context window. |
@@ -367,10 +367,10 @@ Both providers are optimized immediately after installation unless you turn them
 
 | Provider | Default | Config written |
 | --- | --- | --- |
-| Claude Code | 320k context, compact at 272k (85%) | `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `~/.claude/settings.json` (or the configured `$CLAUDE_CONFIG_DIR`) |
+| Claude Code | 400k context, compact at 340k (85%) | `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in `~/.claude/settings.json` (or the configured `$CLAUDE_CONFIG_DIR`) |
 | Codex CLI | 320k configured context, compaction target at 272k | `model_context_window` and `model_auto_compact_token_limit` in `~/.codex/config.toml` (or the configured `$CODEX_HOME`) |
 
-**Upgrades migrate both providers to 320k / 272k once.** otak-usage clears pairs that match previously shipped defaults, including Codex’s 272k / 231.2k and Claude’s 250k / 85%, so the current defaults apply. Older shipped defaults also migrate. Other custom pairs are preserved. A half-configured pair keeps the missing value pinned to the default inherited from its previous migration generation. A manually selected old default is indistinguishable from an inherited default and also migrates once; select it again after upgrading to keep it. Later choices survive subsequent startups. Providers whose optimization is off stay off.
+**Upgrades migrate Claude to 400k / 340k once; Codex remains at 320k / 272k.** otak-usage clears pairs that match previously shipped defaults, including Codex’s 272k / 231.2k and Claude’s 320k / 85%, so the current defaults apply. Older shipped defaults also migrate. Other custom pairs are preserved. A half-configured pair keeps the missing value pinned to the default inherited from its previous migration generation. A manually selected old default is indistinguishable from an inherited default and also migrates once; select it again after upgrading to keep it. Later choices survive subsequent startups. Providers whose optimization is off stay off.
 
 The extension no longer enables experimental Codex context management. On startup and Optimize changes it removes the legacy `experimental_mode` flag and empty `features.context_management` containers, including when optimization is off. This repairs the configuration written by earlier versions for CLIs that require boolean feature values. Other user-defined keys and boolean feature settings are preserved.
 
@@ -387,7 +387,7 @@ Claude Code officially supports environment variables under the `env` object in 
 ```json
 {
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "320000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "85"
   }
 }

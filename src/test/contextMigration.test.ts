@@ -63,15 +63,15 @@ suite('context default migration #74', () => {
         for (const [key, value] of Object.entries(cachedDefaults)) { values.set(key, value); }
     }
 
-    test('migrates current generations once and resolves 320k despite cached manifest defaults', async () => {
+    test('migrates current generations once and resolves the provider defaults despite cached manifest defaults', async () => {
         setPreviousDefaults();
         await Promise.all([controller.ensureContextDefaultsMigrated(), controller.ensureContextDefaultsMigrated()]);
         assert.strictEqual(state.get(codexMarker), 7);
-        assert.strictEqual(state.get(claudeMarker), 3);
+        assert.strictEqual(state.get(claudeMarker), 4);
         assert.strictEqual(values.size, 0);
         assert.strictEqual(controller.currentCodexOptimizeValues().contextWindow, 320000);
         assert.strictEqual(controller.currentCodexOptimizeValues().autoCompactLimit, 272000);
-        assert.strictEqual(controller.currentClaudeOptimizeValues().contextWindow, 320000);
+        assert.strictEqual(controller.currentClaudeOptimizeValues().contextWindow, 400000);
         assert.strictEqual(controller.currentClaudeOptimizeValues().autoCompactPercent, 85);
         // A later explicit selection survives even if it was once a default.
         values.set('codexContextWindow', 180000);
@@ -82,6 +82,20 @@ suite('context default migration #74', () => {
         assert.strictEqual(values.get('codexContextWindow'), 180000);
         assert.strictEqual(values.get('codexAutoCompactLimit'), 150000);
         assert.strictEqual(values.get('claudeContextWindow'), 250000);
+        assert.strictEqual(values.get('claudeAutoCompactPercent'), 85);
+    });
+
+    test('migrates the previous Claude default once and preserves later choices', async () => {
+        state.set(claudeMarker, 3);
+        values.set('claudeContextWindow', 320000);
+        values.set('claudeAutoCompactPercent', 85);
+        await controller.migrateClaudeContextDefaults();
+        assert.strictEqual(state.get(claudeMarker), 4);
+        assert.strictEqual(controller.currentClaudeOptimizeValues().contextWindow, 400000);
+        values.set('claudeContextWindow', 320000);
+        values.set('claudeAutoCompactPercent', 85);
+        await controller.migrateClaudeContextDefaults();
+        assert.strictEqual(values.get('claudeContextWindow'), 320000);
         assert.strictEqual(values.get('claudeAutoCompactPercent'), 85);
     });
 
@@ -120,7 +134,7 @@ suite('context default migration #74', () => {
             assert.strictEqual(values.get('codexAutoCompactLimit'), 120000);
         });
     }
-    for (const [generation, inheritedWindow, inheritedPercent] of [[0, 240000, 90], [1, 240000, 90], [2, 250000, 85]]) {
+    for (const [generation, inheritedWindow, inheritedPercent] of [[0, 240000, 90], [1, 240000, 90], [2, 250000, 85], [3, 320000, 85]]) {
         test(`preserves half-customized Claude settings from generation ${generation}`, async () => {
             state.set(claudeMarker, generation);
             values.set('claudeContextWindow', 400000);
@@ -143,12 +157,12 @@ suite('context default migration #74', () => {
             failSetting = provider === 'codex' ? 'codexAutoCompactLimit' : 'claudeAutoCompactPercent';
             await controller.migrateContextDefaults();
             assert.strictEqual(state.get(marker), priorGeneration);
-            assert.strictEqual(state.get(provider === 'codex' ? claudeMarker : codexMarker), provider === 'codex' ? 3 : 7);
+            assert.strictEqual(state.get(provider === 'codex' ? claudeMarker : codexMarker), provider === 'codex' ? 4 : 7);
             assert.strictEqual(errors.length, 1);
             failSetting = undefined;
             await controller.migrateContextDefaults();
             assert.strictEqual(state.get(codexMarker), 7);
-            assert.strictEqual(state.get(claudeMarker), 3);
+            assert.strictEqual(state.get(claudeMarker), 4);
             assert.strictEqual(values.size, 0);
         });
     }
@@ -158,7 +172,7 @@ suite('context default migration #74', () => {
         fs.writeFileSync(file, '[broken');
         await controller.migrateContextDefaults();
         assert.strictEqual(state.get(codexMarker), 6);
-        assert.strictEqual(state.get(claudeMarker), 3);
+        assert.strictEqual(state.get(claudeMarker), 4);
         assert.strictEqual(errors.length, 1);
         fs.writeFileSync(file, 'model = "chosen"\n');
         await controller.migrateCodexContextDefaults();
@@ -185,7 +199,7 @@ suite('context default migration #74', () => {
         assert.match(codex, /^model_auto_compact_token_limit = 272000$/m);
         assert.match(codex, /^model = "chosen"$/m);
         const claude = JSON.parse(fs.readFileSync(claudePath, 'utf8'));
-        assert.strictEqual(claude.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '320000');
+        assert.strictEqual(claude.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
         assert.strictEqual(claude.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
         assert.strictEqual(claude.env.OTHER, 'keep');
         values.set('optimizeClaudeContext', false);

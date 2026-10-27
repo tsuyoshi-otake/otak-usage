@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [1.26.21] - 2026-10-27
+
+### Changed
+
+- Increase the Claude Code Optimized default context window from 320k to 400k, with compaction at 340k (85%). Migrate previous shipped defaults once while preserving custom settings, their inherited values, and opt-outs. Codex stays at 320k / 272k.
+
 ## [1.26.20] - 2026-10-27
 
 ### Added
