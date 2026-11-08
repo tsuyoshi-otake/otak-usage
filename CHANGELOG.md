@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Claude Sonnet 5.5 cache reads are now priced at the published $0.10 per million tokens (0.05x input) instead of $0.20, which had overstated that model's cost. Added Claude Mythos 5.1 with its published 0.025x cache-hit rate ($0.25) so it no longer falls back to Mythos 5's $1.00. Costs are computed at summary time, so no re-scan is needed. (#78)
+
 ## [1.26.21] - 2026-10-27
 
 ### Changed

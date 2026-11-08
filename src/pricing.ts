@@ -43,6 +43,9 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Fable 5.1 keeps Fable 5's input/output and cache-write rates, but cuts
     // cache reads from $1.00 to $0.25 per million tokens.
     'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25 },
+    // Mythos 5.1 shares Fable 5.1's 0.025x cache-hit rate; without its own entry
+    // it would prefix-match claude-mythos-5 and bill cache reads at $1.00 (#78).
+    'claude-mythos-5-1': { input: 10, output: 50, cacheRead: 0.25 },
     'claude-fable-5': { input: 10, output: 50 },
     'claude-mythos-5': { input: 10, output: 50 },
     // Claude 4.6 and later bill their full 1M context window at standard rates,
@@ -63,8 +66,10 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-opus-4-8-fast': { input: 10, output: 50 },
     'claude-opus-4-7-fast': { input: 30, output: 150 },
     'claude-opus-4-6-fast': { input: 30, output: 150 },
-    // Sonnet 5.5 uses standard rates throughout its 1M context window.
-    'claude-sonnet-5-5': { input: 2, output: 10 },
+    // Sonnet 5.5 uses standard rates throughout its 1M context window, except
+    // cache hits: like Opus 5.5 they cost 0.05x the input price ($0.10), not the
+    // generic 0.1x default that Sonnet 5 still uses (#78).
+    'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1 },
     'claude-sonnet-5': { input: 2, output: 10 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-sonnet-4-5': { input: 3, output: 15 },

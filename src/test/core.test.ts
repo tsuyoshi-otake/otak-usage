@@ -78,7 +78,10 @@ suite('pricing', () => {
         const p = resolvePricing('claude-sonnet-5-5', undefined, '2026-09-30');
         assert.strictEqual(p?.input, 2);
         assert.strictEqual(p?.output, 10);
-        assert.strictEqual(p?.cacheRead, 0.2);
+        // Cache hits are 0.05x input on Sonnet 5.5 (#78); Sonnet 5 keeps 0.1x.
+        assert.strictEqual(p?.cacheRead, 0.1);
+        assert.strictEqual(resolvePricing('claude-sonnet-5-5-20260928', undefined, '2026-11-08')?.cacheRead, 0.1);
+        assert.strictEqual(resolvePricing('claude-sonnet-5', undefined, '2026-11-08')?.cacheRead, 0.2);
         assert.strictEqual(p?.cacheWrite, 2.5);
         assert.strictEqual(p?.cacheWrite1h, 4);
         assert.strictEqual(p?.longContextThreshold, undefined);
@@ -89,7 +92,8 @@ suite('pricing', () => {
             ...emptyUsage(), input: 1_000_000, output: 1_000_000,
             cacheRead: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000,
         };
-        assert.ok(Math.abs((calcCost('claude-sonnet-5-5', usage, undefined, '2026-09-30') ?? 0) - 18.7) < 1e-12);
+        // $2 input + $0.10 cache read + $2.50 / $4 cache writes + $10 output.
+        assert.ok(Math.abs((calcCost('claude-sonnet-5-5', usage, undefined, '2026-09-30') ?? 0) - 18.6) < 1e-12);
     });
 
     test('claude haiku 5.5 resolves published standard rates and a 5x tier above 100K', () => {
@@ -143,6 +147,27 @@ suite('pricing', () => {
             cacheWrite1h: 1_000_000,
         };
         assert.strictEqual(calcCost('claude-fable-5-1', usage), 92.75);
+    });
+
+    test('claude mythos 5.1 gets the 0.025x cache-hit rate instead of falling back to Mythos 5 (#78)', () => {
+        const p = resolvePricing('claude-mythos-5-1');
+        assert.strictEqual(p?.input, 10);
+        assert.strictEqual(p?.output, 50);
+        assert.strictEqual(p?.cacheWrite, 12.5);
+        assert.strictEqual(p?.cacheWrite1h, 20);
+        assert.strictEqual(p?.cacheRead, 0.25);
+        assert.strictEqual(resolvePricing('claude-mythos-5-1-20261001')?.cacheRead, 0.25);
+        assert.strictEqual(resolvePricing('claude-mythos-5')?.cacheRead, 1);
+
+        const usage = {
+            ...emptyUsage(),
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 1_000_000,
+            cacheWrite5m: 1_000_000,
+            cacheWrite1h: 1_000_000,
+        };
+        assert.strictEqual(calcCost('claude-mythos-5-1', usage), 92.75);
     });
 
     test('claude opus 5 resolves standard, variant and fast-mode prices', () => {
