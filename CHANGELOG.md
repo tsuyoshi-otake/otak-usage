@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Claude Fable 5.2 and Claude Mythos 5.2 pricing (`claude-fable-5-2`, `claude-mythos-5-2`): $8 input / $40 output / $10 five-minute cache write / $16 one-hour cache write / $0.20 cache read per million tokens, plus their fast-mode rates ($16 / $80, cache multipliers stacked on the fast input price). Previously Fable 5.2 matched the older `claude-fable-5` prefix and was overstated at $10 / $50 with $1.00 cache reads. Dated IDs resolve to the same entries, Fable 5.2 appears ahead of Fable 5.1 in model breakdowns, and no re-scan is needed because costs are computed at summary time. (#80)
+
 ## [1.26.22] - 2026-11-08
 
 ### Fixed

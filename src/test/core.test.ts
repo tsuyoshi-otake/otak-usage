@@ -170,6 +170,47 @@ suite('pricing', () => {
         assert.strictEqual(calcCost('claude-mythos-5-1', usage), 92.75);
     });
 
+    // Published rates read from the pricing page on 2026-11-10, not from the table.
+    test('claude fable 5.2 and mythos 5.2 resolve published standard and fast-mode prices (#80)', () => {
+        const usage = {
+            ...emptyUsage(),
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheRead: 1_000_000,
+            cacheWrite5m: 1_000_000,
+            cacheWrite1h: 1_000_000,
+        };
+        for (const model of ['claude-fable-5-2', 'claude-mythos-5-2']) {
+            const p = resolvePricing(model);
+            assert.strictEqual(p?.input, 8, model);
+            assert.strictEqual(p?.output, 40, model);
+            assert.strictEqual(p?.cacheWrite, 10, model);
+            assert.strictEqual(p?.cacheWrite1h, 16, model);
+            assert.strictEqual(p?.cacheRead, 0.2, model);
+            assert.strictEqual(p?.longContextThreshold, undefined, model);
+            assert.strictEqual(resolvePricing(`${model}-20261105`)?.cacheRead, 0.2, model);
+            assert.strictEqual(resolvePricing(`${model}[1m]`)?.input, 8, model);
+            // $8 + $40 + $0.20 + $10 + $16
+            assert.ok(Math.abs((calcCost(model, usage) ?? 0) - 74.2) < 1e-9, model);
+
+            // Fast mode is 2x, and the cache multipliers stack on the fast input price.
+            const fast = resolvePricing(`${model}-fast`);
+            assert.strictEqual(fast?.input, 16, model);
+            assert.strictEqual(fast?.output, 80, model);
+            assert.strictEqual(fast?.cacheWrite, 20, model);
+            assert.strictEqual(fast?.cacheWrite1h, 32, model);
+            assert.strictEqual(fast?.cacheRead, 0.4, model);
+            assert.strictEqual(resolvePricing(`${model}-20261105-fast`)?.input, 16, model);
+            // $16 + $80 + $0.40 + $20 + $32
+            assert.ok(Math.abs((calcCost(`${model}-fast`, usage) ?? 0) - 148.4) < 1e-9, model);
+        }
+        // The older generations keep their own rows.
+        assert.strictEqual(resolvePricing('claude-fable-5-1')?.input, 10);
+        assert.strictEqual(resolvePricing('claude-mythos-5-1')?.cacheRead, 0.25);
+        assert.strictEqual(resolvePricing('claude-fable-5')?.cacheRead, 1);
+        assert.strictEqual(resolvePricing('claude-mythos-5')?.cacheRead, 1);
+    });
+
     test('claude opus 5 resolves standard, variant and fast-mode prices', () => {
         const p = resolvePricing('claude-opus-5');
         assert.strictEqual(p?.input, 5);
@@ -498,6 +539,7 @@ suite('aggregator', () => {
         addEvent(days, ev(10, 'claude-haiku-5-5', 1));
         addEvent(days, ev(10, 'claude-fable-5', 1));
         addEvent(days, ev(10, 'claude-fable-5-1', 1));
+        addEvent(days, ev(10, 'claude-fable-5-2', 1));
         addEvent(days, ev(10, 'claude-opus-4-8', 1_000));
         addEvent(days, ev(10, 'claude-opus-5', 1_000));
 
@@ -513,6 +555,7 @@ suite('aggregator', () => {
             'z-future-model',
         ]);
         assert.deepStrictEqual(s.claude.models.map((row) => row.model), [
+            'claude-fable-5-2',
             'claude-fable-5-1',
             'claude-fable-5',
             'claude-opus-5',
