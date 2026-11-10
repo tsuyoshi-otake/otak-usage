@@ -30,7 +30,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 
 /**
  * Verified against the official pricing pages:
- * - Claude prices on 2026-10-12: https://platform.claude.com/docs/en/about-claude/pricing
+ * - Claude prices on 2026-11-10: https://platform.claude.com/docs/en/about-claude/pricing
  * - OpenAI prices on 2026-10-27: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
@@ -40,6 +40,11 @@ const GPT_LONG_CONTEXT_PRICING = {
  */
 export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Anthropic (Claude Code)
+    // Fable 5.2 and Mythos 5.2 cut every rate by 20% from 5.1 and keep its
+    // 0.025x cache-hit rate ($0.20). Without their own entries they would
+    // prefix-match the $10/$50 Fable 5 / Mythos 5.1 rows (#80).
+    'claude-fable-5-2': { input: 8, output: 40, cacheRead: 0.2 },
+    'claude-mythos-5-2': { input: 8, output: 40, cacheRead: 0.2 },
     // Fable 5.1 keeps Fable 5's input/output and cache-write rates, but cuts
     // cache reads from $1.00 to $0.25 per million tokens.
     'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25 },
@@ -61,6 +66,8 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     // Fast mode (usage.speed === "fast"): premium prices that apply across the
     // full context window; the cache-write/read multipliers stack on top of the
     // fast input price.
+    'claude-fable-5-2-fast': { input: 16, output: 80, cacheRead: 0.4 },
+    'claude-mythos-5-2-fast': { input: 16, output: 80, cacheRead: 0.4 },
     'claude-opus-5-5-fast': { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10, cacheWrite1h: 16 },
     'claude-opus-5-fast': { input: 10, output: 50 },
     'claude-opus-4-8-fast': { input: 10, output: 50 },
