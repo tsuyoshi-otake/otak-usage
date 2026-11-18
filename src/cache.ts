@@ -19,9 +19,11 @@ import { DayBuckets, TokenUsage } from './types';
  * v9: Claude requests above a model's prompt threshold (Haiku 5.5: 100K) carry
  * long-context counters, including cache reads and writes.
  * v10: reclassify GPT-6.1 Terra requests above 272K with long-context counters.
+ * v11: reclassify GPT-6.2 Astra/Sol requests above 272K with long-context
+ * counters; they were ingested as unknown models without a threshold.
  * Older caches must be re-ingested.
  */
-export const CACHE_VERSION = 10;
+export const CACHE_VERSION = 11;
 
 /**
  * A record that may still be superseded. Claude logs a streaming partial

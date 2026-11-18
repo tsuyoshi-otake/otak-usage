@@ -278,6 +278,43 @@ suite('pricing', () => {
         assert.strictEqual(resolvePricing('claude-opus-4-6-20260101-fast')?.output, 150);
     });
 
+    test('gpt-6.2-astra and gpt-6.2-sol resolve official Standard and long-context prices', () => {
+        const astra = resolvePricing('gpt-6.2-astra');
+        assert.strictEqual(astra?.input, 8);
+        assert.strictEqual(astra?.cachedInput, 0.4);
+        assert.strictEqual(astra?.output, 40);
+        assert.strictEqual(astra?.longContextThreshold, 272_000);
+        assert.strictEqual(astra?.longContextInputMultiplier, 2);
+        assert.strictEqual(astra?.longContextOutputMultiplier, 1.5);
+        const sol = resolvePricing('gpt-6.2-sol');
+        assert.strictEqual(sol?.input, 2);
+        assert.strictEqual(sol?.cachedInput, 0.1);
+        assert.strictEqual(sol?.output, 10);
+        assert.strictEqual(sol?.longContextThreshold, 272_000);
+        assert.strictEqual(sol?.longContextInputMultiplier, 2);
+        assert.strictEqual(sol?.longContextOutputMultiplier, 1.5);
+        // Dated snapshots share the explicit 6.2 entries, not GPT-6 / 6.1 rows.
+        assert.strictEqual(resolvePricing('gpt-6.2-astra-20261118')?.input, 8);
+        assert.strictEqual(resolvePricing('gpt-6.2-sol-20261118')?.cachedInput, 0.1);
+        assert.strictEqual(resolvePricing('gpt-6-astra')?.input, 10);
+
+        const usage = { ...emptyUsage(), input: 100_000, cachedInput: 200_000, output: 100_000 };
+        const longUsage = {
+            ...usage,
+            longContextInput: usage.input,
+            longContextCachedInput: usage.cachedInput,
+            longContextOutput: usage.output,
+        };
+        // Astra short: 0.1*$8 + 0.2*$0.40 + 0.1*$40 = $4.88
+        assert.ok(Math.abs((calcCost('gpt-6.2-astra', usage) ?? 0) - 4.88) < 1e-12);
+        // Astra long ($16 / $0.80 / $60): $1.60 + $0.16 + $6.00 = $7.76
+        assert.ok(Math.abs((calcCost('gpt-6.2-astra', longUsage) ?? 0) - 7.76) < 1e-12);
+        // Sol short: 0.1*$2 + 0.2*$0.10 + 0.1*$10 = $1.22
+        assert.ok(Math.abs((calcCost('gpt-6.2-sol', usage) ?? 0) - 1.22) < 1e-12);
+        // Sol long ($4 / $0.20 / $15): $0.40 + $0.04 + $1.50 = $1.94
+        assert.ok(Math.abs((calcCost('gpt-6.2-sol', longUsage) ?? 0) - 1.94) < 1e-12);
+    });
+
     test('gpt-6.1-terra resolves official prices including cached input and long context', () => {
         const p = resolvePricing('gpt-6.1-terra');
         assert.strictEqual(p?.input, 1);
@@ -529,6 +566,8 @@ suite('aggregator', () => {
         addEvent(days, ev(10, 'gpt-5.4', 1_000_000, 'codex'));
         addEvent(days, ev(10, 'gpt-6.1-sol', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-6.1-terra', 1, 'codex'));
+        addEvent(days, ev(10, 'gpt-6.2-sol', 1, 'codex'));
+        addEvent(days, ev(10, 'gpt-6.2-astra-20261118', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-6-astra', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.6-sol-20260710', 1, 'codex'));
         addEvent(days, ev(10, 'gpt-5.5', 1_000, 'codex'));
@@ -545,6 +584,8 @@ suite('aggregator', () => {
 
         const s = summarize(days, '2026-07-10');
         assert.deepStrictEqual(s.codex.models.map((row) => row.model), [
+            'gpt-6.2-astra-20261118',
+            'gpt-6.2-sol',
             'gpt-6.1-terra',
             'gpt-6.1-sol',
             'gpt-6-astra',
