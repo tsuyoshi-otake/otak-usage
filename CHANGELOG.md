@@ -2,6 +2,12 @@
 
 All notable changes to the "otak-usage" extension will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- GPT-6.2 Astra and GPT-6.2 Sol API-equivalent pricing (`gpt-6.2-astra`, `gpt-6.2-sol`): Astra $8 input / $0.40 cached input / $40 output and Sol $2 / $0.10 / $10 per million tokens, with 2x input/cache and 1.5x output above 272K input tokens. Previously neither id matched any pricing entry, so their Codex usage was shown as `n/a` and counted as $0. Existing logs are re-ingested once to classify long-context usage. Ultrafast and Fast-mode rates are not modeled. (#83)
+
 ## [1.26.23] - 2026-11-10
 
 ### Added

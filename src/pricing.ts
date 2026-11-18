@@ -31,7 +31,7 @@ const GPT_LONG_CONTEXT_PRICING = {
 /**
  * Verified against the official pricing pages:
  * - Claude prices on 2026-11-10: https://platform.claude.com/docs/en/about-claude/pricing
- * - OpenAI prices on 2026-10-27: https://developers.openai.com/api/docs/pricing
+ * - OpenAI prices on 2026-11-18: https://developers.openai.com/api/docs/pricing
  * Models no longer on the official pages use their last published prices.
  * Lookup is exact match first, then longest prefix match, so dated ids like
  * "claude-opus-4-8-20250915" or variants like "gpt-5.3-codex-spark" resolve
@@ -96,8 +96,12 @@ export const DEFAULT_PRICING: Record<string, ModelPricing> = {
     'claude-3-sonnet': { input: 3, output: 15 },
     'claude-3-haiku': { input: 0.25, output: 1.25 },
     // OpenAI (Codex CLI)
-    // GPT-6.1 Terra and Sol have a 5% cached-input rate; all GPT-6 models below use the
-    // published 272K long-context multipliers.
+    // GPT-6.2 Astra/Sol and GPT-6.1 Terra/Sol have a 5% cached-input rate; all
+    // GPT-6 models below use the published 272K long-context multipliers.
+    // GPT-6.2 ids need their own rows: "gpt-6.2-" prefix-matches no older entry,
+    // so without them every 6.2 turn would be counted as $0 (#83).
+    'gpt-6.2-astra': { input: 8, cachedInput: 0.4, output: 40, ...GPT_LONG_CONTEXT_PRICING },
+    'gpt-6.2-sol': { input: 2, cachedInput: 0.1, output: 10, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-6.1-terra': { input: 1, cachedInput: 0.05, output: 5, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-6.1-sol': { input: 2, cachedInput: 0.1, output: 10, ...GPT_LONG_CONTEXT_PRICING },
     'gpt-6-luna': { input: 0.1, cachedInput: 0.01, output: 0.5, ...GPT_LONG_CONTEXT_PRICING },
